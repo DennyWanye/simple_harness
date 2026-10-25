@@ -19,18 +19,20 @@ from agent_orchestrator.host import VoiceProfile
 
 pytest.importorskip("simple_harness_service.realtime")
 from simple_harness_service.realtime.adapters.qwen_omni import QWEN_CAPABILITY, QwenOmniAdapter
-from simple_harness_service.realtime.contracts import MintedRealtimeCredential
+from simple_harness_service.realtime.contracts import MintedRealtimeCredential, RealtimeError
 from simple_harness_service.realtime.relay_control import RelayControlCodec
 from simple_harness_service.realtime.session import ManagedRealtimeSession
 
 
 class Connection:
-    def __init__(self, normalize=False, mismatch=None):
+    def __init__(self, normalize=False, mismatch=None, *, provider_message_ids=False, corrupt=None):
         self.queue = asyncio.Queue()
         self.sent = []
         self.counter = 0
         self.normalize = normalize
         self.mismatch = mismatch
+        self.provider_message_ids = provider_message_ids
+        self.corrupt = corrupt
         self.responses = 0
 
     async def event(self, kind, **fields):
@@ -66,7 +68,16 @@ class Connection:
                 session["tools"].pop()
             await self.event("session.updated", session=session)
         elif value["type"] == "conversation.item.create":
-            item = {**value["item"], "status": "completed"}
+            item = {**deepcopy(value["item"]), "status": "completed"}
+            if item["type"] == "message":
+                if self.provider_message_ids:
+                    item["id"] = f"item_provider_{self.counter}"
+                if self.corrupt == "text":
+                    item["content"][0]["text"] = "A different message"
+                elif self.corrupt == "role":
+                    item["role"] = "system" if item["role"] == "user" else "user"
+                elif self.corrupt == "status":
+                    item["status"] = "in_progress"
             item.setdefault("id", f"output-{self.counter}")
             await self.event("conversation.item.created", item=item)
         elif value["type"] == "response.create":
@@ -260,11 +271,90 @@ def test_service_loopback_rejects_changed_tool_identity(tmp_path, mismatch):
     asyncio.run(run())
 
 
-def test_realtime_extra_uses_service_314_and_allows_current_harness_candidate():
+def test_realtime_extra_uses_service_315_and_allows_current_harness_candidate():
     project = tomllib.loads((Path(__file__).resolve().parents[3] / "pyproject.toml").read_text())
     assert project["project"]["optional-dependencies"]["realtime"] == [
-        "simple-harness-service-sdk[realtime]==0.3.14"
+        "simple-harness-service-sdk[realtime]==0.3.15"
     ]
     service_requirements = [Requirement(value) for value in requires("simple-harness-service-sdk")]
     harness = next(req for req in service_requirements if req.name == "simple-harness-sdk")
     assert harness.specifier.contains("0.13.0.dev20260925+opt.218", prereleases=True)
+
+
+def committed_history(session):
+    row = session._commit_input("An earlier user request", "earlier")
+    row["receipt"] = {"state": "committed", "text": "An earlier answer"}
+    with session._store.transaction():
+        session._store.put("turns", "earlier", row)
+
+
+def test_service_loopback_restores_history_with_provider_message_id(tmp_path):
+    async def run():
+        _, session = make_session(tmp_path)
+        committed_history(session)
+        connection = Connection(provider_message_ids=True)
+        binding = await session.attach_voice(
+            Audio(), VoiceProfile(client_factory=factory(connection), max_reconnects=0)
+        )
+        try:
+            assert binding.negotiation["status"] == "ready"
+            messages = [e for e in connection.sent if e["type"] == "conversation.item.create"]
+            assert len(messages) == 1 and messages[0]["item"]["type"] == "message"
+            assert not any(e["type"] == "response.create" for e in connection.sent)
+        finally:
+            await binding.detach()
+
+    asyncio.run(run())
+
+
+def test_service_loopback_announces_after_provider_message_id_ack(tmp_path):
+    async def run():
+        _, session = make_session(tmp_path)
+        connection = Connection(provider_message_ids=True)
+        binding = await session.attach_voice(
+            Audio(), VoiceProfile(client_factory=factory(connection), max_reconnects=0)
+        )
+        try:
+            await session.announce("The report is ready")
+            assert len([e for e in connection.sent if e["type"] == "response.create"]) == 1
+            assert connection.sent[-1]["type"] == "response.create"
+        finally:
+            await binding.detach()
+
+    asyncio.run(run())
+
+
+def test_service_loopback_original_message_id_still_confirms_history_and_announcement(tmp_path):
+    async def run():
+        _, session = make_session(tmp_path)
+        committed_history(session)
+        connection = Connection()
+        binding = await session.attach_voice(
+            Audio(), VoiceProfile(client_factory=factory(connection), max_reconnects=0)
+        )
+        try:
+            assert not any(e["type"] == "response.create" for e in connection.sent)
+            await session.announce("The report is ready")
+            assert len([e for e in connection.sent if e["type"] == "response.create"]) == 1
+        finally:
+            await binding.detach()
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("corrupt", ["text", "role", "status"])
+def test_service_loopback_mismatched_message_cannot_trigger_response(tmp_path, corrupt):
+    async def run():
+        _, session = make_session(tmp_path)
+        connection = Connection(provider_message_ids=True, corrupt=corrupt)
+        binding = await session.attach_voice(
+            Audio(), VoiceProfile(client_factory=factory(connection), max_reconnects=0)
+        )
+        try:
+            with pytest.raises(RealtimeError):
+                await session.announce("The report is ready")
+            assert not any(e["type"] == "response.create" for e in connection.sent)
+        finally:
+            await binding.detach()
+
+    asyncio.run(run())

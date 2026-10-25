@@ -315,19 +315,22 @@ async def run(root, principal, model, tools, render, last_seen=0):
 
 ## 2e. 语音绑定（`[realtime]` 可选扩展，opt.218 候选）
 
-最后更新：2026-10-25。本节是候选接口；Service SDK 0.3.14 的规范化工具确认、工具循环、
+最后更新：2026-10-25。本节是候选接口；Service SDK 0.3.15 的规范化工具确认、工具循环、
 路线 a 内存回环及 Python 3.13 干净轮子环境接缝通过，正常 extra 依赖解析和检查通过。
-真实 A13 已验证生成、传输和设备播放分别记账；其他场景的逐项结论见阶段 3a 记录，
-不能把工具协商就绪或依赖安装成功视为阶段整体完成或正式发版。
+上一轮 0.3.14 的 A13 已验证生成、传输和设备播放分别记账；本轮 0.3.15 按任务重跑
+A08～A11 和完整示例，均保留未完成主链的阻断，逐项结论见阶段 3a 记录。不能把旧版本
+结果、工具协商就绪或依赖安装成功视为本轮完整验收或正式发版。
 
-当前真线路仍有消息确认限制：`conversation.item.create` 的消息 item ID 在回显中被改写，
-Service SDK 0.3.14 不能关联确认，报 `context acknowledgement timed out`。已有历史的绑定、
-重连回灌与路线 a 播报尚受此阻断；不忽略确认，不以消息已发出代替实际播完。
+0.3.15 已修复提供方分配消息 item ID 的确认合同，原六项 ACK 反例全部通过；历史注入
+不自动回答，播报在真实确认后才续答，错误正文/角色/状态仍拒绝。真线路已有历史的绑定
+已能就绪，但本轮另观察到缺少 response_id 的 response.audio_transcript.done，被 SDK 以
+`protocol_error: response_id is required` 拒绝。完整场景及未到达步骤须看本轮记录；不忽略
+协议错误，不以绑定就绪或消息已发出代替实际恢复、播报和任务完成。
 
 `Session` 继续是唯一业务前门，Service SDK 负责媒体连接与工具结果回写循环，不反向依赖
 编排层。文本路径不要求安装 Service SDK。`[realtime]` 声明
-`simple-harness-service-sdk[realtime]==0.3.14`，激活 Service SDK 的网络传输依赖。
-0.3.14 要求 Harness `>=0.13.0.dev20260925`，允许本候选 opt.218；工具回显按 Service SDK
+`simple-harness-service-sdk[realtime]==0.3.15`，激活 Service SDK 的网络传输依赖。
+0.3.15 要求 Harness `>=0.13.0.dev20260925`，允许本候选 opt.218；工具回显按 Service SDK
 的工具名称、参数名和必填字段比较，允许提供方规范化描述和嵌套约束。调用时仍按原请求
 schema 校验参数，缺失工具、改名或参数集合变化仍拒绝就绪，工具说明与池身份不改。
 当前测试组合按下面顺序安装：先准备公共依赖，再以 `--no-index --find-links` 解析两个
@@ -336,15 +339,15 @@ schema 校验参数，缺失工具、改名或参数集合变化仍拒绝就绪�
 
 ```sh
 EVIDENCE=./.local-test-evidence/2026-10-25/unified-session/phase3/external
-SERVICE_WHEELS=./.local-test-evidence/2026-10-25/unified-session/phase3/live2/inputs
-uv venv --python 3.13 "$EVIDENCE/.venv-service314"
-uv pip install --python "$EVIDENCE/.venv-service314/bin/python" \
+SERVICE_WHEELS=./.local-test-evidence/2026-10-25/unified-session/phase3/live3/inputs
+uv venv --python 3.13 "$EVIDENCE/.venv-service315"
+uv pip install --python "$EVIDENCE/.venv-service315/bin/python" \
   'httpx>=0.28.1,<1' 'websockets>=15,<16' 'prompt-toolkit>=3.0.52,<4' \
   'packaging>=25,<27' 'pytest>=8.3,<9' 'deepseek-recipe==0.1.1'
-uv pip install --python "$EVIDENCE/.venv-service314/bin/python" --no-index \
-  --find-links "$SERVICE_WHEELS" --find-links "$EVIDENCE/wheels-service314" \
+uv pip install --python "$EVIDENCE/.venv-service315/bin/python" --no-index \
+  --find-links "$SERVICE_WHEELS" --find-links "$EVIDENCE/wheels-service315" \
   'simple-harness-sdk[realtime]==0.13.0.dev20260925+opt.218'
-uv pip check --python "$EVIDENCE/.venv-service314/bin/python"
+uv pip check --python "$EVIDENCE/.venv-service315/bin/python"
 ```
 
 音频示例另显式安装 `sounddevice>=0.5,<0.6`；它是示例的设备实现，不是桥的强制依赖。
