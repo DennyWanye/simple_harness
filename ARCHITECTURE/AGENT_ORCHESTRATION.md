@@ -1,3 +1,5 @@
+最后更新：2026-10-26 16:23:38 CST（阶段 3b 桌面文字 Session 实际运行验收）。桌面正式运行依赖为 opt.218；已有 OrchestrationHost 的公开 open_session 承载主对话，Session.send/events/respond/tasks/task/cancel_task/inbox/ack 为唯一业务接线，任务页 Host 接口保留，旧三份实现累计删除 1030 行。needs_response 投影保留规划选项 id；session_respond 允许公开 ruling/basis，精确版本与身份校验仍由 SDK 执行。安装包内 773 个 Python 文件与正式轮子一致。原 16 失败全绿，最终相关后端 293 通过；真实 DeepSeek 任务 COMPLETED 并回流 delegated/progress/result_ready。成功局无人工请求，不能外推真实代答覆盖；独立复核及原生点击待 Claude 安排，不改 SDK 源码。见 [阶段 3b 记录](../plans/2026-10-24-unified-session-realtime/阶段3b-记录.md) 末节，代码 `2949996b5`。
+
 最后更新：2026-10-26 CST（opt.218按用户放行口径发布并完成Host钉版）。
 第十一次独立复核PASS，SDK提交ad49983a9、Host钉版7e1457831；本地main，无push或新worktree。
 公开host.open_session、attach_voice、announce、本地打断及有界恢复随opt.218可用；

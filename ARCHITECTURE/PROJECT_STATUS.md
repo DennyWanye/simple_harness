@@ -1,3 +1,5 @@
+最后更新：2026-10-26 16:23:38 CST（阶段 3b 本轮收口验收完成，待独立复核/原生点击）。Host 正式 opt.218 已安装并核对，B1 缺少公开会话工厂及主对话发送阻断解除；原 16 个失败 ID 全部复验通过，未以环境线索豁免。代码 `2949996b5` 修复选项 id 白名单与按钮提交、ruling/basis 透传及真实冒烟驱动。模块完成度：主对话 SDK Session 接线、旧三份实现删除、相关自动化与真实后端文字/委派/结果事件验收完成；任务页仍用既有 Host 接口。后端 293 通过/0 失败，前端 206 通过/0 失败，typecheck 通过；真实任务 COMPLETED，delegated 1、task_progress 307、result_ready 1，PID/临时目录已清理。成功局无 needs_response，真实成功代答 0；不声称审批或 UI E2E 已验收。Claude 独立复核及原生鼠标验收仍待安排，原 FAIL 报告不倒改。本地 main、无新 worktree、未 push；详见 [阶段 3b 记录](../plans/2026-10-24-unified-session-realtime/阶段3b-记录.md) 末节。
+
 最后更新：2026-10-26 CST（opt.218按用户放行口径发布并完成Host钉版）。
 第十一次独立复核PASS，SDK提交ad49983a9、Host钉版7e1457831；本地main，无push或新worktree。
 公开host.open_session、attach_voice、announce、本地打断及有界恢复随opt.218可用；
@@ -4710,6 +4712,7 @@ SDK 源码修复已提交 `2b8428465cbd41032ba024a0b7199183161f5ecd`（candidate
 
 | 日期 | 里程碑 |
 |---|---|
+| 2026-10-26 | **阶段 3b 桌面 SDK Session 定向/真实进程验收完成** — opt.218 正式安装、原16失败逐项通过；后端293/前端206通过，typecheck通过。DeepSeek文字与委派PASS，COMPLETED并回流结果；成功局无人工请求（真实成功代答0）。代码 `2949996b5`，三份旧实现累计删除1030行；待Claude独立复核与原生点击，不标UI E2E通过，未push。 |
 | 2026-10-26 | **SDK opt.218与Host钉版完成（用户放行口径）** — 第十一次PASS；语音联合桥和host.open_session发布，626项自动化通过、正式轮子完整录音示例通过。A09～A11上游协议阻断保持未验收并已交接，不标阶段整体完成；本地main、未push。 |
 | 2026-09-24 | **ARP 计量口径纠正 + 思考/不思考双模式 🟡** — DeepSeek 只算线上请求（去掉先前输出储备），记账可以多算不可以少算；提供方显式思考开关、私有思考逐条回传、计数按模式精确；Host 独立思考原生池，新 Mission 默认开。SDK arp.4 `ffd62d3d` / Host `860a4445`。真实思考线路上的 400 规则待核实 |
 | 2026-08-30 | **全局多 Skill 安装、恢复与 TokenSeller 普通 Session 真人调用 PASS 🟡** — `plan-test-skill@3a094db…` 以 `simpleharness.pkg2` 保留跨 Skill 资源，失败 verification 释放并 supersede、完整 Manager receipt 恢复、attestation 后全局 activation 幂等收口；三项 binding generation 2 active。真实 `deepseek-v4-flash` Session `ec89714c…` 完成 `/plan-bs` 资源读取、Todo、延迟 Tool 激活并只提出澄清问题。完整安装 release gate 仍待执行。 |
