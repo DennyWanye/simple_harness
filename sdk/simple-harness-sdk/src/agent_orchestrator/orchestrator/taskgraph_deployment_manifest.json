@@ -1,6 +1,6 @@
 {
   "acceptance_evidence": null,
-  "deployment_id": "f981e0bbfeb0648d65bbea9eadf9a4c7ecf908d55cf2aadb486fb922b674ee8f",
+  "deployment_id": "f87cd3245ab507380d787190ceeefce1d156601ece86a753c2d400cb950fca07",
   "schema": "taskgraph-htn-wiring-derivation-v1",
   "source_files": {
     "agent_orchestrator/__init__.py": "eb50152258b356bc7866e55823fc45c7209cb6150efe205dd03c40c33beedbc2",
@@ -728,7 +728,7 @@
     "simple_harness/providers/chat_stream.py": "7723e0093029c763e94fcfd761fdfd3dbbdae07287e360705a1fd05db946a8ec",
     "simple_harness/providers/deepseek_strict.py": "cecea4b17d89272e19c7edaa52a96526c3cc40bc45a75c1f2031541f4e411d3b",
     "simple_harness/providers/errors.py": "fa06ff11f2d4f327847253936e55c61268d35ce6dd50b8a2b521d559e2185248",
-    "simple_harness/providers/openai_compatible.py": "09d1b09fa0d52e5b3c4c45a0bb39a0968789be0dc36b5cb759449d28e0b1cfd9",
+    "simple_harness/providers/openai_compatible.py": "55c52d96c7629c9ced40585550585237e84c07e20eecf0aa6a19fd94c7426617",
     "simple_harness/providers/reconciliation.py": "9323ac917ff626161a28ad9daad77ad3f23cce204e9608b6f4bf5ddaf63987e0",
     "simple_harness/providers/redaction.py": "c33298f1f1288c6454c19ccaaf80a735a2a1b19e48b3df5016cea183e1180206",
     "simple_harness/public_api.py": "6ec5e202148d45fd493ee7b65ac2b34c7872adc6ed1c7a9da72f1f130c35805d",

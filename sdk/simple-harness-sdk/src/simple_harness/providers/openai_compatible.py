@@ -55,6 +55,8 @@ from .errors import (
 from .redaction import SecretRedactor
 
 LEGACY_TOOL_SCHEMA_MODE = "legacy"
+_STREAM_IDLE_TIMEOUT_SECONDS = 180.0
+_STREAM_FIRST_BYTE_TIMEOUT_SECONDS = 600.0
 
 
 def _json_value(value: Any) -> JsonValue:
@@ -166,14 +168,18 @@ class _ProtocolErrorWithUsage(ProviderProtocolError):
 
 
 class _IdleTimeoutStream(httpx.AsyncByteStream):
-    def __init__(self, stream: httpx.AsyncByteStream, timeout: float | None) -> None:
+    def __init__(
+        self, stream: httpx.AsyncByteStream, timeout: float, *, first_timeout: float
+    ) -> None:
         self.stream, self.timeout = stream, timeout
+        self.first_timeout = first_timeout
 
     async def __aiter__(self):
         chunks = self.stream.__aiter__()
+        timeout = self.first_timeout
         while True:
             try:
-                async with asyncio.timeout(self.timeout):
+                async with asyncio.timeout(timeout):
                     data = await anext(chunks)
                     while not data:
                         data = await anext(chunks)
@@ -181,6 +187,7 @@ class _IdleTimeoutStream(httpx.AsyncByteStream):
                 return
             except TimeoutError:
                 raise httpx.ReadTimeout("chat stream byte idle timeout") from None
+            timeout = self.timeout
             yield data
 
     async def aclose(self) -> None:
@@ -333,7 +340,12 @@ class OpenAICompatibleProvider:
             raise ValueError("timeout must be positive")
         read_timeout = timeout.read if isinstance(timeout, httpx.Timeout) else float(timeout)
         self._timeout = (
-            httpx.Timeout(connect=10, read=min(read_timeout or 180, 180), write=30, pool=30)
+            httpx.Timeout(
+                connect=10,
+                read=(_STREAM_FIRST_BYTE_TIMEOUT_SECONDS if read_timeout is None else read_timeout),
+                write=30,
+                pool=30,
+            )
             if stream
             else timeout
         )
@@ -586,6 +598,8 @@ class OpenAICompatibleProvider:
 
     async def _stream_once(self, request: ProviderRequest) -> ProviderResponse:
         accumulator = ChatStream(on_content=self._content_sink(request))
+        timeout = cast(httpx.Timeout, self._timeout)
+        first_timeout = _STREAM_FIRST_BYTE_TIMEOUT_SECONDS if timeout.read is None else timeout.read
         async with self._client.stream(
             "POST",
             self._endpoint,
@@ -599,7 +613,7 @@ class OpenAICompatibleProvider:
                 "stream": True,
                 "stream_options": {"include_usage": True},
             },
-            timeout=self._timeout,
+            timeout=timeout,
         ) as response:
             if response.status_code >= 400:
                 await response.aread()
@@ -612,9 +626,14 @@ class OpenAICompatibleProvider:
                     raise ProviderProtocolError(
                         public_message="invalid chat stream: not text/event-stream"
                     )
-                # Bound raw byte gaps, including the first byte and partial SSE lines.
+                # Preserve the caller's first-response budget at both HTTP and byte layers.
+                # Once any raw byte arrives, enforce the shorter byte-idle budget.
                 # Keep httpx's incremental text/line decoding and response close semantics.
-                response.stream = _IdleTimeoutStream(response.stream, self._timeout.read)
+                response.stream = _IdleTimeoutStream(
+                    cast(httpx.AsyncByteStream, response.stream),
+                    min(first_timeout, _STREAM_IDLE_TIMEOUT_SECONDS),
+                    first_timeout=first_timeout,
+                )
                 async for line in response.aiter_lines():
                     accumulator.line(line)
                     if accumulator.done:

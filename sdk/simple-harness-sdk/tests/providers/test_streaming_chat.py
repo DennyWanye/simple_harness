@@ -261,9 +261,7 @@ def test_stream_byte_idle_timeout_closes_blocked_transport(prefix):
             # Override the production idle bound without relying on MockTransport to enforce it.
             provider._timeout = httpx.Timeout(connect=10, read=0.03, write=30, pool=30)
             with pytest.raises(ProviderTimeoutError) as error:
-                await asyncio.wait_for(
-                    provider.invoke(REQUEST, cancel=CancelToken()), timeout=0.3
-                )
+                await asyncio.wait_for(provider.invoke(REQUEST, cancel=CancelToken()), timeout=0.3)
             assert error.value.code == "provider_timeout"
             assert stream.closed
             assert requests[0].extensions["timeout"] == {
@@ -289,7 +287,7 @@ def test_stream_idle_timeout_uses_separate_http_phases():
             )
             assert provider._timeout.as_dict() == {
                 "connect": 10,
-                "read": 180,
+                "read": 900,
                 "write": 30,
                 "pool": 30,
             }
@@ -325,5 +323,192 @@ def test_raw_byte_progress_without_a_complete_line_resets_idle_timeout():
             provider._timeout = httpx.Timeout(connect=10, read=0.03, write=30, pool=30)
             response = await provider.invoke(REQUEST, cancel=CancelToken())
             assert response.message.content == "OK"
+
+    asyncio.run(check())
+
+
+@pytest.mark.parametrize("stage", ["headers", "body"])
+def test_thinking_first_response_within_configured_wait_survives(stage):
+    async def check():
+        class SlowThinking(httpx.AsyncByteStream):
+            closed = False
+
+            async def __aiter__(self):
+                if stage == "body":
+                    await asyncio.sleep(240 / 1000)
+                yield (
+                    event(chunk({"content": "OK"}, finish="stop", usage=USAGE)) + "data: [DONE]\n\n"
+                ).encode()
+
+            async def aclose(self):
+                self.closed = True
+
+        stream = SlowThinking()
+        requests = []
+
+        async def respond(request):
+            requests.append(request)
+            if stage == "headers":
+                # MockTransport does not enforce HTTP read limits; model that boundary explicitly.
+                try:
+                    await asyncio.wait_for(
+                        asyncio.sleep(240 / 1000), timeout=request.extensions["timeout"]["read"]
+                    )
+                except TimeoutError:
+                    raise httpx.ReadTimeout("response headers timed out") from None
+            return httpx.Response(200, headers={"content-type": "text/event-stream"}, stream=stream)
+
+        async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as client:
+            provider = OpenAICompatibleProvider(
+                client,
+                "https://fixture.invalid/v1",
+                "fixture",
+                Secret("fixture"),
+                timeout=900,
+                stream=True,
+            )
+            # Scale the actual constructed policy, matching the independent review counterexample.
+            provider._timeout = httpx.Timeout(
+                connect=10, read=provider._timeout.read / 1000, write=30, pool=30
+            )
+            result = await asyncio.wait_for(provider.invoke(REQUEST, cancel=CancelToken()), 0.9)
+            assert result.message.content == "OK"
+            assert requests[0].extensions["timeout"]["read"] == 0.9
+            assert stream.closed
+
+    asyncio.run(check())
+
+
+def test_first_byte_budget_switches_to_short_idle_budget_after_raw_progress(monkeypatch):
+    import simple_harness.providers.openai_compatible as module
+    from simple_harness.providers import ProviderTimeoutError
+
+    # Scale the production idle policy independently of the caller's first-response budget.
+    monkeypatch.setattr(module, "_STREAM_IDLE_TIMEOUT_SECONDS", 0.03, raising=False)
+
+    async def check():
+        class StalledAfterFirstByte(httpx.AsyncByteStream):
+            closed = False
+
+            async def __aiter__(self):
+                await asyncio.sleep(0.06)
+                yield b": partial"
+                await asyncio.Event().wait()
+
+            async def aclose(self):
+                self.closed = True
+
+        stream = StalledAfterFirstByte()
+        async with httpx.AsyncClient(
+            transport=httpx.MockTransport(
+                lambda _: httpx.Response(
+                    200, headers={"content-type": "text/event-stream"}, stream=stream
+                )
+            )
+        ) as client:
+            provider = OpenAICompatibleProvider(
+                client,
+                "https://fixture.invalid/v1",
+                "fixture",
+                Secret("fixture"),
+                timeout=0.5,
+                stream=True,
+            )
+            with pytest.raises(ProviderTimeoutError):
+                await asyncio.wait_for(provider.invoke(REQUEST, cancel=CancelToken()), 0.3)
+            assert stream.closed
+
+    asyncio.run(check())
+
+
+@pytest.mark.parametrize("empty_prefix", [False, True])
+def test_empty_chunks_do_not_shorten_the_first_byte_budget(monkeypatch, empty_prefix):
+    import simple_harness.providers.openai_compatible as module
+
+    monkeypatch.setattr(module, "_STREAM_IDLE_TIMEOUT_SECONDS", 0.03)
+
+    async def check():
+        class Thinking(httpx.AsyncByteStream):
+            async def __aiter__(self):
+                if empty_prefix:
+                    yield b""
+                await asyncio.sleep(0.06)
+                yield (
+                    event(chunk({"content": "OK"}, finish="stop", usage=USAGE)) + "data: [DONE]\n\n"
+                ).encode()
+
+        async with httpx.AsyncClient(
+            transport=httpx.MockTransport(
+                lambda _: httpx.Response(
+                    200, headers={"content-type": "text/event-stream"}, stream=Thinking()
+                )
+            )
+        ) as client:
+            provider = OpenAICompatibleProvider(
+                client,
+                "https://fixture.invalid/v1",
+                "fixture",
+                Secret("fixture"),
+                timeout=0.5,
+                stream=True,
+            )
+            response = await asyncio.wait_for(provider.invoke(REQUEST, cancel=CancelToken()), 0.3)
+            assert response.message.content == "OK"
+
+    asyncio.run(check())
+
+
+def test_first_byte_wait_remains_bounded_without_progress(monkeypatch):
+    import simple_harness.providers.openai_compatible as module
+    from simple_harness.providers import ProviderTimeoutError
+
+    monkeypatch.setattr(module, "_STREAM_IDLE_TIMEOUT_SECONDS", 0.02)
+
+    async def check():
+        class NoBytes(httpx.AsyncByteStream):
+            async def __aiter__(self):
+                await asyncio.Event().wait()
+                yield b""
+
+        async with httpx.AsyncClient(
+            transport=httpx.MockTransport(
+                lambda _: httpx.Response(
+                    200, headers={"content-type": "text/event-stream"}, stream=NoBytes()
+                )
+            )
+        ) as client:
+            provider = OpenAICompatibleProvider(
+                client,
+                "https://fixture.invalid/v1",
+                "fixture",
+                Secret("fixture"),
+                timeout=0.1,
+                stream=True,
+            )
+            began = asyncio.get_running_loop().time()
+            with pytest.raises(ProviderTimeoutError):
+                await asyncio.wait_for(provider.invoke(REQUEST, cancel=CancelToken()), 0.5)
+            assert asyncio.get_running_loop().time() - began >= 0.08
+
+    asyncio.run(check())
+
+
+def test_unbounded_http_read_gets_a_finite_first_byte_budget():
+    async def check():
+        async with httpx.AsyncClient() as client:
+            provider = OpenAICompatibleProvider(
+                client,
+                "https://fixture.invalid/v1",
+                "fixture",
+                Secret("fixture"),
+                timeout=httpx.Timeout(None),
+                stream=True,
+            )
+            assert provider._timeout.as_dict() == {
+                "connect": 10,
+                "read": 600,
+                "write": 30,
+                "pool": 30,
+            }
 
     asyncio.run(check())
