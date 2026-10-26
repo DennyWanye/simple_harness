@@ -1,6 +1,6 @@
 {
   "acceptance_evidence": null,
-  "deployment_id": "e2ae4ce7fd7967e6aec7feb9e8d122b1eef5d5463c291870ed0665e780b17df6",
+  "deployment_id": "3872a795b211327ee998454724eb876338a1729f61fcc87decf5d4e72c1a94bf",
   "schema": "taskgraph-htn-wiring-derivation-v1",
   "source_files": {
     "agent_orchestrator/__init__.py": "eb50152258b356bc7866e55823fc45c7209cb6150efe205dd03c40c33beedbc2",
@@ -235,7 +235,7 @@
     "agent_orchestrator/orchestrator/carried_review.py": "e749d96f4c59f1167a41ab8942bf35b9451ab9f7231a3da2863bbf4ae6d46b39",
     "agent_orchestrator/orchestrator/commit_service.py": "2d70d4c7fea4de4a989d9642aaf0f0fd13546975e90e7759cfbd8079bf40d1a4",
     "agent_orchestrator/orchestrator/commit_service_domains/__init__.py": "907df68eb1455f7d0fc049acd5d0099e1bd86a25a6350e013475450b47254f27",
-    "agent_orchestrator/orchestrator/commit_service_domains/accounting.py": "20abb8cdebc0d76037b3c787741f416f688c1e30b9629e7a2b4b0720303e0624",
+    "agent_orchestrator/orchestrator/commit_service_domains/accounting.py": "adb04d585b9d4b90f7d28561d8c283bff2c15bd2a09871aed5040979e505ddf1",
     "agent_orchestrator/orchestrator/commit_service_domains/attempt_lifecycle.py": "9045abb62348739e1231bd1b35451587c1efe7745f398cecc8bb3ed71987b642",
     "agent_orchestrator/orchestrator/commit_service_domains/core.py": "d049719645e7a44275ad6e6570bc15df02fff3e4984cdcd2dea4ced3f5206df3",
     "agent_orchestrator/orchestrator/commit_service_domains/grading.py": "a69424bc24f7abcf3d1c27a167b92474ca2e759dc1a1391984f6292bec0b60db",
@@ -283,7 +283,7 @@
     "agent_orchestrator/orchestrator/orchestrator_domains/core.py": "45ddc14561dd6e87fde9f4a488ff23f6a1a9543323f56973256ee29141d7082d",
     "agent_orchestrator/orchestrator/orchestrator_domains/cycle.py": "7696db1c65fc7dad13c84e154f2aa7c78cc043602719d81899a041f16bacc062",
     "agent_orchestrator/orchestrator/orchestrator_domains/deployment.py": "fe02a4c9d82d572c106119fbc4c899e26ef3186e33f61937764806fe153f01be",
-    "agent_orchestrator/orchestrator/orchestrator_domains/idle_and_stall.py": "f5bc03c3c59d87c772cb052a52501140832133b67f740290296fff5e9039608e",
+    "agent_orchestrator/orchestrator/orchestrator_domains/idle_and_stall.py": "94827fd5b6df89e7554ae594f0d2ee642d9e1b0e64f902ffa6a6c93cb3c2c4d9",
     "agent_orchestrator/orchestrator/orchestrator_domains/mission_lifecycle.py": "6aee9417cbe92d20f3f66b2ea90686e59d01d4550ff8a155af6b158c9e0ca208",
     "agent_orchestrator/orchestrator/orchestrator_domains/planning_decision_branches.py": "baf793055406055d97a7da8ffdfc7ff91b9cd30337f5af0211e97f6e2b8eb4cf",
     "agent_orchestrator/orchestrator/orchestrator_domains/planning_decisions.py": "4e94e766cc2bdcfec9fc5df1ab5772e4df1570be98bbbad8f3d9ac724c1c87d9",

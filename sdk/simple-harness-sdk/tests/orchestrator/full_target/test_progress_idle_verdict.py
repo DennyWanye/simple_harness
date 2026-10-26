@@ -110,6 +110,10 @@ def _loop(
         {"default": RuntimeProfile("default", SimpleNamespace(invoke=lambda: None), "fixture")},
         RoutingRules(),
     )
+    fake.commit.profile_health = lambda: {
+        profile: {"unavailable_until": until, "last_failure_at": 100.0}
+        for profile, until in fake.commit.unavailable_until().items()
+    }
     fake._router_for = lambda mission_id: router
     fake._template = lambda role, mission_id: role
     fake._hierarchical_worker_template = lambda role, mission_id: role

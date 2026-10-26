@@ -39,6 +39,7 @@ from ...storage.store import StoreError
 from .. import planning_repair_requests as repair_requests
 from .._read_set import SemanticReadSetChecker
 from ..action_commits import IN_FLIGHT_ACTION_STATES, OPEN_ACTION_STATES
+from ..commit_service_domains.accounting import cooldown_started_at
 from ..completion_status import read_occurrence_completion
 from ..hierarchical_dispatch import MISSION_STALLED, append_hierarchical_event
 from ..operation_outcomes import outcome_exhaustion_is_final
@@ -406,22 +407,15 @@ class IdleStallMixin(OrchestratorCore):
         return False
 
     def _profile_unavailable_since(self, mission_id: str, profile_id: str) -> float:
-        """Start of the current continuous cooldown, from durable pool events."""
-        since = self.store.now
-        previous_until = float("-inf")
-        for event in self.store.iter_events(mission_id):
-            if (
-                event.type != "RuntimeProfileUnavailable"
-                or event.payload.get("profile_id") != profile_id
-            ):
-                continue
-            until = event.payload.get("until")
-            if until is None:
-                continue
-            if event.created_at > previous_until:
-                since = event.created_at
-            previous_until = float(until)
-        return since
+        """Read the shared segment even when this Mission has no pool event."""
+        health = self.commit.profile_health().get(profile_id, {})
+        events = (
+            (event.created_at, event.payload)
+            for event in self.store.iter_events(mission_id)
+            if event.type == "RuntimeProfileUnavailable"
+            and event.payload.get("profile_id") == profile_id
+        )
+        return cooldown_started_at(health, events, now=self.store.now)
 
     def _cooling_profile_waits(
         self, mission: Mission, rows: Sequence[Task], planned: set[str]

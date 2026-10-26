@@ -6,7 +6,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+import json
+from collections.abc import Iterable, Mapping, Sequence
 from typing import Any
 
 from simple_harness.contracts import canonical_json
@@ -37,6 +38,28 @@ EXTERNAL_TOOL_EVENTS = {
 }
 #: 成功结果写进事件的上限（字节）；更大的结果只在执行账本里
 EXTERNAL_RESULT_LIMIT = 32 * 1024
+
+
+def cooldown_started_at(
+    health: Mapping[str, Any],
+    events: Iterable[tuple[float, Mapping[str, Any]]],
+    *,
+    now: float,
+) -> float:
+    """Read the durable segment origin, with recovery-aware legacy event fallback."""
+    if health.get("unavailable_since") is not None:
+        return float(health["unavailable_since"])
+    since = float(health.get("last_failure_at", now))
+    recovered_at = float(health.get("recovered_at", float("-inf")))
+    previous_until = float("-inf")
+    for created_at, payload in events:
+        until = payload.get("until")
+        if until is None or created_at < recovered_at:
+            continue
+        if created_at > previous_until:
+            since = float(payload.get("unavailable_since", created_at))
+        previous_until = float(until)
+    return since
 
 
 class AccountingCommitsMixin(CommitServiceCore):
@@ -288,9 +311,25 @@ class AccountingCommitsMixin(CommitServiceCore):
                 },
             )
 
+    def _profile_cooldown_events(self, profile_id: str) -> Iterable[tuple[float, Mapping[str, Any]]]:
+        rows = self._store.connection.execute(
+            "SELECT created_at,payload_json FROM events "
+            "WHERE type='RuntimeProfileUnavailable' "
+            "AND json_extract(payload_json,'$.profile_id')=? ORDER BY seq",
+            (profile_id,),
+        ).fetchall()
+        return ((float(row[0]), json.loads(row[1])) for row in rows)
+
     def profile_health(self) -> dict[str, dict[str, Any]]:
         raw = self._store.get_scheduler_state(self.PROFILE_HEALTH_KEY) or {}
-        return {str(k): dict(v) for k, v in dict(raw.get("profiles") or {}).items()}
+        profiles = {str(k): dict(v) for k, v in dict(raw.get("profiles") or {}).items()}
+        for profile_id, entry in profiles.items():
+            if entry.get("unavailable_until") is not None and entry.get("unavailable_since") is None:
+                # Derive legacy segments from all Missions, without mutating health on a read.
+                entry["unavailable_since"] = cooldown_started_at(
+                    entry, self._profile_cooldown_events(profile_id), now=self._store.now
+                )
+        return profiles
 
     def unavailable_until(self) -> dict[str, float]:
         """profile → cooldown end, for the router (D6-5')."""
@@ -318,13 +357,23 @@ class AccountingCommitsMixin(CommitServiceCore):
             raw = self._store.get_scheduler_state(self.PROFILE_HEALTH_KEY) or {"profiles": {}}
             profiles = dict(raw.get("profiles") or {})
             entry = dict(profiles.get(profile_id) or {"failures": 0, "unavailable_until": None})
+            now = self._store.now
+            previous_until = entry.get("unavailable_until")
+            since = now
+            if previous_until is not None and float(previous_until) > now:
+                legacy_events: Iterable[tuple[float, Mapping[str, Any]]] = ()
+                if entry.get("unavailable_since") is None:
+                    legacy_events = self._profile_cooldown_events(profile_id)
+                since = cooldown_started_at(entry, legacy_events, now=now)
+                entry["unavailable_since"] = since
             entry["failures"] = int(entry.get("failures", 0)) + 1
             entry["last_error"] = jsonable(error or {})
-            entry["last_failure_at"] = self._store.now
+            entry["last_failure_at"] = now
             until: float | None = None
             if entry["failures"] >= max(1, threshold):
-                until = self._store.now + float(cooldown_seconds)
+                until = now + float(cooldown_seconds)
                 entry["unavailable_until"] = until
+                entry["unavailable_since"] = since
                 entry["trips"] = int(entry.get("trips", 0)) + 1
                 entry["failures"] = 0
             profiles[profile_id] = entry
@@ -339,6 +388,7 @@ class AccountingCommitsMixin(CommitServiceCore):
                             "profile_id": profile_id,
                             "reason": "provider_unavailable",
                             "until": until,
+                            "unavailable_since": since,
                             "trips": entry["trips"],
                             "last_error": entry["last_error"],
                         },
@@ -358,6 +408,7 @@ class AccountingCommitsMixin(CommitServiceCore):
                 return
             entry["failures"] = 0
             entry["unavailable_until"] = None
+            entry["unavailable_since"] = None
             entry["recovered_at"] = self._store.now
             profiles[profile_id] = entry
             self._store.put_scheduler_state(self.PROFILE_HEALTH_KEY, {"profiles": profiles})

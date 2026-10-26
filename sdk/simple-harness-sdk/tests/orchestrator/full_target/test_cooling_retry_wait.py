@@ -4,6 +4,7 @@ import asyncio
 from dataclasses import replace
 
 import pytest
+from test_stall_asks_planner_first import stalled
 
 from agent_orchestrator.contracts import MissionStatus
 from agent_orchestrator.testing.product_world import product_world
@@ -69,5 +70,41 @@ def test_failed_attempt_waits_for_cooldown_then_retries_or_times_out(tmp_path, m
                 events = world.store.list_events(mission_id)
                 assert any(e.type == "PlanningRetryAuthorized" for e in events)
                 assert len([e for e in events if e.type == "AttemptCreated"]) >= 2
+
+    asyncio.run(case())
+
+
+@pytest.mark.parametrize("inherited", [False, True])
+def test_success_between_cooldowns_starts_a_new_wait(tmp_path, monkeypatch, inherited):
+    async def case():
+        async with stalled(tmp_path, key="recovered-cooldown") as world:
+            loop = world.loop
+            now = loop.store.now
+            monkeypatch.setattr(loop.store, "_clock", lambda: now)
+            profile = loop._router_for(world.mission_id).rules.default
+            assert loop._config.profile_wait_seconds == 300.0
+            for index in range(9):
+                loop.commit.record_profile_failure(
+                    profile,
+                    error=None,
+                    threshold=1,
+                    cooldown_seconds=60,
+                    mission_ids=() if inherited else (world.mission_id,),
+                )
+                if index < 8:
+                    now += 20.0
+                    loop.commit.record_profile_success(profile)
+                    assert profile not in loop.commit.unavailable_until()
+                    now += 20.0
+            mission = world.mission()
+            planned = {
+                str(spec.task_id)
+                for spec in loop._new_mode(mission).network(mission.id).occurrences
+            }
+            waits = loop._cooling_profile_waits(mission, loop.store.list_tasks(mission.id), planned)
+            assert waits
+            await loop._confirm_and_stop_stalled()
+            assert world.mission().status is MissionStatus.ACTIVE, world.mission().final_report
+            assert waits[0][2] == now
 
     asyncio.run(case())
