@@ -13,6 +13,16 @@ export interface PrimaryChatViewProps {
   onOpenSettings?: () => void;
   active?: boolean;
 }
+function planningChoices(request: Json): { id: string; label: string }[] {
+  if (!Array.isArray(request.options)) return [];
+  return request.options
+    .map((option) => {
+      if (typeof option === "string") return { id: option, label: option };
+      const row = record(option);
+      return { id: text(row.id), label: text(row.label) || text(row.id) };
+    })
+    .filter((option) => option.id);
+}
 export function PrimaryChatView({ channel, onOpenSettings, active = true }: PrimaryChatViewProps) {
   const client = useRef<SessionClient | null>(null);
   const cursor = useRef(0);
@@ -214,7 +224,7 @@ export function PrimaryChatView({ channel, onOpenSettings, active = true }: Prim
       setError(err instanceof Error ? err.message : "操作失败");
     }
   };
-  const respond = (request: Json, decision: string) =>
+  const respond = (request: Json, decision: string, answer?: string) =>
     void perform(
       "respond",
       {
@@ -222,7 +232,7 @@ export function PrimaryChatView({ channel, onOpenSettings, active = true }: Prim
         version: request.version,
         decision,
         ...(request.request_kind === "planning"
-          ? { answer: answers[text(request.request_id)] ?? "" }
+          ? { answer: answer ?? answers[text(request.request_id)] ?? "" }
           : decision === "reject"
             ? { reason: answers[text(request.request_id)] ?? "" }
             : {}),
@@ -322,18 +332,28 @@ export function PrimaryChatView({ channel, onOpenSettings, active = true }: Prim
                   text(request.reason) ||
                   "后台任务需要你确认"}
               </p>
-              <input
-                aria-label="回答或拒绝理由"
-                value={answers[text(request.request_id)] ?? ""}
-                onChange={(event) =>
-                  setAnswers((previous) => ({
-                    ...previous,
-                    [text(request.request_id)]: event.target.value,
-                  }))
-                }
-              />
+              {(request.request_kind !== "planning" || planningChoices(request).length === 0) && (
+                <input
+                  aria-label="回答或拒绝理由"
+                  value={answers[text(request.request_id)] ?? ""}
+                  onChange={(event) =>
+                    setAnswers((previous) => ({
+                      ...previous,
+                      [text(request.request_id)]: event.target.value,
+                    }))
+                  }
+                />
+              )}
               {request.request_kind === "planning" ? (
-                <button onClick={() => respond(request, "answer")}>提交回答</button>
+                planningChoices(request).length ? (
+                  planningChoices(request).map((option) => (
+                    <button key={option.id} onClick={() => respond(request, "answer", option.id)}>
+                      {option.label}
+                    </button>
+                  ))
+                ) : (
+                  <button onClick={() => respond(request, "answer")}>提交回答</button>
+                )
               ) : (
                 <>
                   <button onClick={() => respond(request, "approve")}>批准</button>

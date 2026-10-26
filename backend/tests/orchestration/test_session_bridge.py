@@ -159,3 +159,25 @@ async def test_budget_references_do_not_expose_the_private_ledger_path(bridge):
     result = await transport.handle("session_budget", {})
     assert "chat_ledger" not in result
     assert result["global"] == {"spent_tokens": 4}
+
+
+@pytest.mark.asyncio
+async def test_arbitration_fields_reach_the_public_session_without_losing_identity(bridge):
+    transport, _, session = bridge
+    await transport.handle("session_respond", {
+        "request_id": "human-arbitration", "decision": "arbitrate",
+        "version": "1152921504606846975", "ruling": "accept_worker",
+        "basis": "Explicit auto acceptance policy", "nonce": "auto-nonce",
+    })
+    session.respond.assert_called_once_with(
+        "human-arbitration", "arbitrate", 1152921504606846975,
+        ruling="accept_worker", basis="Explicit auto acceptance policy", nonce="auto-nonce",
+    )
+
+
+def test_planning_choice_ids_survive_the_event_whitelist():
+    event = project_session_event({"kind": "needs_response", "payload": {
+        "request_id": "adjudicate-root:r", "version": 1, "request_kind": "planning",
+        "options": [{"id": "pass", "label": "通过", "internal": "private"}],
+    }})
+    assert event["payload"]["options"] == [{"id": "pass", "label": "通过"}]

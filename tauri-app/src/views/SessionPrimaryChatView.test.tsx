@@ -85,6 +85,43 @@ function fixture(
   };
 }
 describe("desktop SDK Session", () => {
+  it("displays planning choices and submits the stable option id", async () => {
+    const h = fixture(
+      [],
+      [
+        {
+          mission_id: "m",
+          status: "ACTIVE",
+          detail: {
+            planning_questions: [{ decision_id: "choice", version: 1, state: "PENDING" }],
+          },
+        },
+      ],
+    );
+    render(<PrimaryChatView channel={h.channel} />);
+    await screen.findByText("stored reply");
+    h.event(
+      "needs_response",
+      {
+        request_id: "choice",
+        version: "1",
+        request_kind: "planning",
+        question: "选择结论",
+        options: [
+          { id: "pass", label: "通过" },
+          { id: "rework", label: "打回" },
+        ],
+      },
+      1,
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "通过" }));
+    expect(h.sent.find((message) => message.type === "session_respond")?.payload).toEqual({
+      request_id: "choice",
+      version: "1",
+      decision: "answer",
+      answer: "pass",
+    });
+  });
   it("a new generation replaces the prior text preview", async () => {
     const h = fixture();
     render(<PrimaryChatView channel={h.channel} />);

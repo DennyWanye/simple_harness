@@ -42,7 +42,7 @@ def _display(value: Any) -> Any:
     if isinstance(value, list):
         return [_display(item) for item in value[:32]]
     if isinstance(value, Mapping):
-        return {key: _display(value[key]) for key in ("text", "label", "value", "description")
+        return {key: _display(value[key]) for key in ("id", "text", "label", "value", "description")
                 if key in value}
     return value if value is None or type(value) in (bool, int, float) else None
 
@@ -103,7 +103,7 @@ class DesktopSessionBridge:
         operation = message.removeprefix("session_")
         fields = {
             "send": {"text", "idempotency_key"}, "respond": {"request_id", "decision", "version",
-                "answer", "nonce", "attach_as_source", "reason", "note"},
+                "answer", "nonce", "attach_as_source", "reason", "note", "ruling", "basis"},
             "task": {"task_id"}, "cancel_task": {"task_id"}, "ack": {"event_id"},
             "history": {"limit"}, "interrupt": set(), "tasks": set(), "inbox": set(), "budget": set(),
         }
