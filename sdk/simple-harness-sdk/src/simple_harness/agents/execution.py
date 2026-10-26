@@ -45,6 +45,7 @@ from simple_harness.execution.dispatch import (
 from simple_harness.execution.sqlite.base_agent import turns as turn_helpers
 from simple_harness.execution.uow import RunState, UnitOfWorkConflict
 from simple_harness.providers.base import ProviderContinuationCapability
+from simple_harness.providers.errors import ProviderTimeoutError
 from simple_harness.runtime.context import ContextSnapshot
 from simple_harness.runtime.drivers.react import (
     _messages,
@@ -385,6 +386,11 @@ class AgentExecutionDriver:
                         cancel,
                         token,
                         output_cap,
+                        remaining_seconds=(
+                            None
+                            if deadline is None or turn_created_at is None
+                            else max(0, deadline - (self._clock() - float(turn_created_at)))
+                        ),
                     )
                 except _TurnCancelled:
                     self._settle_failed_turn(invocation, run_id)
@@ -418,6 +424,7 @@ class AgentExecutionDriver:
                     UnknownToolError,
                     MalformedToolArgumentsError,
                     *_DEFINITE_PROVIDER_FAILURES,
+                    ProviderTimeoutError,
                 ) as error:
                     # Model protocol violations and definite Provider refusals end this turn as
                     # FAILED; the Agent stays alive (UNKNOWN outcomes keep the legacy wait path).
@@ -931,9 +938,11 @@ class AgentExecutionDriver:
         cancel,
         token: CancellationToken,
         max_output_tokens: int | None = None,
+        *,
+        remaining_seconds: float | None = None,
     ):
-        try:
-            return await loop.run(
+        running = asyncio.create_task(
+            loop.run(
                 ReActRunInput(
                     run_id,
                     RequestId(invocation.run.request_id),
@@ -954,6 +963,35 @@ class AgentExecutionDriver:
                 initial_messages=initial_messages,
                 tool_cancel=token,
             )
+        )
+        stopped = asyncio.create_task(token.wait())
+        try:
+            done, _ = await asyncio.wait(
+                {running, stopped},
+                timeout=remaining_seconds,
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+            if running not in done:
+                # Interrupt blocked provider reads through their existing cancellation path.
+                running.cancel()
+                try:
+                    return await running
+                except (ProviderInvocationUnknownError, asyncio.CancelledError):
+                    unknown = _unknown_effects(invocation.services.react_checkpoint, run_id)
+                    if unknown:
+                        raise ToolEffectUnknownError(unknown[0]) from None
+                    if getattr(cancel, "is_cancelled", False):
+                        raise asyncio.CancelledError() from None
+                    if token.cancelled:
+                        raise _TurnCancelled() from None
+                    raise TerminationBudgetExceeded(TerminationReason.WALL_CLOCK) from None
+            try:
+                return await running
+            except ProviderInvocationUnknownError as error:
+                # End local execution while preserving the handed-off UNKNOWN charge.
+                if isinstance(error.__cause__, ProviderTimeoutError):
+                    raise error.__cause__
+                raise
         except asyncio.CancelledError:
             # Only a cooperative per-turn cancel is a *turn* failure; a real task /
             # kernel cancel keeps propagating untouched.
@@ -967,6 +1005,10 @@ class AgentExecutionDriver:
                     raise ToolEffectUnknownError(unknown[0]) from None
                 raise _TurnCancelled() from None
             raise
+        finally:
+            running.cancel()
+            stopped.cancel()
+            await asyncio.gather(running, stopped, return_exceptions=True)
 
     def _cancelled_turn(  # type: ignore[no-untyped-def]
         self,

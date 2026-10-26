@@ -22,16 +22,21 @@ HERE = Path(__file__).resolve().parent
 if str(HERE) not in sys.path:
     sys.path.insert(0, str(HERE))
 
+from test_convergence_wake_terminal_mission import waiting_convergence  # noqa: E402
+
 from agent_orchestrator.orchestrator import taskgraph_notifications  # noqa: E402
 from agent_orchestrator.planning.htn.grounding import derive_id  # noqa: E402
-from test_convergence_wake_terminal_mission import waiting_convergence  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
 def _quick(monkeypatch):
+    import agent_orchestrator.orchestrator.accounting_recovery as accounting
     import agent_orchestrator.orchestrator.event_handler as event_handler
 
     monkeypatch.setattr(event_handler, "WAIT_BACKOFF_MAX", 0.05)
+    # Cancellation now interrupts the physical call, so no late usage can arrive.
+    # Accelerate the existing 300-second upper-bound accounting observation period.
+    monkeypatch.setattr(accounting, "ENDED_MISSION_RECHECK_SECONDS", 0.05)
 
 
 def _advanced(store, mission_id):
@@ -55,7 +60,7 @@ def test_each_real_state_change_writes_one_advanced_event(tmp_path):
             store = world.store
             parked = [event.payload["to_state"] for event in _advanced(store, mission_id)]
             assert parked == ["WAITING"], parked  # FENCED → WAITING, once
-            waiting.provider.late.set()  # the slow call finally returns; its Attempt is already cancelled
+            waiting.provider.late.set()  # cancellation has already withdrawn this Attempt
             stop = asyncio.Event()
 
             async def drive() -> None:
@@ -81,6 +86,17 @@ def test_each_real_state_change_writes_one_advanced_event(tmp_path):
                 with contextlib.suppress(asyncio.CancelledError):
                     await runner
             assert str(store.get_mission(mission_id).status.value) == "COMPLETED"
+            from agent_orchestrator.orchestrator.accounting_recovery import UPPER_BOUND_EVENT
+
+            upper = [e for e in store.list_events(mission_id) if e.type == UPPER_BOUND_EVENT]
+            assert upper and all(e.payload["counted_tokens"] > 0 for e in upper)
+            assert (
+                store.connection.execute(
+                    "SELECT count(*) FROM provider_token_grants WHERE mission_id=? AND state='UNKNOWN'",
+                    (mission_id,),
+                ).fetchone()[0]
+                == 1
+            )
             job = store.connection.execute(
                 "SELECT state,row_version FROM taskgraph_convergence_jobs WHERE job_id=?", (job_id,)
             ).fetchone()

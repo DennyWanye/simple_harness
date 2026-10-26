@@ -215,8 +215,7 @@ class AttemptCollectionMixin(OrchestratorCore):
                 if key not in self._attempts.released:
                     self._attempts.released.add(key)
                     await self._cancel_turn(intent)
-                # 阶段 B 裁决第 6 类: a service turn of a stopped Mission that never comes
-                # back (its model call ignores the cancel) is closed after the service
+                # A service turn that never comes back is closed after the service
                 # bound — nothing more can be decided for it; a late usage record is
                 # still imported by the accounting scan and an unknown charge keeps its
                 # reservation.  Without this the loop waited on it for ever.
@@ -227,7 +226,7 @@ class AttemptCollectionMixin(OrchestratorCore):
                     self._settle_intent(intent, "FAILED")
                     self._settle_service_if_known(intent.subject_id, intent.mission_id)
                     self._note(
-                        f"{intent.subject_id}: closed after the Mission stopped (turn never came back)"
+                        f"{intent.subject_id}: service turn never came back after the service bound"
                     )
                     return True
             return False

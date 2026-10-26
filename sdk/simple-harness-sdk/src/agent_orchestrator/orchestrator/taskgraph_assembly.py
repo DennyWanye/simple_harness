@@ -202,7 +202,9 @@ def install_taskgraph(orchestrator: Any, ports: TaskGraphDeploymentPorts) -> Ins
         store, commit=commit, history=history, read_sources=plan_sources, convergence=jobs
     )
     convergence = TaskGraphConvergence(
-        jobs, runtime=TaskGraphRuntimeCommands(orchestrator, jobs=jobs, history=history)
+        jobs,
+        runtime=TaskGraphRuntimeCommands(orchestrator, jobs=jobs, history=history),
+        turn_deadline_seconds=orchestrator._config.turn_deadline_seconds,
     )
     settlement = TaskGraphSettlementReader(orchestrator, history=history)
     notifications = TaskGraphNotifications(

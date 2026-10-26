@@ -5,6 +5,7 @@ import json
 
 import httpx
 import pytest
+
 from simple_harness.contracts import Message, RequestId
 from simple_harness.providers import (
     CancelToken,
@@ -217,5 +218,112 @@ def test_cancellation_closes_stream_without_returning_partial_content():
             with pytest.raises(ProviderCancelledError):
                 await task
             assert stream.closed
+
+    asyncio.run(check())
+
+
+@pytest.mark.parametrize(
+    "prefix",
+    [
+        b"",
+        b": partial",
+        b": keep-alive\n\n",
+        event(chunk({"content": "done"}, finish="stop", usage=USAGE)).encode(),
+    ],
+)
+def test_stream_byte_idle_timeout_closes_blocked_transport(prefix):
+    from simple_harness.providers import ProviderTimeoutError
+
+    async def check():
+        class Stalled(httpx.AsyncByteStream):
+            closed = False
+
+            async def __aiter__(self):
+                if prefix:
+                    yield prefix
+                await asyncio.Event().wait()
+                yield b""
+
+            async def aclose(self):
+                self.closed = True
+
+        stream = Stalled()
+        requests = []
+
+        def respond(request):
+            requests.append(request)
+            return httpx.Response(200, headers={"content-type": "text/event-stream"}, stream=stream)
+
+        async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as client:
+            provider = OpenAICompatibleProvider(
+                client, "https://fixture.invalid/v1", "fixture", Secret("fixture"), stream=True
+            )
+            # Override the production idle bound without relying on MockTransport to enforce it.
+            provider._timeout = httpx.Timeout(connect=10, read=0.03, write=30, pool=30)
+            with pytest.raises(ProviderTimeoutError) as error:
+                await asyncio.wait_for(
+                    provider.invoke(REQUEST, cancel=CancelToken()), timeout=0.3
+                )
+            assert error.value.code == "provider_timeout"
+            assert stream.closed
+            assert requests[0].extensions["timeout"] == {
+                "connect": 10,
+                "read": 0.03,
+                "write": 30,
+                "pool": 30,
+            }
+
+    asyncio.run(check())
+
+
+def test_stream_idle_timeout_uses_separate_http_phases():
+    async def check():
+        async with httpx.AsyncClient() as client:
+            provider = OpenAICompatibleProvider(
+                client,
+                "https://fixture.invalid/v1",
+                "fixture",
+                Secret("fixture"),
+                timeout=900,
+                stream=True,
+            )
+            assert provider._timeout.as_dict() == {
+                "connect": 10,
+                "read": 180,
+                "write": 30,
+                "pool": 30,
+            }
+
+    asyncio.run(check())
+
+
+def test_raw_byte_progress_without_a_complete_line_resets_idle_timeout():
+    async def check():
+        class SlowBytes(httpx.AsyncByteStream):
+            async def __aiter__(self):
+                for _ in range(5):
+                    await asyncio.sleep(0.01)
+                    yield b": heartbeat"
+                yield (
+                    b"\n\n"
+                    + (
+                        event(chunk({"content": "OK"}, finish="stop", usage=USAGE))
+                        + "data: [DONE]\n\n"
+                    ).encode()
+                )
+
+        async with httpx.AsyncClient(
+            transport=httpx.MockTransport(
+                lambda _: httpx.Response(
+                    200, headers={"content-type": "text/event-stream"}, stream=SlowBytes()
+                )
+            )
+        ) as client:
+            provider = OpenAICompatibleProvider(
+                client, "https://fixture.invalid/v1", "fixture", Secret("fixture"), stream=True
+            )
+            provider._timeout = httpx.Timeout(connect=10, read=0.03, write=30, pool=30)
+            response = await provider.invoke(REQUEST, cancel=CancelToken())
+            assert response.message.content == "OK"
 
     asyncio.run(check())

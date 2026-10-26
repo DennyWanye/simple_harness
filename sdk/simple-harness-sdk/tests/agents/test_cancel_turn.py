@@ -8,12 +8,14 @@ from __future__ import annotations
 import asyncio
 import json
 
+import pytest
 from provider_fixture import MODEL, ScriptedProvider, message_texts
+from tool_fixture import ECHO_SCHEMA, EchoToolExecutor
+
 from simple_harness.agents import AgentConfig, AgentLimits, AgentTurnState, build_agent_runtime
 from simple_harness.agents.ports import AgentRuntimePorts, AllowAllAuthorization
 from simple_harness.contracts import RunId
 from simple_harness.execution.uow import ContinuationState, RunState
-from tool_fixture import ECHO_SCHEMA, EchoToolExecutor
 
 TOOL = ("echo", {})
 
@@ -374,5 +376,81 @@ def test_cancel_inside_a_tool_leaves_the_effect_reconcilable_not_orphaned(tmp_pa
             assert ok.state is AgentTurnState.COMMITTED and ok.public_output.content == "下一轮"
             run = runtime.uow.read_run(agent.run_id)
             assert run is not None and run.state is RunState.WAITING
+
+    asyncio.run(case())
+
+
+@pytest.mark.parametrize("stop", ["cancel", "deadline", "idle"])
+def test_blocked_stream_turn_settles_without_another_byte(tmp_path, stop):
+    import httpx
+
+    from simple_harness.providers import OpenAICompatibleProvider, Secret
+
+    async def case():
+        started = asyncio.Event()
+
+        class Stalled(httpx.AsyncByteStream):
+            closed = False
+
+            async def __aiter__(self):
+                started.set()
+                await asyncio.Event().wait()
+                yield b""
+
+            async def aclose(self):
+                self.closed = True
+
+        stream = Stalled()
+        async with httpx.AsyncClient(
+            transport=httpx.MockTransport(
+                lambda _: httpx.Response(
+                    200, headers={"content-type": "text/event-stream"}, stream=stream
+                )
+            )
+        ) as client:
+            provider = OpenAICompatibleProvider(
+                client, "https://fixture.invalid/v1", MODEL, Secret("fixture"), stream=True
+            )
+            if stop == "idle":
+                provider._timeout = httpx.Timeout(connect=10, read=0.05, write=30, pool=30)
+            async with build_agent_runtime(_ports(tmp_path, provider)) as runtime:
+                agent = await runtime.create(
+                    _config(turn_deadline_seconds=0.15 if stop == "deadline" else 30),
+                    creation_key="blocked-stream",
+                )
+                turn = await agent.submit("问", input_id="blocked")
+                await asyncio.wait_for(started.wait(), 1)
+                assert runtime.uow.read_agent_turn(turn.turn_id).phase == "running"
+                cancel_started = asyncio.get_running_loop().time()
+                if stop == "cancel":
+                    receipt = await agent.cancel_turn(
+                        turn.turn_id, command_id="stop-stream", wait_timeout=0.5
+                    )
+                    assert receipt.state == "cancelled"
+                result = await agent.wait_turn(turn.turn_id, timeout=0.7)
+                assert result.state is AgentTurnState.FAILED
+                expected = {
+                    "cancel": "agent_turn_cancelled",
+                    "deadline": "react_wall_clock_exceeded",
+                    "idle": "provider_timeout",
+                }[stop]
+                assert result.error["error_code"] == expected
+                assert runtime.uow.read_agent_turn(turn.turn_id).phase == "failed"
+                rows = _rows(runtime.uow, "SELECT state,error_code FROM provider_invocations")
+                assert len(rows) == 1
+                assert rows[0]["state"] == "unknown"
+                assert rows[0]["error_code"] == (
+                    "provider_error_after_handoff"
+                    if stop == "idle"
+                    else "provider_cancelled_after_handoff"
+                )
+                assert stream.closed
+                if stop == "cancel":
+                    assert asyncio.get_running_loop().time() - cancel_started < 1
+                assert agent.status().lifecycle == "IDLE"
+                checkpoint = runtime.uow.read_react_checkpoint(agent.run_id)
+                from simple_harness.contracts import thaw_json
+
+                assert thaw_json(checkpoint.checkpoint)["phase"] == "ready"
 
     asyncio.run(case())

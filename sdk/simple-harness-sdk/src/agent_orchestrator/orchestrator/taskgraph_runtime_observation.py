@@ -158,4 +158,5 @@ class TaskGraphRuntimeObservationReader:
                 target_occurrences=tuple(sorted(targets)),
                 actions=tuple(actions),
                 quiescent=not unsettled and not actions,
+                unsettled_subjects=tuple(sorted(unsettled)),
             )

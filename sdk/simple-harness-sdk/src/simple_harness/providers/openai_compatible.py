@@ -165,6 +165,28 @@ class _ProtocolErrorWithUsage(ProviderProtocolError):
             self.detail["tool_parse_reason"] = cause.reason.value
 
 
+class _IdleTimeoutStream(httpx.AsyncByteStream):
+    def __init__(self, stream: httpx.AsyncByteStream, timeout: float | None) -> None:
+        self.stream, self.timeout = stream, timeout
+
+    async def __aiter__(self):
+        chunks = self.stream.__aiter__()
+        while True:
+            try:
+                async with asyncio.timeout(self.timeout):
+                    data = await anext(chunks)
+                    while not data:
+                        data = await anext(chunks)
+            except StopAsyncIteration:
+                return
+            except TimeoutError:
+                raise httpx.ReadTimeout("chat stream byte idle timeout") from None
+            yield data
+
+    async def aclose(self) -> None:
+        await self.stream.aclose()
+
+
 class OpenAICompatibleProvider:
     """Perform one OpenAI-compatible chat-completions request per invocation."""
 
@@ -309,7 +331,12 @@ class OpenAICompatibleProvider:
         self.delta_sink: Callable[[ProviderRequest, str], None] | None = None
         if isinstance(timeout, bool) or (isinstance(timeout, (int, float)) and timeout <= 0):
             raise ValueError("timeout must be positive")
-        self._timeout = timeout
+        read_timeout = timeout.read if isinstance(timeout, httpx.Timeout) else float(timeout)
+        self._timeout = (
+            httpx.Timeout(connect=10, read=min(read_timeout or 180, 180), write=30, pool=30)
+            if stream
+            else timeout
+        )
         self._redactor = SecretRedactor.from_secrets(secret)
         self._target = ProviderTarget(
             provider_id=provider_id or str(hostname),
@@ -585,11 +612,18 @@ class OpenAICompatibleProvider:
                     raise ProviderProtocolError(
                         public_message="invalid chat stream: not text/event-stream"
                     )
+                # Bound raw byte gaps, including the first byte and partial SSE lines.
+                # Keep httpx's incremental text/line decoding and response close semantics.
+                response.stream = _IdleTimeoutStream(response.stream, self._timeout.read)
                 async for line in response.aiter_lines():
                     accumulator.line(line)
                     if accumulator.done:
                         break
                 payload = accumulator.payload()
+            except httpx.TimeoutException:
+                # A timeout keeps an UNKNOWN handed-off charge, conservatively bounded
+                # by the existing admission cap; never misclassify it as a protocol error.
+                raise
             except (ProviderProtocolError, httpx.RequestError) as error:
                 # A valid final usage chunk remains billed even if framing fails.
                 try:

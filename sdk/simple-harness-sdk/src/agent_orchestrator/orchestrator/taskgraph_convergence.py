@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Protocol
 
+from ..contracts.models import Event
 from ..graph.notification_contracts import _text
 from ..planning.htn.grounding import derive_id
 from ..runtime.taskgraph_local_work import read_local_work
@@ -44,6 +45,7 @@ class ConvergenceObservation:
     target_occurrences: tuple[str, ...]
     actions: tuple[ConvergenceAction, ...]
     quiescent: bool
+    unsettled_subjects: tuple[str, ...] = ()
 
 
 class ConvergenceRuntime(Protocol):
@@ -71,9 +73,16 @@ class ConvergenceRuntime(Protocol):
 
 
 class TaskGraphConvergence:
-    def __init__(self, jobs: TaskGraphConvergenceStore, *, runtime: ConvergenceRuntime) -> None:
+    def __init__(
+        self,
+        jobs: TaskGraphConvergenceStore,
+        *,
+        runtime: ConvergenceRuntime,
+        turn_deadline_seconds: float = 3600,
+    ) -> None:
         self.jobs = jobs
         self.runtime = runtime
+        self.turn_deadline_seconds = turn_deadline_seconds
 
     def _observe(self, job: ConvergenceJob) -> ConvergenceObservation:
         observed = self.runtime.observe(self.jobs.store, job)
@@ -137,10 +146,54 @@ class TaskGraphConvergence:
             latest = self._observe(current)
             # Store independently re-reads the real quiescence/command proof before CAS.
             # READY retains its fence until actual Commit or authorized abandonment.
-            return self.jobs.advance_state(
+            advanced = self.jobs.advance_state(
                 mission_id,
                 job_id,
                 expected_version=current.row_version,
                 ready=latest.quiescent,
                 now_ms=now_ms,
             )
+            if (
+                current.state == advanced.state == "WAITING"
+                and not latest.quiescent
+                and now_ms / 1000 - current.updated_at > self.turn_deadline_seconds
+            ):
+                self._record_stalled(current, latest, now_ms)
+            return advanced
+
+    def _record_stalled(
+        self, job: ConvergenceJob, observed: ConvergenceObservation, now_ms: int
+    ) -> None:
+        identity = derive_id("tg-convergence-stalled", job.job_id)
+        store = self.jobs.store
+        if (
+            store.connection.execute(
+                "SELECT 1 FROM events WHERE event_id=?", (identity,)
+            ).fetchone()
+            is not None
+        ):
+            return
+        store.append_event(
+            Event(
+                id=identity,
+                type="TaskGraphConvergenceStalled",
+                trace_id=job.command_id,
+                mission_id=job.mission_id,
+                task_id=None,
+                attempt_id=None,
+                actor_type="system",
+                actor_id="taskgraph-convergence",
+                payload={
+                    "schema_version": 1,
+                    "job_id": job.job_id,
+                    "waiting_seconds": now_ms / 1000 - job.updated_at,
+                    "turn_deadline_seconds": self.turn_deadline_seconds,
+                    "unsettled_subjects": sorted(
+                        set(observed.unsettled_subjects)
+                        | {action.original_identity for action in observed.actions}
+                    ),
+                },
+                idempotency_key=identity,
+                created_at=now_ms / 1000,
+            )
+        )
