@@ -42,7 +42,7 @@ def _display(value: Any) -> Any:
     if isinstance(value, list):
         return [_display(item) for item in value[:32]]
     if isinstance(value, Mapping):
-        return {key: _display(value[key]) for key in ("id", "text", "label", "value", "description")
+        return {key: _display(value[key]) for key in ("key", "text", "label", "value", "description")
                 if key in value}
     return value if value is None or type(value) in (bool, int, float) else None
 

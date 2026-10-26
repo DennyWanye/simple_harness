@@ -13,15 +13,14 @@ export interface PrimaryChatViewProps {
   onOpenSettings?: () => void;
   active?: boolean;
 }
-function planningChoices(request: Json): { id: string; label: string }[] {
+function planningChoices(request: Json): { key: string; label: string }[] {
   if (!Array.isArray(request.options)) return [];
   return request.options
     .map((option) => {
-      if (typeof option === "string") return { id: option, label: option };
       const row = record(option);
-      return { id: text(row.id), label: text(row.label) || text(row.id) };
+      return { key: text(row.key), label: text(row.label) || text(row.key) };
     })
-    .filter((option) => option.id);
+    .filter((option) => option.key);
 }
 export function PrimaryChatView({ channel, onOpenSettings, active = true }: PrimaryChatViewProps) {
   const client = useRef<SessionClient | null>(null);
@@ -347,7 +346,7 @@ export function PrimaryChatView({ channel, onOpenSettings, active = true }: Prim
               {request.request_kind === "planning" ? (
                 planningChoices(request).length ? (
                   planningChoices(request).map((option) => (
-                    <button key={option.id} onClick={() => respond(request, "answer", option.id)}>
+                    <button key={option.key} onClick={() => respond(request, "answer", option.key)}>
                       {option.label}
                     </button>
                   ))

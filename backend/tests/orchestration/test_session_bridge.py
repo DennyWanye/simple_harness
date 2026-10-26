@@ -175,9 +175,9 @@ async def test_arbitration_fields_reach_the_public_session_without_losing_identi
     )
 
 
-def test_planning_choice_ids_survive_the_event_whitelist():
+def test_sdk_planning_choice_keys_survive_without_legacy_ids():
     event = project_session_event({"kind": "needs_response", "payload": {
         "request_id": "adjudicate-root:r", "version": 1, "request_kind": "planning",
-        "options": [{"id": "pass", "label": "通过", "internal": "private"}],
+        "options": [{"key": "pass", "label": "通过", "id": "legacy", "internal": "private"}],
     }})
-    assert event["payload"]["options"] == [{"id": "pass", "label": "通过"}]
+    assert event["payload"]["options"] == [{"key": "pass", "label": "通过"}]

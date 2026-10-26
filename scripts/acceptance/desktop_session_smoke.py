@@ -37,7 +37,7 @@ def auto_response(request: dict, task: dict) -> dict:
     if request.get("request_kind") == "planning":
         options = request.get("options") or []
         for option in options:
-            value = (option.get("id") or option.get("value") or option.get("label") or option.get("text")) if isinstance(option, dict) else option
+            value = option.get("key") if isinstance(option, dict) else None
             if value and not any(word in str(value).lower() for word in ("停止", "放弃", "取消", "stop", "abandon", "cancel")):
                 return {**body, "decision": "answer", "answer": str(value)}
         raise ValueError("planning request has no continuing option")

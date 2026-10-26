@@ -32,20 +32,32 @@ def test_provider_uses_requested_model_without_overriding_default_thinking(smoke
 def test_planning_auto_selects_first_non_stopping_option_and_preserves_version(smoke):
     body = smoke.auto_response({
         "request_kind": "planning", "request_id": "question-1",
-        "version": "1152921504606846975", "options": ["停止", "采用方案一", "采用方案二"],
+        "version": "1152921504606846975", "options": [
+            {"key": "stop", "label": "停止"}, {"key": "scheme-a", "label": "采用方案一"},
+            {"key": "scheme-b", "label": "采用方案二"},
+        ],
     }, {})
     assert body["decision"] == "answer"
-    assert body["answer"] == "采用方案一"
+    assert body["answer"] == "scheme-a"
     assert body["request_id"] == "question-1"
     assert body["version"] == "1152921504606846975"
 
 
-def test_planning_auto_submits_choice_id_instead_of_its_display_label(smoke):
+def test_planning_auto_submits_sdk_choice_key_instead_of_legacy_id_or_label(smoke):
     body = smoke.auto_response({
         "request_kind": "planning", "request_id": "adjudicate-root:r", "version": "1",
-        "options": [{"id": "stop", "label": "停止"}, {"id": "pass", "label": "通过"}],
+        "options": [{"key": "stop", "label": "停止"},
+                    {"key": "pass", "id": "legacy", "label": "通过"}],
     }, {})
     assert body["answer"] == "pass"
+
+
+def test_planning_auto_refuses_legacy_id_options(smoke):
+    with pytest.raises(ValueError, match="continuing option"):
+        smoke.auto_response({
+            "request_kind": "planning", "request_id": "legacy", "version": "1",
+            "options": [{"id": "pass", "label": "通过"}],
+        }, {})
 
 
 @pytest.mark.parametrize("kind,decision,extra", [
@@ -78,7 +90,7 @@ def test_only_stopping_planning_options_cannot_be_called_success(smoke):
     with pytest.raises(ValueError, match="continuing option"):
         smoke.auto_response({
             "request_kind": "planning", "request_id": "q", "version": "1",
-            "options": ["停止", "放弃"],
+            "options": [{"key": "stop", "label": "停止"}, {"key": "abandon", "label": "放弃"}],
         }, {})
 
 
@@ -120,7 +132,7 @@ async def test_send_receipt_and_terminal_events_survive_auto_response_reads(smok
                 self.event("delegated")
                 self.event("needs_response", {
                     "request_kind": "planning", "request_id": "q", "version": "7",
-                    "options": ["停止", "继续"],
+                    "options": [{"key": "stop", "label": "停止"}, {"key": "continue", "label": "继续"}],
                 })
             elif raw["type"] == "session_task":
                 self.reply(self.delegation, {"state": "committed", "text": "delegated"})
@@ -138,8 +150,8 @@ async def test_send_receipt_and_terminal_events_survive_auto_response_reads(smok
     result = await asyncio.wait_for(smoke.exchange(12345), 1)
     assert result["文字"] == result["委派"] == "PASS"
     assert result["代答"][0]["applied"] is True
-    assert result["代答"][0]["answer"] == "继续"
-    assert result["代答"][0]["options"] == ["停止", "继续"]
+    assert result["代答"][0]["answer"] == "continue"
+    assert result["代答"][0]["options"] == [{"key": "stop", "label": "停止"}, {"key": "continue", "label": "继续"}]
     assert result["任务"]["mission_id"] == "m"
 
 

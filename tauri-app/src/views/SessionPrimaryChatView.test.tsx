@@ -85,7 +85,10 @@ function fixture(
   };
 }
 describe("desktop SDK Session", () => {
-  it("displays planning choices and submits the stable option id", async () => {
+  it.each([
+    ["通过", "pass"],
+    ["打回", "fail"],
+  ])("displays SDK key choices and submits %s as %s", async (label, key) => {
     const h = fixture(
       [],
       [
@@ -108,19 +111,29 @@ describe("desktop SDK Session", () => {
         request_kind: "planning",
         question: "选择结论",
         options: [
-          { id: "pass", label: "通过" },
-          { id: "rework", label: "打回" },
+          { key: "pass", label: "通过" },
+          { key: "fail", label: "打回" },
         ],
       },
       1,
     );
-    fireEvent.click(await screen.findByRole("button", { name: "通过" }));
+    fireEvent.click(await screen.findByRole("button", { name: label }));
     expect(h.sent.find((message) => message.type === "session_respond")?.payload).toEqual({
       request_id: "choice",
       version: "1",
       decision: "answer",
-      answer: "pass",
+      answer: key,
     });
+  });
+  it("does not accept legacy id choices", async () => {
+    const h = fixture();
+    render(<PrimaryChatView channel={h.channel} />);
+    await screen.findByText("stored reply");
+    h.event("needs_response", {
+      request_id: "legacy-choice", version: "1", request_kind: "planning",
+      options: [{ id: "pass", label: "通过" }],
+    }, 1);
+    expect(screen.queryByRole("button", { name: "通过" })).toBeNull();
   });
   it("a new generation replaces the prior text preview", async () => {
     const h = fixture();
