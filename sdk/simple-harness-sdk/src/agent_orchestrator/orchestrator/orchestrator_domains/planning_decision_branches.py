@@ -793,6 +793,8 @@ class PlanningDecisionBranchMixin(OrchestratorCore):
             "detail": preview.detail,
             "mapped_problems": list(preview.mapped_problems),
         }
+        if preview.problem_details:
+            detail["problems"] = [item.to_json() for item in preview.problem_details]
         reply.store.record_planning_decision(
             request_id=reply.request_id,
             attempt_ordinal=reply.attempt_ordinal,
@@ -897,9 +899,14 @@ class PlanningDecisionBranchMixin(OrchestratorCore):
         self._settle_service_if_known(reply.intent.subject_id, reply.mission.id)
         await self._planning_rejected(
             reply.intent,
-            reason="proposal_not_grounded",
+            reason=(
+                "planning_source_unavailable"
+                if refusal_code == "INTERNAL_CONTRACT_ERROR"
+                else "proposal_not_grounded"
+            ),
             detail={
                 "error": refusal_text(error),
+                "rejection_codes": [refusal_code],
                 **_stale_commit_problems(getattr(error, "reason", "")),
             },
         )
@@ -943,9 +950,14 @@ class PlanningDecisionBranchMixin(OrchestratorCore):
         self._settle_service_if_known(reply.intent.subject_id, reply.mission.id)
         await self._planning_rejected(
             reply.intent,
-            reason="proposal_not_grounded",
+            reason=(
+                "planning_source_unavailable"
+                if refusal_code == "INTERNAL_CONTRACT_ERROR"
+                else "proposal_not_grounded"
+            ),
             detail={
                 "refusals": refusals,
+                "rejection_codes": [refusal_code],
                 **_stale_commit_problems(
                     plan_outcome.refusals[-1].reason if plan_outcome.refusals else ""
                 ),

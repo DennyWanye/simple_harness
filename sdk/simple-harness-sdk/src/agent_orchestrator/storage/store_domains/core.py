@@ -265,10 +265,18 @@ class StoreCore:
                     raise StoreError(
                         "transaction crossed an await: another task entered an open transaction"
                     )
+                # A caller may catch a refused inner operation and commit its audit
+                # event. Its partial writes must not survive in that outer unit.
+                savepoint = f"store_nested_{self._depth}"
+                self._connection.execute(f"SAVEPOINT {savepoint}")
                 self._depth += 1
                 try:
                     yield self._connection
+                except BaseException:
+                    self._connection.execute(f"ROLLBACK TO SAVEPOINT {savepoint}")
+                    raise
                 finally:
+                    self._connection.execute(f"RELEASE SAVEPOINT {savepoint}")
                     self._depth -= 1
                 return
             try:

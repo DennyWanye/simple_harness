@@ -40,6 +40,8 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
+from simple_harness.contracts import canonical_json
+
 from ...contracts.htn import (
     BudgetInheritance,
     DataRequirement,
@@ -70,6 +72,7 @@ from ...contracts.htn import (
 )
 from ...contracts.models import ContractError
 from ...contracts.obligations import ObligationAccountView, ObligationLedger
+from ...contracts.planning_decisions import PlanningDecisionRejectionCode, PlanningProblemDetailV1
 from ...contracts.semantic_base import TypedRef, content_hash_of, identifier, index
 from ...graph.projection_validation import (
     ProblemKind,
@@ -168,11 +171,13 @@ class CompilationRefused(ContractError):
         projection_report: ProjectionReport | None = None,
         refinement_report: ProjectionReport | None = None,
         problems: Sequence[str] = (),
+        problem_details: Sequence[PlanningProblemDetailV1] = (),
     ) -> None:
         super().__init__(message)
         self.projection_report = projection_report
         self.refinement_report = refinement_report
         self.problems = tuple(problems)
+        self.problem_details = tuple(problem_details)
 
     def kinds(self) -> frozenset[ProblemKind]:
         kinds: set[ProblemKind] = set()
@@ -619,7 +624,18 @@ def _check_parameters_agree(
         raise CompilationRefused(
             f"the draft's parameter(s) {', '.join(disagreeing)} disagree with the typed "
             f"parameters of task {parent.task_id!s}; this draft was grounded against a "
-            "different goal"
+            "different goal",
+            problem_details=tuple(
+                PlanningProblemDetailV1(
+                    code=PlanningDecisionRejectionCode.PARAMETER_INVALID,
+                    subject_ref=None,
+                    field_path="/payload/bindings/" + name.replace("~", "~0").replace("/", "~1"),
+                    detail=f"parameter {name} disagrees with task {parent.task_id!s}",
+                    expected=canonical_json(parent.typed_parameters[name]),
+                    observed=canonical_json(parameters[name]),
+                )
+                for name in disagreeing
+            ),
         )
     del draft
 

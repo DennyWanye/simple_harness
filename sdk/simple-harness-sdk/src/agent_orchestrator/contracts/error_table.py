@@ -181,7 +181,7 @@ def _e(category: ErrorCategory, *, free_reask: bool = False) -> ErrorEntry:
 
 def refusal_charges_planner(codes: object) -> bool:
     """Whether a planning refusal with these problem codes counts against the Planner.
-    Only a refusal made *entirely* of registered request-stale codes does not."""
+    Only a refusal made entirely of registered non-charging codes is exempt."""
 
     names = (
         [str(code) for code in codes or ()]
@@ -229,7 +229,7 @@ _PLANNING: dict[P, ErrorEntry] = {
     P.REQUEST_BINDING_STALE: _e(C.REQUEST_STALE),
     P.METHOD_STALE: _e(C.REQUEST_STALE),
     # 来源不可用：§12 来源缺失/读不完整对规划器报 INTERNAL_CONTRACT_ERROR
-    P.INTERNAL_CONTRACT_ERROR: _e(C.SOURCE_UNAVAILABLE),
+    P.INTERNAL_CONTRACT_ERROR: ErrorEntry(C.SOURCE_UNAVAILABLE, charges_planner=False),
     # 权限
     P.METHOD_NOT_AUTHORIZED: _e(C.AUTHORIZATION),
     P.AUTHORIZATION_REQUIRED: _e(C.AUTHORIZATION),

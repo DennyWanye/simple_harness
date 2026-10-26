@@ -32,6 +32,7 @@ from ..contracts.htn import (
     TaskRef,
 )
 from ..contracts.models import ContractError, sha256_hex
+from ..contracts.planning_decisions import PlanningProblemDetailV1
 from ..graph.task_network import TaskNetworkSnapshot
 from ..knowledge.predicates import PredicateRegistry, proposition_key
 from ..runtime.planning_operations import RuntimeWorkSnapshot
@@ -200,6 +201,7 @@ class PreviewUnavailable:
     mapped_problems: tuple[str, ...] = ()
     detail: str = ""
     delta_report: DeltaReport | None = None
+    problem_details: tuple[PlanningProblemDetailV1, ...] = ()
 
 
 _PROJECTION_KIND_TO_CODE: Mapping[str, str] = {
@@ -260,7 +262,7 @@ def map_compilation_refusal(error: CompilationRefused) -> tuple[str, ...]:
     remain internal failures until their producer supplies one.
     """
 
-    mapped: list[str] = []
+    mapped: list[str] = [str(item.code) for item in error.problem_details]
     if error.refinement_report is not None:
         for problem in error.refinement_report.problems:
             kind = str(problem.kind).split(".")[-1].upper()
@@ -473,7 +475,10 @@ def preview_candidate(
         )
     except CompilationRefused as error:
         return PreviewUnavailable(
-            "candidate_rejected", mapped_problems=map_compilation_refusal(error), detail=str(error)
+            "candidate_rejected",
+            mapped_problems=map_compilation_refusal(error),
+            detail=str(error),
+            problem_details=error.problem_details,
         )
     except ReuseRefused as error:
         # A named reuse the order checks refuse: the facts go back to the Planner.

@@ -2047,3 +2047,28 @@ def test_the_goal_signature_of_a_binding_is_queryable(htn: HtnStore, store: Stor
     assert row[0] == goal_signature().signature_id
     assert row[1] == "compound"
     assert row[2] == MISSION
+
+
+def test_refused_nested_plan_revision_rolls_back_and_same_number_can_commit(
+    store: Store, planned: HtnStore
+) -> None:
+    from agent_orchestrator.orchestrator.plan_commits import PlanCommitRejected
+
+    planned.activate_plan_revision(MISSION, 1)
+    with store.transaction():
+        with pytest.raises(PlanCommitRejected, match="REPAIR_NOT_ALLOWED"):
+            with store.transaction():
+                planned.insert_plan_revision(
+                    MISSION, 2, snapshot_hash=HASH_A, read_set=read_set(), base_revision=1
+                )
+                planned.insert_plan_membership(MISSION, 2, occurrence_spec())
+                raise PlanCommitRejected("REPAIR_NOT_ALLOWED", "same method")
+        assert [row.revision for row in planned.list_plan_revisions(MISSION)] == [1]
+        assert planned.list_plan_memberships(MISSION, 2) == ()
+        with store.transaction():
+            planned.insert_plan_revision(
+                MISSION, 2, snapshot_hash=HASH_B, read_set=read_set(), base_revision=1
+            )
+            planned.activate_plan_revision(MISSION, 2)
+    assert planned.active_plan_revision(MISSION).revision == 2
+    assert all(row.state != "PREPARED" for row in planned.list_plan_revisions(MISSION))
