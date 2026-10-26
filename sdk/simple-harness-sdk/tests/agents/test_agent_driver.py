@@ -9,6 +9,7 @@ import asyncio
 
 from kernel_fixture import create_agent, submit
 from provider_fixture import MODEL, ScriptedProvider, message_texts
+
 from simple_harness.agents.execution import build_agent_execution_driver
 from simple_harness.agents.ports import AgentRuntimePorts, AllowAllAuthorization
 from simple_harness.agents.runtime import assemble_runtime
@@ -194,6 +195,41 @@ def test_provider_rejection_is_a_failed_turn_and_next_turn_recovers(tmp_path):
             ok = uow.read_agent_turn_result(second.turn_id)
             assert ok is not None and dict(ok.result_json)["state"] == "committed"
             assert uow.read_run("agent-reject").state is RunState.WAITING
+
+    asyncio.run(case())
+
+
+def test_provider_rejection_retains_status_and_does_not_claim_tool_parse(tmp_path):
+    from simple_harness.agents.contracts import AgentTurnResult
+    from simple_harness.providers.errors import ProviderRequestRejectedError
+
+    async def case():
+        provider = ScriptedProvider([])
+
+        async def reject(request, *, cancel):
+            error = ProviderRequestRejectedError(status_code=422)
+            error.detail = {
+                "http_status": 422,
+                "failure_stage": "http_status",
+                "message_class": "invalid_tool_schema",
+                "correlation_id": "req_safe_123",
+            }
+            raise error
+
+        provider.invoke = reject
+        assembled = assemble_runtime(_ports(tmp_path, provider))
+        runtime, uow = assembled.runtime, assembled.uow
+        async with runtime:
+            await create_agent(runtime, uow, agent_id="agent-http-reject")
+            turn = await submit(
+                runtime, uow, agent_id="agent-http-reject", input_id="i1", text="Request"
+            )
+            await _settle(runtime, "agent-http-reject")
+            result = AgentTurnResult.from_json(uow.read_agent_turn_result(turn.turn_id).result_json)
+            assert result.error["source_kind"] == "provider_request"
+            assert result.error["http_status"] == 422
+            assert result.error["detail"]["correlation_id"] == "req_safe_123"
+            assert result.error["detail"]["failure_stage"] == "http_status"
 
     asyncio.run(case())
 

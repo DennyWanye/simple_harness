@@ -277,6 +277,9 @@ class SessionChatService(ChatService):
         return result
 
     def _append(self, row: Any) -> None:
+        # Project the immutable Agent error into the JSON receipt returned and journaled here.
+        if row.get("error") is not None:
+            row["error"] = thaw_json(row["error"])
         with self.session._store.transaction():
             self.session._store.put("chat_receipts", row["input_id"], row)
 

@@ -8,6 +8,7 @@ from dataclasses import FrozenInstanceError
 
 import httpx
 import pytest
+
 from simple_harness.contracts.identity import RequestId
 from simple_harness.contracts.messages import Message, MessageRole
 from simple_harness.providers import (
@@ -77,6 +78,155 @@ def _response() -> httpx.Response:
             },
         },
     )
+
+
+@pytest.mark.parametrize("stream", [False, True])
+def test_http_rejection_preserves_safe_diagnostics_without_body(stream):
+    async def run():
+        def handler(request):
+            return httpx.Response(
+                422,
+                headers={"x-request-id": "req_safe_123"},
+                json={
+                    "error": {
+                        "type": "invalid_request_error",
+                        "code": "invalid_json_schema",
+                        "param": "tools",
+                        "message": "Invalid tool schema: private-body-marker fixture-secret",
+                    },
+                },
+            )
+
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            provider = OpenAICompatibleProvider(
+                client,
+                "https://provider.invalid/v1",
+                "fixture-model",
+                Secret("fixture-secret"),
+                stream=stream,
+            )
+            with pytest.raises(ProviderRequestRejectedError) as caught:
+                await provider.invoke(_request(), cancel=CancelToken())
+        detail = caught.value.detail
+        assert detail == {
+            "http_status": 422,
+            "failure_stage": "http_status",
+            "provider_error_type": "invalid_request_error",
+            "provider_error_code": "invalid_json_schema",
+            "message_class": "invalid_tool_schema",
+            "parameter_class": "tools",
+            "correlation_id": "req_safe_123",
+            "request_id": "request-1",
+        }
+        assert "private-body-marker" not in str(detail)
+        assert "fixture-secret" not in repr(caught.value) + str(detail)
+
+    asyncio.run(run())
+
+
+def test_http_rejection_rejects_untrusted_diagnostic_values():
+    async def run():
+        def handler(request):
+            return httpx.Response(
+                400,
+                headers={"x-request-id": "fixture-secret"},
+                json={
+                    "error": {
+                        "code": "private-body-marker",
+                        "type": "private-body-marker",
+                        "param": "private-body-marker",
+                        "message": "private-body-marker fixture-secret",
+                    },
+                },
+            )
+
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            provider = OpenAICompatibleProvider(
+                client, "https://provider.invalid/v1", "fixture-model", Secret("fixture-secret")
+            )
+            with pytest.raises(ProviderRequestRejectedError) as caught:
+                await provider.invoke(_request(), cancel=CancelToken())
+        detail = caught.value.detail
+        assert detail["message_class"] == "unclassified_rejection"
+        assert detail["provider_error_code"] == "unrecognized"
+        assert "correlation_id" not in detail
+        assert "private-body-marker" not in str(detail)
+        assert "fixture-secret" not in str(detail)
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("code", [[], {}])
+def test_http_rejection_handles_non_scalar_error_metadata(code):
+    async def run():
+        async with httpx.AsyncClient(
+            transport=httpx.MockTransport(
+                lambda request: httpx.Response(400, json={"error": {"code": code, "type": code}})
+            )
+        ) as client:
+            provider = OpenAICompatibleProvider(
+                client, "https://provider.invalid/v1", "fixture-model", Secret("fixture-secret")
+            )
+            with pytest.raises(ProviderRequestRejectedError) as caught:
+                await provider.invoke(_request(), cancel=CancelToken())
+            assert caught.value.detail["provider_error_code"] == "unrecognized"
+
+    asyncio.run(run())
+
+
+def test_http_rejection_classifies_a_plain_transport_policy_without_body():
+    async def run():
+        async with httpx.AsyncClient(
+            transport=httpx.MockTransport(
+                lambda request: httpx.Response(
+                    403, text="Blocked: Only HTTPS requests are allowed. private-body-marker"
+                )
+            )
+        ) as client:
+            provider = OpenAICompatibleProvider(
+                client, "https://provider.invalid/v1", "fixture-model", Secret("fixture-secret")
+            )
+            with pytest.raises(ProviderRequestRejectedError) as caught:
+                await provider.invoke(_request(), cancel=CancelToken())
+            assert caught.value.detail["message_class"] == "https_required"
+            assert "private-body-marker" not in str(caught.value.detail)
+
+    asyncio.run(run())
+
+
+def test_http_handoff_sends_the_safe_client_request_id():
+    async def run():
+        def handler(request):
+            assert request.headers["x-client-request-id"] == "request-1"
+            return _response()
+
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            provider = OpenAICompatibleProvider(
+                client, "https://provider.invalid/v1", "fixture-model", Secret("fixture-secret")
+            )
+            await provider.invoke(_request(), cancel=CancelToken())
+
+    asyncio.run(run())
+
+
+def test_http_quota_precharge_is_not_classified_as_tool_parse_or_authentication():
+    async def run():
+        async with httpx.AsyncClient(
+            transport=httpx.MockTransport(
+                lambda request: httpx.Response(
+                    403, json={"error": {"message": "请求额度预扣被拒绝 private-body-marker"}}
+                )
+            )
+        ) as client:
+            provider = OpenAICompatibleProvider(
+                client, "https://provider.invalid/v1", "fixture-model", Secret("fixture-secret")
+            )
+            with pytest.raises(ProviderRequestRejectedError) as caught:
+                await provider.invoke(_request(), cancel=CancelToken())
+            assert caught.value.detail["message_class"] == "quota_precharge_rejected"
+            assert "private-body-marker" not in str(caught.value.detail)
+
+    asyncio.run(run())
 
 
 def test_provider_contract_is_stateless_and_performs_exactly_one_call() -> None:

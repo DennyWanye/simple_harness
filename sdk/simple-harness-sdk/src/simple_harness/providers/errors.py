@@ -122,7 +122,8 @@ class ProviderTransportError(ProviderError):
 
 
 class ProviderRequestRejectedError(ProviderError):
-    __slots__ = ()
+    __slots__ = ("detail",)
+    detail: dict[str, object]
     error_code = "provider_request_rejected"
     default_message = "Provider rejected the request."
 

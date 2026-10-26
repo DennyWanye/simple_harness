@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 from collections.abc import Callable, Mapping, Sequence
 from enum import StrEnum
 from ipaddress import ip_address, ip_network
@@ -378,6 +379,7 @@ class OpenAICompatibleProvider:
                 headers={
                     "Authorization": f"Bearer {self._secret.reveal()}",
                     "Content-Type": "application/json",
+                    **self._request_identity_header(request),
                 },
                 json=self._request_payload(request),
                 timeout=self._timeout,
@@ -406,7 +408,7 @@ class OpenAICompatibleProvider:
                 private_cause=self._redactor.exception(exc), transport_error_type=category
             ) from None
 
-        self._check_response_status(response)
+        self._check_response_status(response, request_id=request.request_id.value)
         try:
             payload = response.json()
         except (ValueError, UnicodeError):
@@ -415,7 +417,7 @@ class OpenAICompatibleProvider:
             ) from None
         return self._parse_response(request, payload, response)
 
-    def _check_response_status(self, response: httpx.Response) -> None:
+    def _check_response_status(self, response: httpx.Response, *, request_id: str) -> None:
         if response.status_code == 403:
             # Some compatible relays use 403 for expired credentials. Recognize
             # only the explicit machine code; never disclose the response body
@@ -430,7 +432,130 @@ class OpenAICompatibleProvider:
                     raise ProviderAuthenticationError(
                         status_code=403, public_message="Provider API key has expired."
                     )
-        self._raise_for_status(response.status_code)
+        try:
+            self._raise_for_status(response.status_code)
+        except ProviderRequestRejectedError as error:
+            error.detail = self._rejection_diagnostics(response, request_id=request_id)
+            raise
+
+    def _rejection_diagnostics(
+        self, response: httpx.Response, *, request_id: str
+    ) -> dict[str, object]:
+        """Classify a rejection in memory; retain neither body nor arbitrary fields."""
+        try:
+            payload = response.json()
+        except (ValueError, UnicodeError):
+            payload = None
+        error = payload.get("error", payload) if isinstance(payload, dict) else None
+        error = error if isinstance(error, dict) else {}
+        categories = {
+            "invalid_request_error",
+            "invalid_json_schema",
+            "invalid_function_parameters",
+            "unsupported_parameter",
+            "unsupported_value",
+            "model_not_found",
+            "invalid_model",
+            "permission_error",
+            "permission_denied",
+            "insufficient_quota",
+            "context_length_exceeded",
+            "authentication_error",
+            "invalid_api_key",
+            "not_found_error",
+            "upstream_error",
+        }
+        detail: dict[str, object] = {
+            "http_status": response.status_code,
+            "failure_stage": "http_status",
+            "provider_error_type": error.get("type")
+            if isinstance(error.get("type"), str) and error.get("type") in categories
+            else "unrecognized",
+            "provider_error_code": error.get("code")
+            if isinstance(error.get("code"), str) and error.get("code") in categories
+            else "unrecognized",
+            "message_class": "unclassified_rejection",
+        }
+        parameter = error.get("param")
+        if isinstance(parameter, str):
+            for prefix in (
+                "tools",
+                "messages",
+                "thinking",
+                "reasoning_effort",
+                "temperature",
+                "max_tokens",
+                "max_completion_tokens",
+                "model",
+            ):
+                if parameter == prefix or parameter.startswith((prefix + ".", prefix + "[")):
+                    detail["parameter_class"] = prefix
+                    break
+        message = error.get("message")
+        if not isinstance(message, str) and isinstance(payload, dict):
+            message = payload.get("detail", payload.get("message"))
+        message = (
+            message.lower()
+            if isinstance(message, str)
+            else response.text[:8192].lower()
+            if not isinstance(payload, dict)
+            else ""
+        )
+        if any(word in message for word in ("quota", "credit", "balance", "额度", "余额")) and any(
+            word in message
+            for word in ("precharge", "pre-charge", "pre-consume", "reserve", "预扣", "预留")
+        ):
+            detail["message_class"] = "quota_precharge_rejected"
+        elif "only https requests are allowed" in message or "https is required" in message:
+            detail["message_class"] = "https_required"
+        elif "ip" in message and ("not allowed" in message or "denied" in message):
+            detail["message_class"] = "ip_policy_denied"
+        elif "cloudflare" in message or "web application firewall" in message:
+            detail["message_class"] = "waf_rejected"
+        elif detail["provider_error_code"] in {
+            "invalid_json_schema",
+            "invalid_function_parameters",
+        } or ("tool" in message and any(word in message for word in ("schema", "invalid", "must"))):
+            detail["message_class"] = "invalid_tool_schema"
+        elif "role" in message or "tool_call_id" in message:
+            detail["message_class"] = "invalid_message_roles"
+        elif "unsupported" in message or "not supported" in message:
+            detail["message_class"] = "unsupported_parameter"
+        elif "context length" in message or "context_length" in message:
+            detail["message_class"] = "context_length_exceeded"
+        elif response.status_code == 404:
+            detail["message_class"] = "route_or_model_not_found"
+        elif response.status_code == 403:
+            detail["message_class"] = "access_denied"
+        elif not isinstance(payload, dict):
+            detail["message_class"] = "non_json_rejection"
+        for name, value in (
+            ("request_id", request_id),
+            (
+                "correlation_id",
+                response.headers.get("x-request-id")
+                or response.headers.get("x-correlation-id")
+                or response.headers.get("request-id"),
+            ),
+        ):
+            if (
+                isinstance(value, str)
+                and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}", value)
+                and self._redactor.text(value) == value
+                and not value.lower().startswith(("sk-", "key_", "tsk_", "bearer"))
+            ):
+                detail[name] = value
+        return detail
+
+    def _request_identity_header(self, request: ProviderRequest) -> dict[str, str]:
+        value = request.request_id.value
+        if (
+            re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}", value)
+            and self._redactor.text(value) == value
+            and not value.lower().startswith(("sk-", "key_", "tsk_", "bearer"))
+        ):
+            return {"X-Client-Request-Id": value}
+        return {}
 
     async def _stream_once(self, request: ProviderRequest) -> ProviderResponse:
         accumulator = ChatStream(on_content=self._content_sink(request))
@@ -440,6 +565,7 @@ class OpenAICompatibleProvider:
             headers={
                 "Authorization": f"Bearer {self._secret.reveal()}",
                 "Content-Type": "application/json",
+                **self._request_identity_header(request),
             },
             json={
                 **self._request_payload(request),
@@ -448,9 +574,9 @@ class OpenAICompatibleProvider:
             },
             timeout=self._timeout,
         ) as response:
-            if response.status_code == 403:
+            if response.status_code >= 400:
                 await response.aread()
-            self._check_response_status(response)
+            self._check_response_status(response, request_id=request.request_id.value)
             try:
                 if (
                     response.headers.get("content-type", "").split(";", 1)[0].strip()

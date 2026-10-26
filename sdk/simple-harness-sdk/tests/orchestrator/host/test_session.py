@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import json
 import os
 import sqlite3
 import subprocess
@@ -25,6 +26,49 @@ SPEC = {
     "success_criteria": ["file:report.md"],
     "reason": "Multiple steps",
 }
+
+
+def test_nested_provider_rejection_is_json_safe_and_replayed_after_reopen(tmp_path):
+    from simple_harness.providers.errors import ProviderRequestRejectedError
+
+    calls = []
+
+    def reject(request):
+        calls.append(request)
+        error = ProviderRequestRejectedError(status_code=403)
+        error.detail = {
+            "http_status": 403,
+            "failure_stage": "http_status",
+            "message_class": "quota_precharge_rejected",
+            "correlation_id": "req_session_safe",
+        }
+        raise error
+
+    async def run():
+        options = {
+            "principal": Principal("u", "User"),
+            "provider": ScriptedProvider(chat=reject),
+            "counter": FixtureWordCounter(),
+            "require_acceptance": False,
+        }
+        session = await Session.open(tmp_path, **options)
+        try:
+            receipt = await session.send("A request", key="denied")
+            assert receipt["state"] == "failed"
+            assert receipt["error"]["source_kind"] == "provider_request"
+            assert receipt["error"]["http_status"] == 403
+            assert receipt["error"]["detail"]["message_class"] == "quota_precharge_rejected"
+            assert json.loads(json.dumps(receipt)) == receipt
+        finally:
+            await session.close()
+        reopened = await Session.open(tmp_path, **options)
+        try:
+            assert await reopened.send("A request", key="denied") == receipt
+            assert len(calls) == 1
+        finally:
+            await reopened.close()
+
+    asyncio.run(run())
 
 
 def test_v1_instruction_bytes_and_pool_id_remain_frozen():
