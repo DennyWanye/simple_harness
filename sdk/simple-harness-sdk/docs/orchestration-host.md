@@ -316,6 +316,14 @@ async def run(root, principal, model, tools, render, last_seen=0):
 ## 2e. 语音绑定（`[realtime]` 可选扩展，opt.218 候选）
 
 最后更新：2026-10-26。本节是候选接口；当前 `[realtime]` 使用 Service SDK 0.3.20。
+第十次复核FAIL后，桥已本地修复永久终止自动重连：SessionFailed仅retryable=true才恢复，
+SessionClosed仅retryable/clean_expired允许恢复；干净或致命关闭、不可重试异常均释放绑定。
+永久终止不再发送response.cancel，也不关闭业务会话或取消任务；调用方可以明确再次attach_voice。
+接收异常和重连开线失败同样遵守不可重试标志，其他传输恢复仍受原退避/次数/预算限制。
+统一voice_event增加code/retryable或disposition字段，schema_version保持1，不保存错误正文。
+修复候选部署228d60db…/NOT_RUN，干净轮子关联86项通过；本候选尚未做新真线或原生App验收。
+以下live8通过片段属于修复前候选，不能直接回填本轮新源码。需修通剩余协议终止并再次独立复核。
+
 item 身份由首次出现它的事件确定，后续 role 字段只记录诊断；已确认的真实用户音频不会
 被错误的 assistant 标签覆盖，真正助手输出来源也不能改作用户输入。五条现场身份序列
 反例在旧0.3.19全部失败，新版全部转绿；未知来源及助手来源拒绝边界继续验证。
@@ -337,7 +345,7 @@ Service 的非空用户转写仍可能产生 TranscriptCompleted，桥继续用�
 普通聊天提供方仍由SDK既有工厂装配，没有改池提示词、工具说明、任务目标或预算。
 MEETRAN的HTTP403预扣问题只作为历史保留，不再作为本轮待处理项，也不冒称已修复。
 真实业务完成、对应结果实播及恢复须逐项验收，离线通过不能替代；Host不填造身份或改写帧。
-等待第十次复核后发版 opt.218，当前仍为开发候选，Host正式钉版保持opt.217。
+等待第十一次复核后发版 opt.218，当前仍为开发候选，Host正式钉版保持opt.217。
 
 文字拒绝回执只保存 HTTP 状态、失败阶段、白名单 Provider 错误类别/参数类别和安全关联号，
 响应正文只在内存分类，不保存正文。安全 request_id 通过 X-Client-Request-Id 发送；远端未
@@ -360,24 +368,24 @@ A10 必须有活跃非终态任务、打断后推进与终态，A11 播放量按
 schema 校验参数，缺失工具、改名或参数集合变化仍拒绝就绪，工具说明与池身份不改。
 当前测试组合按下面顺序安装：先准备公共依赖，再以 `--no-index --find-links` 解析两个
 私有轮子，不使用 `--no-deps`。在仓库根目录执行，`EVIDENCE`
-指向已准备好的忽略目录 `./.local-test-evidence/2026-10-25/unified-session/phase3/external`：
+指向本轮修复候选的忽略目录 `./.local-test-evidence/2026-10-25/unified-session/phase3/post-review10`：
 
 ```sh
-EVIDENCE=./.local-test-evidence/2026-10-25/unified-session/phase3/external
+EVIDENCE=./.local-test-evidence/2026-10-25/unified-session/phase3/post-review10
 SERVICE_WHEELS=./.local-test-evidence/2026-10-25/unified-session/phase3/live8/inputs
-uv venv --python 3.13 "$EVIDENCE/.venv-service320"
-uv pip install --python "$EVIDENCE/.venv-service320/bin/python" \
+uv venv --python 3.13 "$EVIDENCE/.venv"
+uv pip install --python "$EVIDENCE/.venv/bin/python" \
   'httpx>=0.28.1,<1' 'websockets>=15,<16' 'prompt-toolkit>=3.0.52,<4' \
   'packaging>=25,<27' 'pytest>=8.3,<9' 'deepseek-recipe==0.1.1'
-uv pip install --python "$EVIDENCE/.venv-service320/bin/python" --no-index \
-  --find-links "$SERVICE_WHEELS" --find-links "$EVIDENCE/wheels-service320" \
+uv pip install --python "$EVIDENCE/.venv/bin/python" --no-index \
+  --find-links "$SERVICE_WHEELS" --find-links "$EVIDENCE/wheels" \
   'simple-harness-sdk[realtime]==0.13.0.dev20260925+opt.218'
-uv pip check --python "$EVIDENCE/.venv-service320/bin/python"
+uv pip check --python "$EVIDENCE/.venv/bin/python"
 ```
 
 音频示例另显式安装 `sounddevice>=0.5,<0.6`；它是示例的设备实现，不是桥的强制依赖。
-上述轮子组合已经在仓库内 Python 3.13 干净环境完成正常 extra 解析、依赖检查和 Host 会话
-接缝验证。SDK 的 uv.lock 已重锁，私有包指向上述仓库相对目录；复现锁文件前须先放入校验
+本轮修复轮子已经在仓库内 Python 3.13 干净环境完成正常 extra 解析、依赖检查及
+Service→Host回环验证；未重跑完整录音示例。SDK 的 uv.lock 已重锁，私有包指向上述仓库相对目录；复现锁文件前须先放入校验
 过的私有轮子，公开索引不承担私有候选的分发。
 
 ```python
@@ -399,7 +407,8 @@ await binding.detach()
 进程环境读取，不传给会话台账。工厂每次重连重新组装客户端，旧 dispatcher 会拒绝新一代调用。
 Service SDK 0.3.20 的工厂装配、工具自动循环及路线 a 已经离线联合回环验证，真实工具目录确认通过；
 真实联合主链仍受前述协议、文字提供方及任务结果阻断。录音驱动与安装说明位于忽略目录
-`phase3/external/example_service320.py` 与 `phase3/external/README-0.3.20.md`。
+`phase3/external/example_service320.py` 与 `phase3/external/README-0.3.20.md`，对应修复前现场；
+当前修复候选的离线安装/验证说明在 `phase3/post-review10/README.md`。
 
 | 接口 | 行为 |
 |---|---|

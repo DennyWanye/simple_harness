@@ -356,6 +356,20 @@ class VoiceBinding:
                         self._ready_error = SessionError("unsupported", "voice negotiation failed")
                         self._ready.set()
                         return
+                    retryable = (
+                        event.retryable is True
+                        if event.kind == "SessionFailed"
+                        else event.disposition in {"retryable", "clean_expired"}
+                    )
+                    if not retryable:
+                        # A terminal connection has no live response left to cancel.
+                        self._responding = None
+                        if event.kind == "SessionFailed":
+                            self._event(
+                                "voice_error", payload={"code": str(event.code), "retryable": False}
+                            )
+                        await self.detach()
+                        return
                     await self._reconnect()
                     return
         except asyncio.CancelledError:
@@ -365,14 +379,26 @@ class VoiceBinding:
                 self._ready_error = SessionError("unsupported", "voice negotiation failed")
                 self._ready.set()
             elif not self._detached:
-                if isinstance(error, SessionError):
-                    self._event("voice_error", payload={"code": error.code})
+                if isinstance(error, SessionError) or getattr(error, "retryable", None) is False:
+                    self._responding = None
+                    self._event(
+                        "voice_error",
+                        payload={
+                            "code": str(getattr(error, "code", "voice_failed")),
+                            "retryable": False,
+                        },
+                    )
                     await self.detach()
                 else:
                     await self._reconnect()
 
     async def _on_event(self, event: Any) -> None:
         kind = event.kind
+        payload = {"kind": kind}
+        if kind == "SessionFailed":
+            payload.update(code=str(event.code), retryable=event.retryable)
+        elif kind == "SessionClosed":
+            payload["disposition"] = str(event.disposition)
         response_id = getattr(event, "response_id", None)
         item_id = getattr(event, "item_id", None) or getattr(event, "turn_id", None)
         identifiers = {
@@ -502,7 +528,7 @@ class VoiceBinding:
         elif kind in {"SessionFailed", "SessionClosed"}:
             self._ready.clear()
         if kind != "OutputAudio":
-            self._event("voice_event", payload={"kind": kind}, **identifiers)
+            self._event("voice_event", payload=payload, **identifiers)
 
     def _commit_transcript(self, item_id: str, text: str) -> str:
         key = f"voice:{item_id}"
@@ -922,9 +948,21 @@ class VoiceBinding:
             try:
                 await self._connect()
                 return
-            except Exception:
+            except Exception as error:
                 if self._wire is not None:
-                    await self._wire.close()
+                    with contextlib.suppress(Exception):
+                        await self._wire.close()
+                if isinstance(error, SessionError) or getattr(error, "retryable", None) is False:
+                    self._responding = None
+                    self._event(
+                        "voice_error",
+                        payload={
+                            "code": str(getattr(error, "code", "voice_failed")),
+                            "retryable": False,
+                        },
+                    )
+                    await self.detach()
+                    return
         self._event("voice_error", payload={"code": "reconnect_exhausted"})
         await self.detach()
 

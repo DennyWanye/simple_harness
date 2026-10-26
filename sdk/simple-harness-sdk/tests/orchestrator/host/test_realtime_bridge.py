@@ -297,7 +297,7 @@ def test_reconnect_keeps_session_increments_generation_and_replays_no_audio(tmp_
         await client.wires[0].emit("ResponseStarted", response_id="r1")
         await client.wires[0].emit("OutputText", response_id="r1", text="Hi", is_delta=False)
         await client.wires[0].emit("ResponseFinished", response_id="r1", status="completed")
-        await client.wires[0].emit("SessionFailed", code="disconnected")
+        await client.wires[0].emit("SessionFailed", code="unavailable", retryable=True)
         await asyncio.sleep(0.05)
         assert binding.generation == 2 and session.session_id == "s"
         assert client.wires[0].closed and len(client.wires) == 2
@@ -320,7 +320,7 @@ def test_stale_dispatcher_cannot_execute_after_reconnect(tmp_path):
         )
         old = client.wires[0]
         await old.emit("TranscriptCompleted", item_id="old-item", text="Old request")
-        await old.emit("SessionFailed", code="disconnected")
+        await old.emit("SessionFailed", code="unavailable", retryable=True)
         await asyncio.sleep(0.04)
         result = await old.dispatcher.dispatch(
             SimpleNamespace(
@@ -492,7 +492,7 @@ def test_reconnect_failure_releases_lock_and_audio_device(tmp_path):
         _, session = make_session(tmp_path)
         client, audio = Client(), Audio()
         await session.attach_voice(audio, VoiceProfile(client_factory=client, max_reconnects=0))
-        await client.wires[0].emit("SessionFailed", code="disconnected")
+        await client.wires[0].emit("SessionFailed", code="unavailable", retryable=True)
         await asyncio.sleep(0.04)
         assert session._voice is None and not session._send_lock.locked()
         assert audio.written[-1] is None
@@ -553,7 +553,7 @@ def test_new_connection_requires_new_input_before_tool_dispatch(tmp_path):
             Audio(), VoiceProfile(client_factory=client, reconnect_backoff=0)
         )
         await client.wires[0].emit("TranscriptCompleted", item_id="u", text="Old request")
-        await client.wires[0].emit("SessionFailed", code="disconnected")
+        await client.wires[0].emit("SessionFailed", code="unavailable", retryable=True)
         await asyncio.sleep(0.04)
         result = await client.wires[-1].dispatcher.dispatch(
             SimpleNamespace(
@@ -1317,5 +1317,157 @@ def test_service_sdk_open_request_accepts_the_generated_catalogue(tmp_path, monk
         request = binding._request()
         assert isinstance(request.tools, list)
         assert {tool["name"] for tool in request.tools} >= {"delegate_task", "task_status"}
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize(
+    ("kind", "fields"),
+    [
+        ("SessionFailed", {"code": "protocol_error", "retryable": False}),
+        ("SessionFailed", {"code": "unsupported", "retryable": False}),
+        ("SessionFailed", {"code": "unavailable", "retryable": False}),
+        ("SessionClosed", {"disposition": "fatal", "control_code": "protocol_error"}),
+        ("SessionClosed", {"disposition": "clean", "control_code": None}),
+    ],
+)
+def test_permanent_terminal_detaches_without_reopening_or_cancelling_tasks(tmp_path, kind, fields):
+    async def run():
+        host, session = make_session(tmp_path)
+        client, audio = Client(), Audio()
+        binding = await session.attach_voice(
+            audio, VoiceProfile(client_factory=client, reconnect_backoff=0, max_reconnects=3)
+        )
+        wire = client.wires[0]
+        try:
+            await wire.emit("TranscriptCompleted", item_id="active-input", text="Write a report")
+            await wire.emit("ResponseStarted", response_id="active-response")
+            await wire.dispatcher.dispatch(
+                SimpleNamespace(
+                    response_id="active-response",
+                    call_id="active-call",
+                    name="delegate_task",
+                    arguments_json=json.dumps(SPEC),
+                )
+            )
+            before = session.tasks()
+            await wire.emit(kind, **fields)
+            await asyncio.sleep(0.05)
+            assert len(client.wires) == 1, "A permanent terminal opened another connection"
+            assert binding._detached and binding.generation == 1
+            assert wire.closed and wire.cancelled == 0
+            assert audio.written[-1] is None
+            assert session._voice is None and not session._send_lock.locked()
+            assert not session._closed and session.tasks() == before and not host.cancelled
+            events = session._store.events(0)
+            terminal = next(
+                e for e in events if e["kind"] == "voice_event" and e["payload"]["kind"] == kind
+            )
+            if kind == "SessionFailed":
+                assert terminal["payload"]["code"] == fields["code"]
+                assert terminal["payload"]["retryable"] is False
+            else:
+                assert terminal["payload"]["disposition"] == fields["disposition"]
+            assert all(e.get("generation", 1) == 1 for e in events)
+            explicit = await session.attach_voice(Audio(), VoiceProfile(client_factory=client))
+            try:
+                assert explicit.binding_id != binding.binding_id and explicit.generation == 2
+                assert len(client.wires) == 2 and session.tasks() == before
+            finally:
+                await explicit.detach()
+        finally:
+            await binding.detach()
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize(
+    ("kind", "fields"),
+    [
+        ("SessionFailed", {"code": "unavailable", "retryable": True}),
+        ("SessionClosed", {"disposition": "retryable"}),
+        ("SessionClosed", {"disposition": "clean_expired"}),
+    ],
+)
+def test_retryable_terminal_still_restores_without_replaying_audio(tmp_path, kind, fields):
+    async def run():
+        _, session = make_session(tmp_path)
+        client = Client()
+        binding = await session.attach_voice(
+            Audio(), VoiceProfile(client_factory=client, reconnect_backoff=0)
+        )
+        try:
+            await client.wires[0].emit("TranscriptCompleted", item_id="u1", text="A real input")
+            await client.wires[0].emit(kind, **fields)
+            await asyncio.sleep(0.05)
+            assert len(client.wires) == 2 and binding.generation == 2 and not binding._detached
+            assert not client.wires[1].sent_audio
+            assert any("A real input" in row[0] for row in client.wires[1].messages)
+        finally:
+            await binding.detach()
+
+    asyncio.run(run())
+
+
+def test_nonretryable_receive_exception_does_not_reopen(tmp_path, monkeypatch):
+    class ReceiveFailure(RuntimeError):
+        code = "protocol_error"
+        retryable = False
+
+    async def events(wire):
+        yield SimpleNamespace(kind="SessionReady", tools_acknowledged=True)
+        await wire.queue.get()
+        raise ReceiveFailure("Safe fixture failure")
+
+    monkeypatch.setattr(Wire, "events", events)
+
+    async def run():
+        _, session = make_session(tmp_path)
+        client = Client()
+        binding = await session.attach_voice(
+            Audio(), VoiceProfile(client_factory=client, reconnect_backoff=0)
+        )
+        try:
+            await client.wires[0].queue.put(None)
+            await asyncio.sleep(0.05)
+            assert len(client.wires) == 1 and binding._detached
+            assert not session._send_lock.locked()
+        finally:
+            await binding.detach()
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("retryable", [False, True])
+def test_reconnect_open_failure_obeys_retryable_flag(tmp_path, retryable):
+    class OpenFailure(RuntimeError):
+        code = "unavailable" if retryable else "protocol_error"
+
+        def __init__(self):
+            self.retryable = retryable
+
+    class ReopeningClient(Client):
+        opens = 0
+
+        async def open(self, request, *, tool_dispatcher):
+            self.opens += 1
+            if self.opens == 2:
+                raise OpenFailure()
+            return await super().open(request, tool_dispatcher=tool_dispatcher)
+
+    async def run():
+        _, session = make_session(tmp_path)
+        client = ReopeningClient()
+        binding = await session.attach_voice(
+            Audio(), VoiceProfile(client_factory=client, reconnect_backoff=0, max_reconnects=3)
+        )
+        try:
+            await client.wires[0].emit("SessionFailed", code="unavailable", retryable=True)
+            await asyncio.sleep(0.08)
+            assert client.opens == (3 if retryable else 2)
+            assert binding._detached is (not retryable)
+            assert not binding._detached or not session._send_lock.locked()
+        finally:
+            await binding.detach()
 
     asyncio.run(run())

@@ -198,6 +198,92 @@ def test_service_loopback_commits_voice_tool_result_ack_and_followup(tmp_path):
     asyncio.run(run())
 
 
+@pytest.mark.parametrize("origin", ["relay", "provider"])
+def test_real_service_permanent_failure_never_opens_a_new_generation(tmp_path, origin):
+    async def run():
+        host, session = make_session(tmp_path)
+        connections = []
+
+        def build(dispatcher):
+            connection = Connection()
+            connections.append(connection)
+            return factory(connection)(dispatcher)
+
+        audio = Audio()
+        binding = await session.attach_voice(
+            audio, VoiceProfile(client_factory=build, reconnect_backoff=0, max_reconnects=3)
+        )
+        try:
+            if origin == "relay":
+                await connections[0].event(
+                    "tokenseller.error",
+                    code="protocol_error",
+                    retryable=False,
+                    fatal=True,
+                    message_class="upstream_protocol_error",
+                )
+            else:
+                await connections[0].event(
+                    "response.audio.done",
+                    item_id="unknown-item",
+                    response_id="",
+                    output_index=0,
+                    content_index=0,
+                )
+            await wait_for(lambda: binding._detached or len(connections) > 1)
+            assert len(connections) == 1, "A real permanent Service error triggered a reconnect"
+            assert binding._detached and binding.generation == 1
+            assert not host.made and not host.cancelled and not session._closed
+            assert audio.written[-1] is None and not session._send_lock.locked()
+            failures = [
+                event
+                for event in session._store.events(0)
+                if event["kind"] == "voice_event" and event["payload"]["kind"] == "SessionFailed"
+            ]
+            assert failures[-1]["payload"]["code"] == "protocol_error"
+            assert failures[-1]["payload"]["retryable"] is False
+        finally:
+            await binding.detach()
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("origin", ["network", "busy"])
+def test_real_service_retryable_failure_still_reconnects(tmp_path, origin):
+    async def run():
+        _, session = make_session(tmp_path)
+        connections = []
+
+        def build(dispatcher):
+            connection = Connection()
+            connections.append(connection)
+            return factory(connection)(dispatcher)
+
+        binding = await session.attach_voice(
+            Audio(), VoiceProfile(client_factory=build, reconnect_backoff=0)
+        )
+        try:
+            if origin == "network":
+                await connections[0].queue.put(None)
+            else:
+                await connections[0].event(
+                    "tokenseller.error",
+                    code="busy",
+                    retryable=True,
+                    fatal=True,
+                    message_class="capacity_busy",
+                )
+            await wait_for(lambda: binding.generation == 2 and binding._ready.is_set())
+            assert len(connections) == 2 and not binding._detached
+            assert not any(
+                frame["type"] == "input_audio_buffer.append" for frame in connections[1].sent
+            )
+        finally:
+            await binding.detach()
+
+    asyncio.run(run())
+
+
 def test_service_loopback_announcement_context_ack_keeps_control_commands_denied(tmp_path):
     async def run():
         host, session = make_session(tmp_path)
