@@ -1,8 +1,16 @@
-最后更新：2026-10-26 CST（阶段3a第十一次复核按用户口径放行，发布执行中）。
-第十一次报告 dc826a356 及回执 PASS，用户接受 A09～A11 中继 upstream_protocol_error 上游阻断；
-三项仍未完成验收、交接已记录，不声称上游修通。opt.218 的桥与 host.open_session 获准发布。
-公开文档 §2e 与 CHANGELOG 披露限制：不可重试终止不自动重连、通话中文字排队、
-打断后服务端历史不代表实听、重复 session.update 不可用。发布门/钉版/正式示例结果待实际执行补记。
+最后更新：2026-10-26 CST（opt.218按用户放行口径发布并完成Host钉版）。
+第十一次独立复核PASS，SDK提交ad49983a9、Host钉版7e1457831；本地main，无push或新worktree。
+公开host.open_session、attach_voice、announce、本地打断及有界恢复随opt.218可用；
+[realtime]依赖Service0.3.20，文本接入不要求安装该extra。A09～A11仍阻断于中继
+upstream_protocol_error、未验收，已写交接，按用户口径接受；不声称上游修通或阶段整体验收完成。
+不可重试终止释放绑定且不自动增代，业务会话/任务保留；通话中文字排队、实播与批准分离、
+打断后服务端历史不可信、重复session.update不可用，均写入公开文档§2e及发版说明。
+发布门447、Host178及脚本选择器1项共626通过/0失败，12变异捕获、3保证通道接缝PASS。
+清单fda2259d…/VALIDATED，源码/清单/正式wheel/新安装848项、Service42项一致，21包兼容。
+正式轮子新Python3.13环境完整三轮录音示例通过：任务COMPLETED、唯一结果实播6320ms，
+补充播报打断/挂断成立，整轮28652ms；可重试unavailable换代后输入PCM重放0，控制错误0。
+轮子SHA-256：9a2dc877265f4eaf2f33f059a2b440a2cc7e3631aaedd8a57d051fcdd3c83aa8。
+桌面3b整体及A09～A11后续验收不由本次发版外推通过；原始证据只留ignored目录。
 详见[记录第二十七节](../plans/2026-10-24-unified-session-realtime/阶段3a-记录.md)。下文保留历史口径。
 
 最后更新：2026-10-26 CST（阶段3a第十次复核FAIL后：永久终止恢复行为本地修复，仍不可发）。

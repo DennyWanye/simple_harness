@@ -1,8 +1,16 @@
-最后更新：2026-10-26 CST（阶段3a第十一次复核按用户口径放行，发布执行中）。
-第十一次报告 dc826a356 及回执 PASS，用户接受 A09～A11 中继 upstream_protocol_error 上游阻断；
-三项仍未完成验收、交接已记录，不声称上游修通。opt.218 的桥与 host.open_session 获准发布。
-公开文档 §2e 与 CHANGELOG 披露限制：不可重试终止不自动重连、通话中文字排队、
-打断后服务端历史不代表实听、重复 session.update 不可用。发布门/钉版/正式示例结果待实际执行补记。
+最后更新：2026-10-26 CST（opt.218按用户放行口径发布并完成Host钉版）。
+第十一次独立复核PASS，SDK提交ad49983a9、Host钉版7e1457831；本地main，无push或新worktree。
+公开host.open_session、attach_voice、announce、本地打断及有界恢复随opt.218可用；
+[realtime]依赖Service0.3.20，文本接入不要求安装该extra。A09～A11仍阻断于中继
+upstream_protocol_error、未验收，已写交接，按用户口径接受；不声称上游修通或阶段整体验收完成。
+不可重试终止释放绑定且不自动增代，业务会话/任务保留；通话中文字排队、实播与批准分离、
+打断后服务端历史不可信、重复session.update不可用，均写入公开文档§2e及发版说明。
+发布门447、Host178及脚本选择器1项共626通过/0失败，12变异捕获、3保证通道接缝PASS。
+清单fda2259d…/VALIDATED，源码/清单/正式wheel/新安装848项、Service42项一致，21包兼容。
+正式轮子新Python3.13环境完整三轮录音示例通过：任务COMPLETED、唯一结果实播6320ms，
+补充播报打断/挂断成立，整轮28652ms；可重试unavailable换代后输入PCM重放0，控制错误0。
+轮子SHA-256：9a2dc877265f4eaf2f33f059a2b440a2cc7e3631aaedd8a57d051fcdd3c83aa8。
+桌面3b整体及A09～A11后续验收不由本次发版外推通过；原始证据只留ignored目录。
 详见[记录第二十七节](../plans/2026-10-24-unified-session-realtime/阶段3a-记录.md)。下文保留历史口径。
 
 最后更新：2026-10-26 CST（阶段3a第十次复核FAIL后：永久终止恢复行为本地修复，仍不可发）。
@@ -228,7 +236,7 @@ A11 已真实断线、回灌和同号重绑，未自动重放输入音频；新�
 | Service SDK 联合合同 | 当前0.3.20，首次来源合同五条旧红灯转绿，9段真ASR通过；原角色拒绝消失，仍有6条上游协议终止及1条可恢复busy，未加帧兼容层 |
 | A08～A11、A13 / 三轮示例 | 0.3.20原四项1通过/3阻断，完整示例通过，两补充1通过/1阻断；A08/示例COMPLETED及对应实播8320/5360ms；A10/A11后半未到，A13未完整重验，见第二十五节 |
 | 私有 extra 安装 | 0.3.20正常extra解析、21包兼容、锁检查89包；新Python3.13轮子848/42项源码一致，无editable或安装库补丁 |
-| opt.218 发版 / Host 钉版 | 第十次FAIL；永久错误自动重连已本地修复，干净候选86通过但未新真线，原A09～A11上游协议仍开放；等待第十一次复核后发版 opt.218，Host仍opt.217 |
+| opt.218 发版 / Host 钉版 | 已按第十一次PASS与用户放行口径完成：SDK ad49983a9、Host 7e1457831；626自动化通过、正式三轮示例通过。A09～A11上游阻断已接受且仍未验收，阶段整体不标全绿 |
 
 最后更新：2026-10-25 CST（阶段 3b 独立评审后复核：BLOCKED，未完成）。[独立评审](../plans/2026-10-24-unified-session-realtime/阶段3b-独立评审.md) 的 B1 仍开放：桌面主对话尚走原队列与运行入口，三份旧实现及旧通知协议尚在；Host 仍钉 opt.217，复用已有 Host 的 Session 公开生命周期接缝需先由独立 SDK 工作交付。新增真实公开 Session.open 的同根锁冲突反例；定向合同测试 2 通过、2 失败，是实施前红灯基线，不是切换验收通过。仅提交方案、测试、阻断记录及本状态，无生产接线、无新 worktree；未执行前端测试、真实模型冒烟或原生点击，未推送。不计完成里程碑。详见 [阶段 3b 记录](../plans/2026-10-24-unified-session-realtime/阶段3b-记录.md)。
 
@@ -4702,6 +4710,7 @@ SDK 源码修复已提交 `2b8428465cbd41032ba024a0b7199183161f5ecd`（candidate
 
 | 日期 | 里程碑 |
 |---|---|
+| 2026-10-26 | **SDK opt.218与Host钉版完成（用户放行口径）** — 第十一次PASS；语音联合桥和host.open_session发布，626项自动化通过、正式轮子完整录音示例通过。A09～A11上游协议阻断保持未验收并已交接，不标阶段整体完成；本地main、未push。 |
 | 2026-09-24 | **ARP 计量口径纠正 + 思考/不思考双模式 🟡** — DeepSeek 只算线上请求（去掉先前输出储备），记账可以多算不可以少算；提供方显式思考开关、私有思考逐条回传、计数按模式精确；Host 独立思考原生池，新 Mission 默认开。SDK arp.4 `ffd62d3d` / Host `860a4445`。真实思考线路上的 400 规则待核实 |
 | 2026-08-30 | **全局多 Skill 安装、恢复与 TokenSeller 普通 Session 真人调用 PASS 🟡** — `plan-test-skill@3a094db…` 以 `simpleharness.pkg2` 保留跨 Skill 资源，失败 verification 释放并 supersede、完整 Manager receipt 恢复、attestation 后全局 activation 幂等收口；三项 binding generation 2 active。真实 `deepseek-v4-flash` Session `ec89714c…` 完成 `/plan-bs` 资源读取、Todo、延迟 Tool 激活并只提出澄清问题。完整安装 release gate 仍待执行。 |
 | 2026-08-29 | **Project-scoped managed Skill 当前故障链 PASS 🟡** — 修复 JSON tuple、授权 decision 恢复、verification attempt 恢复、resolver composition、owner-aware catalog 与 Capability Center Session scope；macOS 隔离 App 真实安装 `plan-test-skill@4d8c803…`，intent succeeded、verification attested，三成员 UI 均健康。完整安装 release gate 仍待执行。 |

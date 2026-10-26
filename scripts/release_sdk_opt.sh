@@ -76,7 +76,7 @@ uv run --frozen python -m pytest -q -p no:cacheprovider tests/sdk_adapters/test_
   tests/orchestration/test_taskgraph_operator_verbs.py tests/orchestration/test_ws_taskgraph_routing.py \
   tests/orchestration/test_support_export_taskgraph_history.py \
   tests/orchestration/test_recovery_degraded_host.py tests/orchestration/test_recovery_isolated_host.py \
-  tests/orchestration/test_global_budget_setting.py tests/orchestration/test_chat_mission_amend.py \
+  tests/orchestration/test_global_budget_setting.py tests/orchestration/test_desktop_session_contract.py tests/orchestration/test_session_bridge.py \
   tests/orchestration/test_assurance_quarantine.py \
   tests/orchestration/test_contract_projection.py tests/orchestration/test_projection.py \
   tests/orchestration/test_assurance_host_api.py \
