@@ -423,16 +423,23 @@ def request_planner_for_stall(
 
 
 def stall_asks_since_new_work(store: Any, mission_id: str) -> int:
-    """自上一次有新尝试建立以来，因"停在原地"问过规划器几次（只数事件，不看计划内容）。"""
-    count = 0
+    """Count opened stall turns since the last new attempt, excluding queued requests."""
+    requests: set[str] = set()
+    opened: set[str] = set()
     for event in store.iter_events(mission_id):
         if event.type == "AttemptCreated":
-            count = 0
+            requests.clear()
+            opened.clear()
         elif event.type == REQUESTED and str(event.payload.get("source_key", "")).startswith(
             STALLED_PREFIX
         ):
-            count += 1
-    return count
+            requests.add(f"{REQUESTED}:{event.payload['request_id']}")
+        elif (
+            event.type == "PlanningServiceResumed"
+            and event.payload.get("source_type") == REQUESTED
+        ):
+            opened.add(str(event.payload.get("service_id")))
+    return len(requests & opened)
 
 
 def stall_request_asked(store: Any, mission_id: str, plan_revision: int) -> dict[str, Any] | None:

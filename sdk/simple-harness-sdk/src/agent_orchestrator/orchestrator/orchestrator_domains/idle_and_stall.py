@@ -18,6 +18,7 @@ from ...contracts import (
     Mission,
     MissionStatus,
     MissionStopReason,
+    Task,
     TaskStatus,
 )
 from ...contracts.error_table import HANDOFF_VALIDITY_STALE
@@ -26,11 +27,14 @@ from ...contracts.obligations import ObligationLifecycle
 from ...deployment.root import current_criteria
 from ...graph.projection_validation import GraphIntegrityError
 from ...graph.task_network import GATING_REQUIREDNESS
+from ...runtime.model_router import RoutingUnavailable
 from ...runtime.planning_operations import SourceUnavailable
+from ...runtime.role_templates import role_for_task
 from ...storage import htn_store
 from ...storage.obligation_store import ObligationStore
 from ...storage.operation_completion_store import OperationCompletionStore
 from ...storage.operation_intent_store import OperationIntentStore
+from ...storage.planning_decision_store import PlanningDecisionStore
 from ...storage.store import StoreError
 from .. import planning_repair_requests as repair_requests
 from .._read_set import SemanticReadSetChecker
@@ -401,6 +405,49 @@ class IdleStallMixin(OrchestratorCore):
             return False
         return False
 
+    def _profile_unavailable_since(self, mission_id: str, profile_id: str) -> float:
+        """Start of the current continuous cooldown, from durable pool events."""
+        since = self.store.now
+        previous_until = float("-inf")
+        for event in self.store.iter_events(mission_id):
+            if (
+                event.type != "RuntimeProfileUnavailable"
+                or event.payload.get("profile_id") != profile_id
+            ):
+                continue
+            until = event.payload.get("until")
+            if until is None:
+                continue
+            if event.created_at > previous_until:
+                since = event.created_at
+            previous_until = float(until)
+        return since
+
+    def _cooling_profile_waits(
+        self, mission: Mission, rows: Sequence[Task], planned: set[str]
+    ) -> list[tuple[Task, RoutingUnavailable, float]]:
+        """Use the dispatch route, including escalation and fallback, before retry admission."""
+        waits = []
+        router = self._router_for(mission.id)
+        health = self.commit.unavailable_until()
+        for task in rows:
+            if task.id not in planned or task.status in TERMINAL_TASK:
+                continue
+            role = self._template(role_for_task(task), mission.id)
+            role = self._hierarchical_worker_template(role, mission.id)
+            try:
+                router.route(
+                    role=role.name,
+                    task_kind=str((mission.final_report or {}).get("task_kind") or "code"),
+                    previous_attempts=self.store.list_attempts(task.id),
+                    unavailable_until=health,
+                    now=self.store.now,
+                )
+            except RoutingUnavailable as unavailable:
+                since = self._profile_unavailable_since(mission.id, unavailable.profile_id)
+                waits.append((task, unavailable, since))
+        return waits
+
     def _idle_facts(
         self, mission: Mission, *, admissions: Any = None, read_plan: bool = True
     ) -> tuple[IdleFacts, Any, Sequence[Any]] | None:
@@ -447,15 +494,10 @@ class IdleStallMixin(OrchestratorCore):
                 and not self._awaiting_retry_decision(mission.id, task)
                 for task in rows
             ),
-            # 2026-10-22 Sol 真实局：执行池线路连错进入冷却，步骤被 _defer_for_profile 记在 deferred 里
-            # 等池（有自己的时限 profile_wait_seconds），停滞检测却在 3 秒内把任务判成"没有可派发的工作"停掉
-            # 加时间界（核验建议）：等待只在 profile_wait_seconds 以内成立，漏删的记录挡不住停滞检测
+            # A failed attempt may still be waiting for retry authorization, before deferred exists.
             "profile_wait": any(
-                task.id in planned
-                and task.id in self._attempts.deferred
-                and self.store.now - self._attempts.deferred[task.id]
-                <= self._config.profile_wait_seconds
-                for task in rows
+                self.store.now - since <= self._config.profile_wait_seconds
+                for _, _, since in self._cooling_profile_waits(mission, rows, planned)
             ),
             "unknown_actions": any(a["state"] in IN_FLIGHT_ACTION_STATES for a in actions),
             # A person's pending approval of any kind: an action awaiting approval, or a
@@ -678,6 +720,31 @@ class IdleStallMixin(OrchestratorCore):
         for mission in self._active_missions():
             if mission.status is not MissionStatus.ACTIVE:
                 continue
+            mode = self._new_mode(mission)
+            if mode is not None:
+                planned = {str(spec.task_id) for spec in mode.network(mission.id).occurrences}
+                cooling = self._cooling_profile_waits(
+                    mission, self.store.list_tasks(mission.id), planned
+                )
+                expired = next(
+                    (item for item in cooling
+                     if self.store.now - item[2] > self._config.profile_wait_seconds),
+                    None,
+                )
+                if expired is not None:
+                    task, unavailable, since = expired
+                    await self._fail_runtime_unavailable(
+                        mission,
+                        reason="runtime_profile_unavailable",
+                        detail={
+                            "task_id": task.id,
+                            "profile_id": unavailable.profile_id,
+                            "waited_seconds": round(self.store.now - since, 3),
+                            "profile_wait_seconds": self._config.profile_wait_seconds,
+                            "unavailable_until": unavailable.until,
+                        },
+                    )
+                    continue
             # Handoff item 7 / NEXT-TG-1.0 2B: the same verdict as the record. A
             # legal wait is never turned into NO_DISPATCHABLE_WORK.
             observed = self._idle_facts(mission, read_plan=False)
@@ -800,6 +867,56 @@ class IdleStallMixin(OrchestratorCore):
                     "the Planner is asked once for this plan revision before the Mission is stopped"
                 )
                 continue
+            planner_asked = repair_requests.stall_request_asked(
+                self.store, mission.id, int(admissions.plan_revision)
+            )
+            if planner_asked is not None:
+                events = tuple(self.store.iter_events(mission.id))
+                request_id = planner_asked["request_id"]
+                addressed = any(
+                    event.type == repair_requests.ADDRESSED
+                    and request_id in event.payload.get("repair_request_ids", ())
+                    for event in events
+                )
+                bindings = PlanningDecisionStore(self.store)
+                resumed_requests = set()
+                for event in events:
+                    if (
+                        event.type == "PlanningServiceResumed"
+                        and event.payload.get("service_id")
+                        == f"{repair_requests.REQUESTED}:{request_id}"
+                    ):
+                        binding = bindings.get_planning_request_for_intent(
+                            str(event.payload["intent_id"])
+                        )
+                        if binding is not None:
+                            resumed_requests.add(binding.request_id)
+                decided = addressed or any(
+                    event.type == "PlanningDecisionEvaluated"
+                    and event.payload.get("request_id") in resumed_requests
+                    and event.payload.get("status") in {"COMMITTED", "NO_STATE_CHANGE"}
+                    for event in events
+                )
+                if not planner_asked["planner_turn_opened"] or not decided:
+                    requested = next(
+                        event for event in events
+                        if event.type == repair_requests.REQUESTED
+                        and event.payload.get("request_id") == request_id
+                    )
+                    waited = self.store.now - requested.created_at
+                    if waited <= self._config.profile_wait_seconds:
+                        carry_on = True
+                        continue
+                    await self._fail_runtime_unavailable(
+                        mission,
+                        reason="stall_planner_unavailable",
+                        detail={
+                            "planner_asked": planner_asked,
+                            "waited_seconds": round(waited, 3),
+                            "profile_wait_seconds": self._config.profile_wait_seconds,
+                        },
+                    )
+                    continue
             # 原计划 §10.5、§24.1 第 10 条：问过规划器、它不改、等待关系成环 → 按"死锁"停，
             # 不借"没有可派发的工作"；环的事实随停止详情写出。
             # 按需导入：测试替身（agent_orchestrator.scheduling.wait_for.collect_wait_facts）

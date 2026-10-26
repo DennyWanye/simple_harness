@@ -65,10 +65,11 @@ class SchemaDefinitionError(ValueError):
 class ArgumentsValidationError(ValueError):
     """Model-supplied arguments do not conform to their Tool schema."""
 
-    def __init__(self, path: str, reason: str) -> None:
+    def __init__(self, path: str, reason: str, *, resource_limit: bool = False) -> None:
         super().__init__(f"{path}: {reason}")
         self.path = path
         self.reason = reason
+        self.resource_limit = resource_limit
 
 
 def _validate_resource_bounds(
@@ -79,6 +80,11 @@ def _validate_resource_bounds(
     max_nodes: int,
     schema: bool,
 ) -> None:
+    def invalid(reason: str) -> ValueError:
+        if schema:
+            return SchemaDefinitionError(f"$: {reason}")
+        return ArgumentsValidationError("$", reason, resource_limit=True)
+
     stack: list[tuple[Any, int, bool]] = [(value, 0, False)]
     active: set[int] = set()
     nodes = properties = required = enum_entries = 0
@@ -89,44 +95,44 @@ def _validate_resource_bounds(
             continue
         nodes += 1
         if nodes > max_nodes:
-            raise SchemaDefinitionError("$: JSON node limit exceeded")
+            raise invalid(f"JSON node limit exceeded (limit={max_nodes}, actual={nodes})")
         if depth > max_depth:
-            raise SchemaDefinitionError("$: JSON depth limit exceeded")
+            raise invalid(f"JSON depth limit exceeded (limit={max_depth}, actual={depth})")
         if isinstance(current, (Mapping, list, tuple)):
             identity = id(current)
             if identity in active:
-                raise SchemaDefinitionError("$: cyclic JSON containers are forbidden")
+                raise invalid("cyclic JSON containers are forbidden")
             active.add(identity)
             stack.append((current, depth, True))
         if isinstance(current, Mapping):
             if not all(isinstance(key, str) for key in current):
-                raise SchemaDefinitionError("$: JSON object keys must be strings")
+                raise invalid("JSON object keys must be strings")
             if schema and isinstance(current.get("properties"), Mapping):
                 count = len(current["properties"])
                 properties += count
                 if count > 64 or properties > 256:
-                    raise SchemaDefinitionError("$: schema property limit exceeded")
+                    raise invalid("schema property limit exceeded")
             if schema and isinstance(current.get("required"), list):
                 required += len(current["required"])
                 if required > 256:
-                    raise SchemaDefinitionError("$: schema required limit exceeded")
+                    raise invalid("schema required limit exceeded")
             if schema and isinstance(current.get("enum"), list):
                 count = len(current["enum"])
                 enum_entries += count
                 if count > 64 or enum_entries > 256:
-                    raise SchemaDefinitionError("$: schema enum limit exceeded")
+                    raise invalid("schema enum limit exceeded")
             for key, child in current.items():
                 if schema and len(key.encode("utf-8")) > 4096:
-                    raise SchemaDefinitionError("$: JSON key exceeds 4096 bytes")
+                    raise invalid("JSON key exceeds 4096 bytes")
                 stack.append((child, depth + 1, False))
         elif isinstance(current, (list, tuple)):
             for child in current:
                 stack.append((child, depth + 1, False))
         elif isinstance(current, str):
             if schema and len(current.encode("utf-8")) > 4096:
-                raise SchemaDefinitionError("$: JSON string exceeds 4096 bytes")
+                raise invalid("JSON string exceeds 4096 bytes")
         elif isinstance(current, float) and not math.isfinite(current):
-            raise SchemaDefinitionError("$: JSON numbers must be finite")
+            raise invalid("JSON numbers must be finite")
     try:
         encoded = json.dumps(
             thaw_json(value),
@@ -136,9 +142,11 @@ def _validate_resource_bounds(
             allow_nan=False,
         ).encode("utf-8")
     except (TypeError, ValueError) as exc:
-        raise SchemaDefinitionError("$: value is not strict JSON") from exc
+        raise invalid("value is not strict JSON") from exc
     if len(encoded) > max_bytes:
-        raise SchemaDefinitionError("$: canonical JSON byte limit exceeded")
+        raise invalid(
+            f"canonical JSON byte limit exceeded (limit={max_bytes}, actual={len(encoded)})"
+        )
 
 
 def _json_equal(left: Any, right: Any) -> bool:
@@ -304,9 +312,9 @@ def validate_argument_resource_bounds(arguments: Any) -> None:
 
     _validate_resource_bounds(
         arguments,
-        max_bytes=65536,
+        max_bytes=1048576,
         max_depth=12,
-        max_nodes=1024,
+        max_nodes=16384,
         schema=False,
     )
 

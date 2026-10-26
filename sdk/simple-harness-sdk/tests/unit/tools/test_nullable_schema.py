@@ -3,6 +3,7 @@
 import copy
 
 import pytest
+
 from simple_harness.contracts import freeze_json
 from simple_harness.tools.schema import (
     ArgumentsValidationError,
@@ -69,8 +70,8 @@ def test_nullable_preserves_constraints_required_enum_const_and_frozen_input():
     validate_arguments({}, schema)  # Optional is still separate from nullable.
     with pytest.raises(ArgumentsValidationError):
         validate_arguments({"value": "x", "authorization": "forbidden"}, schema)
-    with pytest.raises(SchemaDefinitionError, match="byte limit"):
-        validate_arguments({"value": "x" * 65536}, schema)
+    with pytest.raises(ArgumentsValidationError, match="byte limit"):
+        validate_arguments({"value": "x" * 1048576}, schema)
 
 
 def test_nullable_rejects_malformed_definitions_and_keeps_legacy_string_strict():

@@ -21,6 +21,7 @@ from agent_orchestrator.orchestrator.orchestrator_domains.state import (
     PlanningRoundState,
 )
 from agent_orchestrator.orchestrator.progress import IdleFacts, Route, idle_verdict
+from agent_orchestrator.runtime.model_router import ModelRouter, RoutingRules, RuntimeProfile
 
 WAITS = (
     ("closeout_pending", "CLOSEOUT_CONVERGING"),
@@ -61,9 +62,11 @@ def test_finished_work_is_the_finalizers_business():
     assert decision.route is Route.FAST and decision.action == "FINALIZE"
 
 
-def _loop(*, closeout: bool, actions=(), approvals=(), dead_end: bool = False, deferred=None):
+def _loop(
+    *, closeout: bool, actions=(), approvals=(), dead_end: bool = False, deferred=None, cooling=()
+):
     notes = []
-    mission = SimpleNamespace(id="m1")
+    mission = SimpleNamespace(id="m1", final_report=None)
     fake = SimpleNamespace(
         _new_mode=lambda mission: SimpleNamespace(
             admissions=lambda mission_id: SimpleNamespace(refusals=("withheld",), readiness=()),
@@ -73,13 +76,20 @@ def _loop(*, closeout: bool, actions=(), approvals=(), dead_end: bool = False, d
         ),
         store=SimpleNamespace(
             now=100.0,
-            list_tasks=lambda mission_id: [SimpleNamespace(id="t1", status="READY")],
+            list_tasks=lambda mission_id: [SimpleNamespace(id="t1", kind="work", status="READY")],
+            list_attempts=lambda task_id: [],
+            iter_events=lambda mission_id: iter(cooling),
             list_actions=lambda mission_id: list(actions),
             list_approvals=lambda mission_id, *states: [
                 a for a in approvals if not states or a["state"] in states
             ],
         ),
-        commit=SimpleNamespace(assured_closeout_pending=lambda mission_id: closeout),
+        commit=SimpleNamespace(
+            assured_closeout_pending=lambda mission_id: closeout,
+            unavailable_until=lambda: {
+                e.payload["profile_id"]: e.payload["until"] for e in cooling
+            },
+        ),
         _awaiting_retry_decision=lambda mission_id, task: False,
         _has_pending_operation_completion=lambda mission: False,
         _operation_dead_end=lambda mission: dead_end,
@@ -96,27 +106,63 @@ def _loop(*, closeout: bool, actions=(), approvals=(), dead_end: bool = False, d
         _attempts=SimpleNamespace(deferred=dict(deferred or {})),
         _config=SimpleNamespace(profile_wait_seconds=300.0),
     )
+    router = ModelRouter(
+        {"default": RuntimeProfile("default", SimpleNamespace(invoke=lambda: None), "fixture")},
+        RoutingRules(),
+    )
+    fake._router_for = lambda mission_id: router
+    fake._template = lambda role, mission_id: role
+    fake._hierarchical_worker_template = lambda role, mission_id: role
+    fake._profile_unavailable_since = lambda *args: Orchestrator._profile_unavailable_since(
+        fake, *args
+    )
+    fake._cooling_profile_waits = lambda *args: Orchestrator._cooling_profile_waits(fake, *args)
     fake._root_resolved = lambda mission, new_mode: False
     return fake, mission
 
 
-def test_a_step_waiting_for_a_cooling_runtime_profile_is_not_a_stall_candidate():
-    """2026-10-22 Sol 真实局：线路连错让执行池进入冷却，步骤被记在 deferred 里等池；
-    停滞检测不认这个等待，3 秒内就按"没有可派发的工作"停了任务。等池有自己的时限
-    （profile_wait_seconds 到了由 _defer_for_profile 具名停下），停滞检测只需认它是合法等待。"""
+def _unavailable(at, until, profile="default"):
+    return SimpleNamespace(
+        type="RuntimeProfileUnavailable",
+        created_at=at,
+        payload={"profile_id": profile, "until": until},
+    )
 
-    fake, mission = _loop(closeout=False, actions=[{"state": "SUCCEEDED"}], deferred={"t1": 1.0})
+
+def test_a_step_waiting_for_a_cooling_runtime_profile_is_not_a_stall_candidate():
+    fake, mission = _loop(closeout=False, cooling=[_unavailable(1.0, 200.0)])
     facts, admissions, _ = Orchestrator._idle_facts(fake, mission)
     assert facts.profile_wait and admissions is None
     assert idle_verdict(facts).reason_code == "RUNTIME_PROFILE_COOLING"
-    # 等的是别的步骤（不在现行计划里）就不算
-    fake, mission = _loop(closeout=False, actions=[{"state": "SUCCEEDED"}], deferred={"gone": 1.0})
-    facts, _, _ = Orchestrator._idle_facts(fake, mission)
-    assert not facts.profile_wait and idle_verdict(facts).route is Route.STOP
-    # 等超过时限的记录不算（漏删的记录挡不住停滞检测）
-    fake, mission = _loop(closeout=False, actions=[{"state": "SUCCEEDED"}], deferred={"t1": -500.0})
+    assert not fake._attempts.deferred
+
+
+@pytest.mark.parametrize(
+    "cooling",
+    [
+        [],
+        [_unavailable(1.0, 99.0)],
+        [_unavailable(-500.0, 200.0)],
+        [_unavailable(1.0, 200.0, "other")],
+    ],
+)
+def test_expired_unrelated_or_stale_cooldowns_do_not_hide_a_stall(cooling):
+    fake, mission = _loop(closeout=False, cooling=cooling, deferred={"t1": 1.0})
     facts, _, _ = Orchestrator._idle_facts(fake, mission)
     assert not facts.profile_wait
+
+
+def test_continuous_cooldowns_keep_the_first_unavailable_time():
+    fake, mission = _loop(
+        closeout=False, cooling=[_unavailable(-500.0, 90.0), _unavailable(80.0, 200.0)]
+    )
+    facts, _, _ = Orchestrator._idle_facts(fake, mission)
+    assert not facts.profile_wait
+    fake, mission = _loop(
+        closeout=False, cooling=[_unavailable(-500.0, 50.0), _unavailable(80.0, 200.0)]
+    )
+    facts, _, _ = Orchestrator._idle_facts(fake, mission)
+    assert facts.profile_wait
 
 
 def test_a_judged_mission_converging_its_closeout_is_not_a_stall_candidate():

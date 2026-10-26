@@ -34,6 +34,7 @@ import asyncio
 import contextlib
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
+from dataclasses import replace
 from typing import Any, NamedTuple
 
 import pytest
@@ -410,26 +411,33 @@ def test_a_confirmed_stall_asks_the_planner_instead_of_failing(tmp_path) -> None
     assert "MissionFailed" not in [event.type for event in events]
 
 
-def test_the_planner_is_asked_once_per_plan_revision_and_then_the_stall_stops(tmp_path) -> None:
+@pytest.mark.parametrize("opened,expire", [(False, False), (True, False), (False, True)])
+def test_a_stall_waits_for_a_real_planner_decision_with_a_bound(tmp_path, opened, expire) -> None:
     async def case():
         async with stalled(tmp_path, key="stall-once") as world:
             loop = world.loop
             await loop._record_hierarchical_stall()
             assert await loop._confirm_and_stop_stalled() is True
-            # the same plan, the same place: nobody changed anything
+            if opened:
+                assert loop._resume_planning_services(world.mission())
+            if expire:
+                loop._config = replace(loop._config, profile_wait_seconds=0.0)
+            # The same plan remains idle while its planner is queued or has no decision.
             await loop._record_hierarchical_stall()
             carried = await loop._confirm_and_stop_stalled()
             return carried, world.mission(), world.events()
 
     carried, mission, events = asyncio.run(case())
-    assert carried is False
     assert len(_stall_requests(events)) == 1, "one request per plan revision"
-    assert mission.status is MissionStatus.FAILED
-    assert mission.final_report["stop_reason"] == "no_dispatchable_work"
-    asked = mission.final_report["detail"]["planner_asked"]
-    assert asked["request_id"] == _stall_requests(events)[0].payload["request_id"]
-    # nobody opened the Planner's turn in this direct drive, and the report says so
-    assert asked["planner_turn_opened"] is False
+    if expire:
+        assert carried is False
+        assert mission.status is MissionStatus.FAILED
+        assert mission.final_report["stop_reason"] == "runtime_unavailable"
+    else:
+        if not opened:
+            assert carried is True
+        assert mission.status is MissionStatus.ACTIVE
+        assert not [event for event in events if event.type == "MissionFailed"]
 
 
 def test_the_run_opens_a_planner_turn_for_the_stall(tmp_path) -> None:
@@ -637,13 +645,19 @@ def test_stall_asks_are_counted_since_the_last_new_attempt() -> None:
 
     def asked(revision: int) -> Any:
         return E(
-            type=requests.REQUESTED, payload={"source_key": requests.stalled_key("m", revision)}
+            type=requests.REQUESTED, payload={"source_key": requests.stalled_key("m", revision),
+                                              "request_id": f"r{revision}"}
         )
 
     other = E(type=requests.REQUESTED, payload={"source_key": "event:x"})
     events = [asked(1), E(type="AttemptCreated", payload={}), asked(2), other, asked(3)]
     store = E(iter_events=lambda mission_id: iter(events))
-    assert requests.stall_asks_since_new_work(store, "m") == 2  # the new attempt reset the count
+    assert requests.stall_asks_since_new_work(store, "m") == 0
+    for revision in (1, 2, 3):
+        events.append(E(type="PlanningServiceResumed", payload={
+            "source_type": requests.REQUESTED, "service_id": f"{requests.REQUESTED}:r{revision}"}))
+    assert requests.stall_asks_since_new_work(store, "m") == 2
+
 
 
 def test_a_stall_asked_about_too_often_without_new_work_stops_without_asking_again(

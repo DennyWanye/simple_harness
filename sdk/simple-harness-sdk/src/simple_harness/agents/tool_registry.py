@@ -20,6 +20,7 @@ from simple_harness.tools import FunctionTool, ToolCall, ToolRegistry, ToolResul
 from simple_harness.tools.contracts import Tool, ToolContext, ToolHandler, ToolOutcome
 from simple_harness.tools.errors import MalformedToolArgumentsError, UnknownToolError
 from simple_harness.tools.permit import _ACTIVE_PERMIT, ToolPermit
+from simple_harness.tools.schema import ArgumentsValidationError
 
 INVALID_ARGUMENTS_CODE = "invalid_tool_arguments"
 UNKNOWN_TOOL_CODE = "tool_not_exposed"
@@ -80,6 +81,10 @@ class BaseAgentToolRegistry(ToolRegistry):
             )
         except MalformedToolArgumentsError as error:
             reason = str(error)
+            cause = error.__cause__
+            if isinstance(cause, ArgumentsValidationError) and cause.resource_limit:
+                # Resource diagnostics contain counts only, never argument values.
+                reason = f"{reason} {cause.reason}"
             tool = self.get(call.name)
 
             return cast(

@@ -6998,7 +6998,7 @@ def test_start_input_schema_enforces_all_frozen_resource_bounds_before_publish(
 @pytest.mark.parametrize(
     "start_input",
     [
-        {"objective": "x" * 65537},
+        {"objective": "x" * 1048577},
         {
             "objective": "valid",
             "nested": {
@@ -8056,9 +8056,9 @@ def test_actual_start_input_resource_preflight_is_iterative(shape: str) -> None:
         value = {}
         value["self"] = value
     elif shape == "nodes":
-        value = {"items": list(range(1100))}
+        value = {"items": list(range(16385))}
     else:
-        value = {"payload": "x" * 65537}
+        value = {"payload": "x" * 1048577}
     with pytest.raises(ValueError, match="depth|cyclic|node|byte"):
         _launch_request(start_input=value)
 
