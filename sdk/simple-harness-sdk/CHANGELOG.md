@@ -1,3 +1,13 @@
+## opt.218 — 语音联合桥与 host.open_session（2026-10-26）
+
+按用户放行口径与第十一次独立复核 PASS 发布。新增 `attach_voice`、`announce`、本地打断与有界重连，
+以及在已运行 Host 上共用执行库和事件流的 `host.open_session`。可选 `[realtime]` 使用 Service SDK 0.3.20。
+
+已知限制：A09～A11 阻断于中继 `upstream_protocol_error`，未完成验收；
+[交接](../../plans/2026-10-24-unified-session-realtime/交接-给chinzy-重连后控制错误-2026-10-26.md)已记录，未声称上游修通。
+不可重试终止不自动重连；通话中文字排队；打断后服务端历史不代表实际听到；重复 `session.update` 不可用。
+完整限制见 [Host 文档 §2e](docs/orchestration-host.md#已知限制)。发布门、Host 钉版和正式轮子示例结果见阶段3a记录第二十七节。
+
 ## 0.12.2 — P2.3e–P2.3v：Grok 验收重跑暴露的规划循环、provider 阻塞、合成器对齐、根评审证据、修复轮、只读叶、组合决议、只读拒绝有界、第二轮合成采用、下游工作区预铺、交接后连续 UNKNOWN 有界停机、修复轮复用只读叶与空 Planner 短路、终态 UNKNOWN 预留释放、修复轮 reconcile 仍在跑的兄弟 attempt、准则驱动写型测试端口、只读叶写守卫事前阻断、相同验证失败有界早停（2026-09-18）
 
 发布：2026-09-18，tag v0.12.2，代码 = 候选第 6 版 c0e13a4 + 本发布提交（仅文档/版本）

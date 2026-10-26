@@ -313,16 +313,13 @@ async def run(root, principal, model, tools, render, last_seen=0):
 版本，不自行生成。版本核对与 `decide/answer_planning_question` 在同一任务库写事务内完成，
 身份和请求绑定字段不能由调用参数覆盖。
 
-## 2e. 语音绑定（`[realtime]` 可选扩展，opt.218 候选）
+## 2e. 语音绑定（`[realtime]` 可选扩展，opt.218）
 
-最后更新：2026-10-26。本节是候选接口；当前 `[realtime]` 使用 Service SDK 0.3.20。
-第十次复核FAIL后，桥已本地修复永久终止自动重连：SessionFailed仅retryable=true才恢复，
-SessionClosed仅retryable/clean_expired允许恢复；干净或致命关闭、不可重试异常均释放绑定。
-永久终止不再发送response.cancel，也不关闭业务会话或取消任务；调用方可以明确再次attach_voice。
-接收异常和重连开线失败同样遵守不可重试标志，其他传输恢复仍受原退避/次数/预算限制。
-统一voice_event增加code/retryable或disposition字段，schema_version保持1，不保存错误正文。
-修复候选部署228d60db…/NOT_RUN，干净轮子关联86项通过；本候选尚未做新真线或原生App验收。
-以下live8通过片段属于修复前候选，不能直接回填本轮新源码。需修通剩余协议终止并再次独立复核。
+最后更新：2026-10-26。opt.218 按第十一次独立复核 PASS 和用户放行口径发布，
+`[realtime]` 使用 Service SDK 0.3.20。A09～A11 保持上游阻断，未改记通过；详见本节“已知限制”。
+桥遵守 SessionFailed.retryable 与 SessionClosed.disposition；不可重试终止释放绑定，保留业务
+会话和任务，可由调用方明确重新 attach_voice。统一事件增加稳定 code/retryable/disposition，
+schema_version 仍为 1，不保存任意错误正文。
 
 item 身份由首次出现它的事件确定，后续 role 字段只记录诊断；已确认的真实用户音频不会
 被错误的 assistant 标签覆盖，真正助手输出来源也不能改作用户输入。五条现场身份序列
@@ -345,7 +342,7 @@ Service 的非空用户转写仍可能产生 TranscriptCompleted，桥继续用�
 普通聊天提供方仍由SDK既有工厂装配，没有改池提示词、工具说明、任务目标或预算。
 MEETRAN的HTTP403预扣问题只作为历史保留，不再作为本轮待处理项，也不冒称已修复。
 真实业务完成、对应结果实播及恢复须逐项验收，离线通过不能替代；Host不填造身份或改写帧。
-等待第十一次复核后发版 opt.218，当前仍为开发候选，Host正式钉版保持opt.217。
+第十一次独立复核已按上述限制放行；正式部署身份和本次示例结果见阶段3a记录第二十七节。
 
 文字拒绝回执只保存 HTTP 状态、失败阶段、白名单 Provider 错误类别/参数类别和安全关联号，
 响应正文只在内存分类，不保存正文。安全 request_id 通过 X-Client-Request-Id 发送；远端未
@@ -368,24 +365,24 @@ A10 必须有活跃非终态任务、打断后推进与终态，A11 播放量按
 schema 校验参数，缺失工具、改名或参数集合变化仍拒绝就绪，工具说明与池身份不改。
 当前测试组合按下面顺序安装：先准备公共依赖，再以 `--no-index --find-links` 解析两个
 私有轮子，不使用 `--no-deps`。在仓库根目录执行，`EVIDENCE`
-指向本轮修复候选的忽略目录 `./.local-test-evidence/2026-10-25/unified-session/phase3/post-review10`：
+指向全新环境目录；Harness 正式轮子从 `backend/vendor/` 安装，私有 Service 轮子须通过 `--find-links` 提供：
 
 ```sh
-EVIDENCE=./.local-test-evidence/2026-10-25/unified-session/phase3/post-review10
+EVIDENCE=./.local-test-evidence/2026-10-25/unified-session/phase3/external/formal218-new
 SERVICE_WHEELS=./.local-test-evidence/2026-10-25/unified-session/phase3/live8/inputs
 uv venv --python 3.13 "$EVIDENCE/.venv"
 uv pip install --python "$EVIDENCE/.venv/bin/python" \
   'httpx>=0.28.1,<1' 'websockets>=15,<16' 'prompt-toolkit>=3.0.52,<4' \
   'packaging>=25,<27' 'pytest>=8.3,<9' 'deepseek-recipe==0.1.1'
 uv pip install --python "$EVIDENCE/.venv/bin/python" --no-index \
-  --find-links "$SERVICE_WHEELS" --find-links "$EVIDENCE/wheels" \
+  --find-links "$SERVICE_WHEELS" --find-links ./backend/vendor \
   'simple-harness-sdk[realtime]==0.13.0.dev20260925+opt.218'
 uv pip check --python "$EVIDENCE/.venv/bin/python"
 ```
 
 音频示例另显式安装 `sounddevice>=0.5,<0.6`；它是示例的设备实现，不是桥的强制依赖。
-本轮修复轮子已经在仓库内 Python 3.13 干净环境完成正常 extra 解析、依赖检查及
-Service→Host回环验证；未重跑完整录音示例。SDK 的 uv.lock 已重锁，私有包指向上述仓库相对目录；复现锁文件前须先放入校验
+修复候选已经完成正常 extra 解析、依赖检查及 Service→Host 离线回环验证；
+正式轮子完整三轮录音示例的实际结果单独记录于阶段3a记录第二十七节。SDK 的 uv.lock 已重锁，私有包指向上述仓库相对目录；复现锁文件前须先放入校验
 过的私有轮子，公开索引不承担私有候选的分发。
 
 ```python
@@ -406,7 +403,7 @@ await binding.detach()
 桥调用客户端的 `open(request)`。提供方、凭据铸造、传输与适配器由接入方组装，密钥只从
 进程环境读取，不传给会话台账。工厂每次重连重新组装客户端，旧 dispatcher 会拒绝新一代调用。
 Service SDK 0.3.20 的工厂装配、工具自动循环及路线 a 已经离线联合回环验证，真实工具目录确认通过；
-真实联合主链仍受前述协议、文字提供方及任务结果阻断。录音驱动与安装说明位于忽略目录
+A09～A11 真实联合主链仍受前述上游协议阻断。录音驱动与安装说明位于忽略目录
 `phase3/external/example_service320.py` 与 `phase3/external/README-0.3.20.md`，对应修复前现场；
 当前修复候选的离线安装/验证说明在 `phase3/post-review10/README.md`。
 
@@ -438,14 +435,17 @@ Service SDK 0.3.20 的工厂装配、工具自动循环及路线 a 已经离线�
 及全局递增序号，额外带 `binding_id/generation`，按适用范围带 `response_id/item_id/call_id`。
 原始 PCM 和音频 base64 不写入台账或事件流。
 
-**公开限制与语义：**
+### 已知限制
+
+- A09（跨文字/语音查询与取消）、A10（真实录音打断后活跃任务继续推进）、A11（后继 ASR 与新进程恢复）在中继 `upstream_protocol_error` 修复前**未完成验收**。按用户 2026-10-26 决定，本次作为已接受限制发布；交接见[给 chinzy 的控制错误交接](../../../plans/2026-10-24-unified-session-realtime/交接-给chinzy-重连后控制错误-2026-10-26.md)。这不表示上游已修通或三个场景已通过。
+- 不可重试终止不自动重连；释放音频、网络与文字锁，保留会话及任务。可重试网络/busy 与到期关闭仍按配置有界恢复，调用方可以明确重新绑定。
 
 - 通话期间文字 `send()` 在仲裁锁上按调用顺序排队，挂断后才由文本引擎处理；首版排队是进程内等待，进程退出后调用者须用原幂等键重试。关 App 会释放等待并返回 `session_closed`。
 - 结果和需审批事项进入播报队列；需审批与失败结果优先。普通内部进度不逐条朗读。播报、读取结果与人工 `ack/respond` 分离，不替用户审批。
-- 路线 a 使用 `append_message(..., trigger_response=True)`；历史和播放事实使用同接口并设为不触发回复。桥不发送重复 `session.update`，不使用只含 instructions 的更新，也不依赖 Qwen 不支持的带外生成。
+- 路线 a 使用 `append_message(..., trigger_response=True)`；历史和播放事实使用同接口并设为不触发回复。中继不接受重复 `session.update`（第二次可能断连），也不接受只含 instructions 的部分更新；桥不使用这两种更新，也不依赖 Qwen 不支持的带外生成。
 - Qwen 打断后服务端仍可能保存完整助手回复，服务端历史不代表用户实际听到。未播内容及本地实际播放位置持久保留，在下一语音回合或重连时作为资料注入，不自动重播；未播完不等于已听到或已批准。
 - 当前 Service SDK 不提供请求与 response 的可靠关联。若打断时仍有未分配 response 的请求或工具续答，会产生跨回合歧义。本代绑定发出 `voice_error`（`code=response_origin_ambiguous`、`recovery=detach_and_attach`），拒绝工具执行与播放，不再按 FIFO 猜来源；调用者须挂断后重新绑定，或等待真实断线重连建立新 generation，再重说未被处理的输入。不会自动重放音频。
-- 本轮真线路收到的工具回显删去了参数 schema 的 `description` 和数组 `items/minItems/maxItems`，Service SDK 因 `Qwen tool catalog mismatch` 拒绝就绪。A08～A11/A13 及三轮录音示例均未因此获得通过结论；桥没有放宽回显检查或删改旧池工具说明来绕过。
+- 工具目录确认使用 Service SDK 0.3.20 的语义比较，早期候选的 `Qwen tool catalog mismatch` 为历史限制；当前 A09～A11 阻断是上游协议错误，不能混为工具确认失败。
 - `generated`、`transmission_finished`、`received_audio_ms` 与 `played_audio_ms` 分别记账。不能把 `ResponseFinished` 或音频到达当作播放完成。首版不能从播放毫秒数可靠推导准确的文字断点，因此保留整段文本加播放事实。
 - `VoiceProfile` 可配置重连次数、指数退避、单连接及总通话秒数、每次回复 token 估算和总 token 额度。额度在打开媒体连接前向现有月账预留；有未知用量或进程中断时按上限结算，重开幂等收敛。它是 token/时间限制，不是提供方货币计费承诺。
 - 重连保留业务 `session_id`，递增 generation，注入最近已提交历史，绝不重放 PCM。挂断/重连前排队但被打断的播报保留为未播资料。

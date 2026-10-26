@@ -1,6 +1,11 @@
 {
-  "acceptance_evidence": null,
-  "deployment_id": "228d60dbd093d2a5975bf80fb261547a2f2c879082795ec4ff8018012f9c14e6",
+  "acceptance_evidence": {
+    "gate_run_at": "2026-10-26T07:20:12+00:00",
+    "gate_sha256": "b35f614856e0c7e09409856c3dd3d7dfaf8769061109bceb4f8d5bc5fca6261f",
+    "gate_status": "PASS",
+    "source_files_sha256": "15b0c75fa6ba70b532f05edf2579e29106d1ce0090196603aaf307fa9271e7c0"
+  },
+  "deployment_id": "fda2259d9f365a559485f87e7821e5d2dc8ea97ec6d2c584c5f2b87b64f36aa6",
   "schema": "taskgraph-htn-wiring-derivation-v1",
   "source_files": {
     "agent_orchestrator/__init__.py": "eb50152258b356bc7866e55823fc45c7209cb6150efe205dd03c40c33beedbc2",
@@ -548,7 +553,7 @@
     "agent_orchestrator/verification/scoped_acceptance.py": "02db198cfd02453f3f088bee948e6c8e57f164b304d075067ab4bbdcc6cc9d74",
     "agent_orchestrator/verification/scoped_composition.py": "faad4ea026a4ba07946e70c86145db477dad42c9091d066f27f37548d4c76780",
     "agent_orchestrator/verification/verifier_router.py": "a6ec5744f3c30d383a01ee3d724186c8cd56593091c7ac58e8b4bc9f49a068bd",
-    "agent_orchestrator/version.py": "e7a3097860f7bc7558150eee6af83edcb97bb9d1ba985c55fad7ea285e184ea8",
+    "agent_orchestrator/version.py": "5956d7ffd4887af78b0096b21e33186264a828703433c39339b3bed7ff67e5a1",
     "simple_harness/__init__.py": "2f24cb8a8aa15852ef84f0f51c89f1dd9a98284d970e2f3f05508927daf52c11",
     "simple_harness/agents/__init__.py": "aefea08f7f250426246cc94e677630de2926a82c68b64c659ddd3abb775c3686",
     "simple_harness/agents/arp/__init__.py": "9f68be0f87b2fa155f7980bbc9be19dacc008b2f3ec1268b1f36f1ade42d21cf",
@@ -852,7 +857,7 @@
     "simple_harness/workflows/personal_v1/ports.py": "1e5ec7df071b3ab19729f0768811fcc5544fd6a89421b4b34f7f5dde28ead1de",
     "simple_harness/workflows/personal_v1/selection.py": "c65c5e41abebfacc359bff6fe79f39b3cd87f0ff2739e2b398215ccd9dde033f"
   },
-  "taskgraph_acceptance": "NOT_RUN",
+  "taskgraph_acceptance": "VALIDATED",
   "upstream": {
     "business_replay": "CONSISTENT",
     "business_replay_receipt_sha256": "ba06c71d6123c2726041d11fe385cfec01cb57bef29ff9b22f6d9551cda05887",
