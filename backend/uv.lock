@@ -6880,7 +6880,7 @@ requires-dist = [
     { name = "rapidocr-onnxruntime", specifier = ">=1.3" },
     { name = "scrapling", extras = ["fetchers"], specifier = ">=0.4" },
     { name = "selectolax", specifier = ">=0.3" },
-    { name = "simple-harness-sdk", path = "vendor/simple_harness_sdk-0.13.0.dev20260925+opt.217-py3-none-any.whl" },
+    { name = "simple-harness-sdk", path = "vendor/simple_harness_sdk-0.13.0.dev20260925+opt.218-py3-none-any.whl" },
     { name = "sqlite-vec", specifier = ">=0.1" },
     { name = "structlog", specifier = ">=24.0" },
     { name = "tokenizers", specifier = ">=0.20" },
@@ -6896,15 +6896,15 @@ provides-extras = ["dev"]
 
 [[package]]
 name = "simple-harness-sdk"
-version = "0.13.0.dev20260925+opt.217"
-source = { path = "vendor/simple_harness_sdk-0.13.0.dev20260925+opt.217-py3-none-any.whl" }
+version = "0.13.0.dev20260925+opt.218"
+source = { path = "vendor/simple_harness_sdk-0.13.0.dev20260925+opt.218-py3-none-any.whl" }
 dependencies = [
     { name = "deepseek-recipe", marker = "sys_platform != 'win32'" },
     { name = "httpx" },
     { name = "pytest" },
 ]
 wheels = [
-    { filename = "simple_harness_sdk-0.13.0.dev20260925+opt.217-py3-none-any.whl", hash = "sha256:23623352e321600e39f9b9756ea7aa269e90a2c9ec1fb73aed1d4198283c16e1" },
+    { filename = "simple_harness_sdk-0.13.0.dev20260925+opt.218-py3-none-any.whl", hash = "sha256:9a2dc877265f4eaf2f33f059a2b440a2cc7e3631aaedd8a57d051fcdd3c83aa8" },
 ]
 
 [package.metadata]
@@ -6915,11 +6915,12 @@ requires-dist = [
     { name = "psutil", marker = "extra == 'local-capacity'", specifier = ">=7.2.2,<8" },
     { name = "pytest", specifier = ">=8.3,<9" },
     { name = "pyyaml", marker = "extra == 'skill-import'", specifier = ">=6.0,<7" },
+    { name = "simple-harness-service-sdk", extras = ["realtime"], marker = "extra == 'realtime'", specifier = "==0.3.20" },
     { name = "tokenizers", marker = "extra == 'hf-tokenizer'", specifier = ">=0.22,<1" },
     { name = "transformers", marker = "extra == 'hf-tokenizer'", specifier = ">=4.57,<6" },
     { name = "unified-planning", extras = ["aries"], marker = "extra == 'planning-aries'", specifier = ">=1.2,<2" },
 ]
-provides-extras = ["hf-tokenizer", "local-capacity", "planning-aries", "skill-import"]
+provides-extras = ["hf-tokenizer", "local-capacity", "planning-aries", "realtime", "skill-import"]
 
 [[package]]
 name = "six"
