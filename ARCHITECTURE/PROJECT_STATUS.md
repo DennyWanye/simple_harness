@@ -1,3 +1,5 @@
+最后更新：2026-10-26 23:36 CST（SDK opt.219 本地发版、Host 钉版及桌面控制入口真实冒烟完成）。规划层修复独立复评 PASS；SDK 提交 `2373d0647`、Host 提交 `f33c608b9`，正式安装 opt.219，848 项源码与 VALIDATED 清单匹配。发布门 447、Host 钉版 180，共 627 通过/0 失败；12 变异 KILLED、三保证通道接缝通过。本次使用原生进程身份查询，无测试替身。真实 DeepSeek 文字/委派 2 场景通过，`mission-66fa4f3788b4c4da` 为 COMPLETED，用时 300.62 秒，真实代答 1 次且已应用；进程/临时目录清理、端口释放。轮子 SHA-256 `c3b9076c3638b9b03522fd91c29128090c858b0ac65ded9a1e7a53f49de1c3ce`。本地 main、未 push；不外推原生 UI PRD 成功交付、成功结果重启恢复或特定分支共用换做法真实模型场景。详见[阶段 3b 发版记录](../plans/2026-10-24-unified-session-realtime/阶段3b-记录.md#opt219-发版2026-10-26-2336-cst)。
+
 最后更新：2026-10-26 夜（SDK 规划层三处缺陷修复，为 opt.219 准备）。源码仍 opt.218、Host 钉版未变。嵌套事务使用 SAVEPOINT，拒绝的提交整体回滚，后继 REPAIR 可同号提交；内部提交错误按 INTERNAL_CONTRACT_ERROR 留痕并免扣规划次数。真机 planner:7 是模型改写 goal，现以 PARAMETER_INVALID 返回完整 expected/observed，仍计答错；服务故障宽限 6 次与 tool_parse→INFRA 原实现正确，已更正旧记录。14 个定向模块按 ID 去重 291 通过/0 失败（原 4 个环境夹具错误逐项复验通过），新增 8 条先红后绿/守旧验证。受限运行器只在本地测试替换进程身份查询，不代表进程恢复或真机 E2E 验收。清单 848 项重新生成、NOT_RUN；未发版、未 push，待 Claude 独立检查及真实 PRD 成功交付复验。详见[阶段 3b 记录](../plans/2026-10-24-unified-session-realtime/阶段3b-记录.md#sdk-规划层三处缺陷修复2026-10-26-夜)。
 
 最后更新：2026-10-26 21:58:12 CST（PRD真机委派补跑仍未通过，按钮合同已真点击验证）。指定PRD原句创建mission-da569655f1da496b，PLANNING→ACTIVE，28分37秒后FAILED/stop_reason=planning_failed；有内容缺章/审阅格式耗尽证据，无COMPLETED。真实“通过”按钮点击后ANSWERED/pass，key选项UI路径验证通过1次。新增delegated1/progress989/needs_response1/result_ready1，新任务inbox恰1，prd文件存在；HTTP200×46、5xx0、超时0，另6条provider_protocol_error不混作线路失败。真Cmd+Q重启后失败通知和6份PRD哈希保留，成功结果恢复缺前置仍阻断；按本次新增成功目标四场景2通过/1失败/1阻断，前轮3/1保留历史范围。最终35408/35413及8100、新旧userdata占用全0。用户既有6份修复保留，本轮只做GUI/只读核对与两份文档，自动化未复跑；不自签全绿/完成里程碑，待Claude复核，未push。详见[真机补跑记录](../plans/2026-10-24-unified-session-realtime/阶段3b-记录.md#真机鼠标点击验收2026-10-26)及本地RESULT/新证据索引。
@@ -4724,6 +4726,7 @@ SDK 源码修复已提交 `2b8428465cbd41032ba024a0b7199183161f5ecd`（candidate
 
 | 日期 | 里程碑 |
 |---|---|
+| 2026-10-26 | **SDK opt.219 本地发版与 Host 钉版完成** — 独立复评 PASS；SDK `2373d0647` / Host `f33c608b9`，发布门447+Host180共627通过，12变异及三保证通道接缝通过。真实 DeepSeek NOTES 任务 `mission-66fa4f3788b4c4da` COMPLETED，300.62秒、真实代答1次；原生UI PRD及成功结果恢复不外推。本地main、未push。 |
 | 2026-10-26 | **阶段3b第九次独立复评收口：指定三项PASS** — 报告 `a0bd75248` 认可 Host `734831387` 的正式opt.218工厂、原16失败成功复验及真实委派后续事件，受评293/293证据成立。复评自身278通过/16失败调用按权限解释保留，不改记通过；真实成功代答、原生点击及受限环境完整全绿复现仍未完成。本地main、未push。 |
 | 2026-10-26 | **阶段 3b 桌面 SDK Session 定向/真实进程验收完成** — opt.218 正式安装、原16失败逐项通过；后端293/前端206通过，typecheck通过。DeepSeek文字与委派PASS，COMPLETED并回流结果；成功局无人工请求（真实成功代答0）。代码 `2949996b5`，三份旧实现累计删除1030行；待Claude独立复核与原生点击，不标UI E2E通过，未push。 |
 | 2026-10-26 | **SDK opt.218与Host钉版完成（用户放行口径）** — 第十一次PASS；语音联合桥和host.open_session发布，626项自动化通过、正式轮子完整录音示例通过。A09～A11上游协议阻断保持未验收并已交接，不标阶段整体完成；本地main、未push。 |
