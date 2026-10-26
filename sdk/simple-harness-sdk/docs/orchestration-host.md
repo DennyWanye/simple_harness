@@ -337,7 +337,8 @@ A09/A10 文字前置实际为 HTTP 403 / quota_precharge_rejected，source_kind=
 单独控制恢复诊断完成路线 a 实播 3200ms、断线回灌及同号重绑，未收到 tokenseller.error；
 它没有新录音/跨进程恢复或活跃任务，不能代替 A11。旧 A13 未作为本轮完整重验。
 历史通过片段不回填当前主链，Host 不填造 ID、不改写帧，也不修改 Service 安装库。
-等待第九次复核后发版 opt.218，当前仍是开发候选，Host 正式钉版保持 opt.217。
+第九次独立复核及回执均 FAIL，G2 保留；须修通并重验原组合，再第十次独立复核后判断
+opt.218 是否可发。当前仍是开发候选，Host 正式钉版保持 opt.217。
 
 文字拒绝回执只保存 HTTP 状态、失败阶段、白名单 Provider 错误类别/参数类别和安全关联号，
 响应正文只在内存分类，不保存正文。安全 request_id 通过 X-Client-Request-Id 发送；远端未
