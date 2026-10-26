@@ -315,12 +315,11 @@ async def run(root, principal, model, tools, render, last_seen=0):
 
 ## 2e. 语音绑定（`[realtime]` 可选扩展，opt.218 候选）
 
-最后更新：2026-10-26。本节是候选接口；当前 `[realtime]` 使用 Service SDK 0.3.19。
-规范化工具确认、工具循环、路线 a 回环及 Python 3.13 干净轮子接缝通过，正常 extra
-解析后 21 包兼容。旧缺键/空字符串/null、助手交错、跨代及资料来源合同在明确身份前提下
-继续通过；0.3.19 的身份来源合同变化及原四项旧断言调整见阶段 3a 记录第二十三节。
-最终干净合同/驱动集合 92 通过，另增驱动流程三项、角色顺序三项及 JSON 回执一项通过；
-受跟踪 Service 联合回环 23 通过。未知或助手 item 不能借其他 response 身份绕过校验。
+最后更新：2026-10-26。本节是候选接口；当前 `[realtime]` 使用 Service SDK 0.3.20。
+item 身份由首次出现它的事件确定，后续 role 字段只记录诊断；已确认的真实用户音频不会
+被错误的 assistant 标签覆盖，真正助手输出来源也不能改作用户输入。五条现场身份序列
+反例在旧0.3.19全部失败，新版全部转绿；未知来源及助手来源拒绝边界继续验证。
+正常extra解析后21包兼容，Python3.13全新轮子环境同根会话/关闭隔离接缝通过。
 
 Service 的非空用户转写仍可能产生 TranscriptCompleted，桥继续用公开 `context_ack_id`
 记录每代连接中自己追加的历史、未播资料与播报 item ID。这些 ID 的语音活动及转写只发
@@ -329,16 +328,16 @@ Service 的非空用户转写仍可能产生 TranscriptCompleted，桥继续用�
 历史/播报任意文本及精确原文回显的四项越权反例在新干净轮子中仍通过，正常音频输入保留。
 该防护不检查 provider 原始帧，不引入桥内 provider 兼容层。
 
-0.3.19 组合真实录音重验保存于 phase3/live7，逐项结论见阶段 3a 记录第二十三节。
-最终 A08～A11 为 0 通过/4 阻断，完整示例及两个补充分支也阻断。五次音频输入收到同 item
-的 assistant/in_progress/input_audio 元数据后，转写完成被拒，原话 `conflicting item role`；
-A09/A10 文字前置实际为 HTTP 403 / quota_precharge_rejected，source_kind=provider_request，
-不是工具解析或 ASR 故障。原请求及三个规划请求重放均有同类拒绝，未修改输出预算凑通过。
-单独控制恢复诊断完成路线 a 实播 3200ms、断线回灌及同号重绑，未收到 tokenseller.error；
-它没有新录音/跨进程恢复或活跃任务，不能代替 A11。旧 A13 未作为本轮完整重验。
-历史通过片段不回填当前主链，Host 不填造 ID、不改写帧，也不修改 Service 安装库。
-第九次独立复核及回执均 FAIL，G2 保留；须修通并重验原组合，再第十次独立复核后判断
-opt.218 是否可发。当前仍是开发候选，Host 正式钉版保持 opt.217。
+0.3.20与DeepSeek组合真实录音重验保存于phase3/live8，逐项结果见阶段3a记录第二十五节。
+原A08～A11为1通过/3阻断，完整三轮示例通过，两个补充1通过/1阻断。A08/示例任务
+均COMPLETED并实播对应结果8320/5360ms。A09/A10/A11仍有中继上游协议终止，后继
+跨引擎查询、活跃任务打断或新进程恢复未全部到达；不把局部恢复通过外推为整条验收。
+文字线路改用用户指定的chunfengapi/deepseek-v4.1-flash；ModelConfig不显式传thinking，
+使用默认enabled，并通过compatible_hosts声明DeepSeek转发主机，默认选择现有思考任务池。
+普通聊天提供方仍由SDK既有工厂装配，没有改池提示词、工具说明、任务目标或预算。
+MEETRAN的HTTP403预扣问题只作为历史保留，不再作为本轮待处理项，也不冒称已修复。
+真实业务完成、对应结果实播及恢复须逐项验收，离线通过不能替代；Host不填造身份或改写帧。
+等待第十次复核后发版 opt.218，当前仍为开发候选，Host正式钉版保持opt.217。
 
 文字拒绝回执只保存 HTTP 状态、失败阶段、白名单 Provider 错误类别/参数类别和安全关联号，
 响应正文只在内存分类，不保存正文。安全 request_id 通过 X-Client-Request-Id 发送；远端未
@@ -355,8 +354,8 @@ A10 必须有活跃非终态任务、打断后推进与终态，A11 播放量按
 
 `Session` 继续是唯一业务前门，Service SDK 负责媒体连接与工具结果回写循环，不反向依赖
 编排层。文本路径不要求安装 Service SDK。`[realtime]` 声明
-`simple-harness-service-sdk[realtime]==0.3.19`，激活 Service SDK 的网络传输依赖。
-0.3.19 要求 Harness `>=0.13.0.dev20260925`，允许本候选 opt.218；工具回显按 Service SDK
+`simple-harness-service-sdk[realtime]==0.3.20`，激活 Service SDK 的网络传输依赖。
+0.3.20 要求 Harness `>=0.13.0.dev20260925`，允许本候选 opt.218；工具回显按 Service SDK
 的工具名称、参数名和必填字段比较，允许提供方规范化描述和嵌套约束。调用时仍按原请求
 schema 校验参数，缺失工具、改名或参数集合变化仍拒绝就绪，工具说明与池身份不改。
 当前测试组合按下面顺序安装：先准备公共依赖，再以 `--no-index --find-links` 解析两个
@@ -365,15 +364,15 @@ schema 校验参数，缺失工具、改名或参数集合变化仍拒绝就绪�
 
 ```sh
 EVIDENCE=./.local-test-evidence/2026-10-25/unified-session/phase3/external
-SERVICE_WHEELS=./.local-test-evidence/2026-10-25/unified-session/phase3/live7/inputs
-uv venv --python 3.13 "$EVIDENCE/.venv-service319-final"
-uv pip install --python "$EVIDENCE/.venv-service319-final/bin/python" \
+SERVICE_WHEELS=./.local-test-evidence/2026-10-25/unified-session/phase3/live8/inputs
+uv venv --python 3.13 "$EVIDENCE/.venv-service320"
+uv pip install --python "$EVIDENCE/.venv-service320/bin/python" \
   'httpx>=0.28.1,<1' 'websockets>=15,<16' 'prompt-toolkit>=3.0.52,<4' \
   'packaging>=25,<27' 'pytest>=8.3,<9' 'deepseek-recipe==0.1.1'
-uv pip install --python "$EVIDENCE/.venv-service319-final/bin/python" --no-index \
-  --find-links "$SERVICE_WHEELS" --find-links "$EVIDENCE/wheels-service319-final" \
+uv pip install --python "$EVIDENCE/.venv-service320/bin/python" --no-index \
+  --find-links "$SERVICE_WHEELS" --find-links "$EVIDENCE/wheels-service320" \
   'simple-harness-sdk[realtime]==0.13.0.dev20260925+opt.218'
-uv pip check --python "$EVIDENCE/.venv-service319-final/bin/python"
+uv pip check --python "$EVIDENCE/.venv-service320/bin/python"
 ```
 
 音频示例另显式安装 `sounddevice>=0.5,<0.6`；它是示例的设备实现，不是桥的强制依赖。
@@ -398,9 +397,9 @@ await binding.detach()
 `client_factory` 接收本次 generation 的 dispatcher，返回配置好的 Service SDK 客户端；
 桥调用客户端的 `open(request)`。提供方、凭据铸造、传输与适配器由接入方组装，密钥只从
 进程环境读取，不传给会话台账。工厂每次重连重新组装客户端，旧 dispatcher 会拒绝新一代调用。
-Service SDK 0.3.19 的工厂装配、工具自动循环及路线 a 已经离线联合回环验证，真实工具目录确认通过；
+Service SDK 0.3.20 的工厂装配、工具自动循环及路线 a 已经离线联合回环验证，真实工具目录确认通过；
 真实联合主链仍受前述协议、文字提供方及任务结果阻断。录音驱动与安装说明位于忽略目录
-`phase3/external/example_service319.py` 与 `phase3/external/README-0.3.19.md`。
+`phase3/external/example_service320.py` 与 `phase3/external/README-0.3.20.md`。
 
 | 接口 | 行为 |
 |---|---|

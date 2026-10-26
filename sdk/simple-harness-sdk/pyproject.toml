@@ -30,7 +30,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-realtime = ["simple-harness-service-sdk[realtime]==0.3.19"]
+realtime = ["simple-harness-service-sdk[realtime]==0.3.20"]
 planning-aries = ["unified-planning[aries]>=1.2,<2"]
 local-capacity = ["psutil>=7.2.2,<8"]
 hf-tokenizer = ["transformers>=4.57,<6", "tokenizers>=0.22,<1", "jinja2>=3.1,<4"]
