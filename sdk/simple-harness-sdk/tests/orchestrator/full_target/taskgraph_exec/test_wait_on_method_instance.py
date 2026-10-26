@@ -39,6 +39,8 @@ async def _wait_on_instance(world, *, running: bool, forged: bool = False):  # t
     await world.commit_seed()
     [leaf] = world.leaves()
     if running:
+        # Observe the held provider call instead of assuming same-cycle dispatch.
+        await world.until(world.provider.entered.is_set)
         # The Worker's model call is still out (held): the step is running.
         assert loop.store.get_task(leaf).status is TaskStatus.ACTIVE
     else:

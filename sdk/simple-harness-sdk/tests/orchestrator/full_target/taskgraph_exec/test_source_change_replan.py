@@ -84,7 +84,9 @@ def test_a_superseded_source_waits_for_the_running_attempt_and_is_only_noted_whe
                     "idempotency_key": "reg-data-1",
                 }
             )
-            await world.commit_seed()  # the Worker's model call is held: its Attempt is running
+            await world.commit_seed()
+            # A committed plan need not have dispatched its Worker in the same cycle.
+            await world.until(world.provider.entered.is_set)
             [attempt] = [
                 a for t in loop.store.list_tasks(mission.id) for a in loop.store.list_attempts(t.id)
             ]
