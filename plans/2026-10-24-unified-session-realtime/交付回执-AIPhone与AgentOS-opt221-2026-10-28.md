@@ -1,6 +1,6 @@
 # 交付回执：统一会话 + 委派 + 语音桥（SDK opt.221，给 AIPhone 与 AgentOS）
 
-日期：2026-10-28。对应 AIPhone 2026-10-24 交接文（本目录《交接原文-AIPhone-2026-10-24.md》）与 AgentOS 2026-10-21 迁移交接。
+日期：2026-10-28（同日 Service SDK 0.3.20 正式发布后更新）。对应 AIPhone 2026-10-24 交接文（本目录《交接原文-AIPhone-2026-10-24.md》）与 AgentOS 2026-10-21 迁移交接。
 接入说明统一在 `sdk/simple-harness-sdk/docs/orchestration-host.md`（下文用 §号引用）。
 本文只写已经核实的事实。每项标"通过 / 阻断 / 部分 / 未执行"。
 
@@ -10,7 +10,7 @@
 |---|---|---|
 | AgentOS（文字任务、快速聊天、Luna/Sol） | **能用**。opt.221 是 opt.213 的原地升级，安装方式不变 | 换轮子即可。opt.214～221 的修复都在里面 |
 | AIPhone 文字主会话（`Session`：聊天、委派、结果 inbox、重启恢复） | **能用** | 只装一个轮子。接 §2d |
-| AIPhone 语音（`[realtime]` 语音桥） | **能接入，按"候选"用** | 要另装 Service SDK 0.3.20 候选轮子。A09～A11 三个场景等中继修好 |
+| AIPhone 语音（`[realtime]` 语音桥） | **能接入** | 要另装 Service SDK 0.3.20（已正式发布）。A09～A11 三个场景等中继修好 |
 
 不能用一句"全部完成"概括。语音侧有三个场景阻断在 chinzy 中继，见第 6 节。
 
@@ -24,16 +24,16 @@
 | 编排 SDK 轮子 SHA-256 | `bed6ed01950767e3a4e1af99ce0b26e04e94a0671d0e7f0adb51dfa01064ff23` |
 | 候选清单 | 同目录 `...opt.221.candidate-manifest.json`，SHA-256 `42f7fb6e0e8309376dc515f2b61ff0006e476851f933f15338871a5c6240c7ff` |
 | Host 钉版提交 | `23a9731bf3a9e86f9bcabcd49a7fc6aca6349aa0`；origin main 现为 `15024682d89dc93b56c2d1a0eb081213ccef797b` |
-| Service SDK 版本 | `0.3.20`（**私有候选**，GitHub 最新正式发布仍是 v0.3.12） |
-| Service SDK 源码提交 | `8891f016aaccdd3efc14bac6f5e6a6bdf727f981`（仓库 `DennyWanye/simple-harness-service-sdk`，已推送） |
-| Service SDK 轮子 SHA-256 | `f1e091bfe6656148d9541035bc0b0231e26636acf9b25ca9cc16c8ce1bcad3f0`（`simple_harness_service_sdk-0.3.20-py3-none-any.whl`） |
+| Service SDK 版本 | `0.3.20`，**2026-10-28 已正式发布**：https://github.com/DennyWanye/simple-harness-service-sdk/releases/tag/v0.3.20 |
+| Service SDK 源码提交 | `f34caa3c82f1da73df0ea7bdf91f055a7c179f35`（tag `v0.3.20`；仓库 `DennyWanye/simple-harness-service-sdk`） |
+| Service SDK 轮子 SHA-256 | `95a5ec79e6b12d7958f282e11c5e833f904f51505220a9d704698c14b2547bbb`（`simple_harness_service_sdk-0.3.20-py3-none-any.whl`，release 附件；10-27 前的私有候选 `f1e091bf…` 已作废） |
 | Memory SDK（可选） | `0.5.2`，SHA-256 `deff2fa85a269a3978f2c6efcd99fda77abcb74444170361365fd00ec0164e9e` |
 | Python | `>=3.11`。编排 SDK 实测 3.12、3.13。语音桥新环境实测 3.13（macOS arm64） |
 | 协议版本 | 会话事件 `schema_version=1`；语音事件同一 `schema_version=1`，额外带 `binding_id/generation` |
 | 执行池身份 | opt.219～221 没有改任何工具说明、提示词、并发默认值 |
 
-Service SDK 候选包在该仓库本机 `dist/candidate-0.3.20/`（Git 忽略目录）。里面有 `compatibility-bom.json`、`SHA256SUMS`、三份平台锁文件（`realtime-lock-aiphone-py313-linux-aarch64.txt` 等）。
-交付时把整个目录打包给 AIPhone。注意：BOM 里"candidate"一栏写的是 opt.217 轮子。0.3.20 对编排 SDK 的要求是 `>=0.13.0.dev20260925`，opt.221 满足。BOM 这栏在 0.3.20 正式发版时更新。
+Service SDK 的全部制品在上面的 GitHub release 里：Service 轮子与源码包、编排 SDK opt.221 轮子、Memory 0.5.2 轮子、`compatibility-bom.json`、`SHA256SUMS`、三份平台锁文件（`realtime-lock-aiphone-py313-linux-aarch64.txt` 等）。
+下载后先核对 `SHA256SUMS`。BOM 的 candidate 栏已改为 opt.221（轮子哈希 `bed6ed01…ff23`）。0.3.20 对编排 SDK 的要求是 `>=0.13.0.dev20260925`。
 
 ## 2. 安装
 
@@ -43,11 +43,11 @@ Service SDK 候选包在该仓库本机 `dist/candidate-0.3.20/`（Git 忽略目
 pip install "backend/vendor/simple_harness_sdk-0.13.0.dev20260925+opt.221-py3-none-any.whl"
 ```
 
-语音路径加 `[realtime]`。两个私有轮子都用 `--find-links` 解析。**不用 `--no-deps`**，满足 AIPhone 交接文第 7 节第 3 条：
+语音路径加 `[realtime]`。两个轮子都从 GitHub release 下载后用 `--find-links` 解析（SDK 都不在 PyPI）。**不用 `--no-deps`**，满足 AIPhone 交接文第 7 节第 3 条：
 
 ```bash
 uv pip install --no-index \
-  --find-links <Service候选目录> --find-links backend/vendor \
+  --find-links <release附件下载目录> \
   'simple-harness-sdk[realtime]==0.13.0.dev20260925+opt.221'
 uv pip check
 ```
@@ -115,7 +115,6 @@ opt.219～221 的真实模型验证全部用 DeepSeek（chunfengapi `deepseek-v4
 ## 6. 已知限制
 
 - **A09～A11 阻断在中继。** 现象：重连或同号重绑后，中继返回 `tokenseller.error`，`code=upstream_protocol_error`，`fatal=true`，`retryable=false`。桥按合同不再自动重连，释放绑定，保留会话和任务。调用方可以明确重新 `attach_voice`。交接稿：《交接-给chinzy-重连后控制错误-2026-10-26.md》。**这份稿还没有发给 chinzy。**
-- Service SDK 0.3.20 是私有候选。没有 tag，没有 GitHub release。安装只能走 `--find-links`。
 - Service SDK 0.3.20 不提供请求与 response 的可靠关联。打断时若有未分配来源的请求，桥发 `voice_error(code=response_origin_ambiguous)`，要求挂断重绑，不猜来源。
 - 通话期间文字 `send()` 排队到挂断后处理。进程退出后用原幂等键重试。
 - 根任务终审：两位 DeepSeek 审阅员对 56 KB 文档连续 6 次回复不可用，系统转人答。原因未查。
@@ -125,7 +124,7 @@ opt.219～221 的真实模型验证全部用 DeepSeek（chunfengapi `deepseek-v4
 
 ## 7. 给 AIPhone 的接入步骤
 
-1. 按第 2 节装 `simple-harness-sdk[realtime]==...opt.221` 和 Service SDK 0.3.20 候选，`uv pip check` 通过。
+1. 按第 2 节装 `simple-harness-sdk[realtime]==...opt.221` 和 Service SDK 0.3.20，`uv pip check` 通过。
 2. 用 `Session.open()` 建文字主会话，接 UI。先跑 B01、B02（文字）。
 3. 实现 `AudioIO` 三个方法。`played_audio_ms()` 必须是实际播放位置，不是已排队字节。
 4. 实现 `client_factory(dispatcher)`：组装 Service SDK 客户端，凭据只从进程环境读。
@@ -150,7 +149,7 @@ opt.219～221 的真实模型验证全部用 DeepSeek（chunfengapi `deepseek-v4
 
 ## 9. 没有做的事
 
-- Service SDK 0.3.20 正式发版（tag、GitHub release、BOM 的 candidate 栏改 opt.221）。
+- Host 内嵌编排 SDK 的 `uv.lock` 还指向本机忽略目录里的旧 0.3.20 候选轮子，要换成 GitHub release 的轮子。
 - 把 chinzy 交接稿发出去。
 - opt.221 轮子在仓库外新环境重跑两个示例。
 - A01～A15 统一证据包（把本机忽略目录里的证据按索引打包）。
