@@ -114,7 +114,7 @@ opt.219～221 的真实模型验证全部用 DeepSeek（chunfengapi `deepseek-v4
 
 ## 6. 已知限制
 
-- **A09～A11 阻断在中继。** 现象：重连或同号重绑后，中继返回 `tokenseller.error`，`code=upstream_protocol_error`，`fatal=true`，`retryable=false`。桥按合同不再自动重连，释放绑定，保留会话和任务。调用方可以明确重新 `attach_voice`。交接稿：《交接-给chinzy-重连后控制错误-2026-10-26.md》。**这份稿还没有发给 chinzy。**
+- **A09～A11 阻断在中继。** 现象：重连或同号重绑后，中继返回 `tokenseller.error`，`code=upstream_protocol_error`，`fatal=true`，`retryable=false`。桥按合同不再自动重连，释放绑定，保留会话和任务。调用方可以明确重新 `attach_voice`。内部稿：《交接-给chinzy-重连后控制错误-2026-10-26.md》；对外稿（脱敏、带绝对时间）：《交接-给chinzy-重连后上游协议错误-对外稿-2026-10-28.md》。**对外稿 10-28 整理完成，发送与否由用户决定。**
 - Service SDK 0.3.20 不提供请求与 response 的可靠关联。打断时若有未分配来源的请求，桥发 `voice_error(code=response_origin_ambiguous)`，要求挂断重绑，不猜来源。
 - 通话期间文字 `send()` 排队到挂断后处理。进程退出后用原幂等键重试。
 - 根任务终审：两位 DeepSeek 审阅员对 56 KB 文档连续 6 次回复不可用，系统转人答。原因未查。
