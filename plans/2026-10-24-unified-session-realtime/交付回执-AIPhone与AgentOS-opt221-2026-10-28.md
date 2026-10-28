@@ -149,7 +149,7 @@ opt.219～221 的真实模型验证全部用 DeepSeek（chunfengapi `deepseek-v4
 
 ## 9. 没有做的事
 
-- Host 内嵌编排 SDK 的 `uv.lock` 还指向本机忽略目录里的旧 0.3.20 候选轮子，要换成 GitHub release 的轮子。
+- 已完成：Host 内嵌编排 SDK 的 `uv.lock` 已换为 Service SDK 0.3.20 正式轮子，提交内容的 `source.url` 为 `https://github.com/DennyWanye/simple-harness-service-sdk/releases/download/v0.3.20/simple_harness_service_sdk-0.3.20-py3-none-any.whl`，轮子锁定 `sha256:95a5ec79e6b12d7958f282e11c5e833f904f51505220a9d704698c14b2547bbb`。安装及测试结果见[换源记录](记录-uvlock换指向release轮子-2026-10-28.md)。
 - 把 chinzy 交接稿发出去。
 - opt.221 轮子在仓库外新环境重跑两个示例。
 - A01～A15 统一证据包（把本机忽略目录里的证据按索引打包）。

@@ -363,13 +363,17 @@ A10 必须有活跃非终态任务、打断后推进与终态，A11 播放量按
 0.3.20 要求 Harness `>=0.13.0.dev20260925`，允许本候选 opt.218；工具回显按 Service SDK
 的工具名称、参数名和必填字段比较，允许提供方规范化描述和嵌套约束。调用时仍按原请求
 schema 校验参数，缺失工具、改名或参数集合变化仍拒绝就绪，工具说明与池身份不改。
-当前测试组合按下面顺序安装：先准备公共依赖，再以 `--no-index --find-links` 解析两个
-私有轮子，不使用 `--no-deps`。在仓库根目录执行，`EVIDENCE`
-指向全新环境目录；Harness 正式轮子从 `backend/vendor/` 安装，私有 Service 轮子须通过 `--find-links` 提供：
+当前测试组合按下面顺序安装：先准备公共依赖，再以 `--no-index --find-links` 解析
+正式轮子，不使用 `--no-deps`。在仓库根目录执行，`EVIDENCE`
+指向全新环境目录；Harness 正式轮子从 `backend/vendor/` 安装，Service 轮子从
+GitHub release 下载到附件目录，再通过 `--find-links` 提供：
 
 ```sh
 EVIDENCE=./.local-test-evidence/2026-10-25/unified-session/phase3/external/formal218-new
-SERVICE_WHEELS=./.local-test-evidence/2026-10-25/unified-session/phase3/live8/inputs
+SERVICE_WHEELS="$EVIDENCE/release-wheels"
+mkdir -p "$SERVICE_WHEELS"
+curl --fail --location --output "$SERVICE_WHEELS/simple_harness_service_sdk-0.3.20-py3-none-any.whl" \
+  https://github.com/DennyWanye/simple-harness-service-sdk/releases/download/v0.3.20/simple_harness_service_sdk-0.3.20-py3-none-any.whl
 uv venv --python 3.13 "$EVIDENCE/.venv"
 uv pip install --python "$EVIDENCE/.venv/bin/python" \
   'httpx>=0.28.1,<1' 'websockets>=15,<16' 'prompt-toolkit>=3.0.52,<4' \
@@ -382,8 +386,11 @@ uv pip check --python "$EVIDENCE/.venv/bin/python"
 
 音频示例另显式安装 `sounddevice>=0.5,<0.6`；它是示例的设备实现，不是桥的强制依赖。
 修复候选已经完成正常 extra 解析、依赖检查及 Service→Host 离线回环验证；
-正式轮子完整三轮录音示例的实际结果单独记录于阶段3a记录第二十七节。SDK 的 uv.lock 已重锁，私有包指向上述仓库相对目录；复现锁文件前须先放入校验
-过的私有轮子，公开索引不承担私有候选的分发。
+正式轮子完整三轮录音示例的实际结果单独记录于阶段3a记录第二十七节。SDK 的 `uv.lock`
+现在通过 URL 指向上述 GitHub release 轮子，并锁定 SHA-256
+`95a5ec79e6b12d7958f282e11c5e833f904f51505220a9d704698c14b2547bbb`；
+下载附件后应核对此哈希。复现锁文件可直接运行 `uv sync --frozen --no-dev --extra realtime`，
+由 uv 下载并校验 release 轮子，无须预放本机轮子。
 
 ```python
 from agent_orchestrator.host import VoiceProfile

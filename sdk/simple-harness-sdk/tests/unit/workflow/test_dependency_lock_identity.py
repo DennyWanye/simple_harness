@@ -8,10 +8,12 @@ import os
 import shutil
 import subprocess
 import sys
+import tomllib
 from dataclasses import replace
 from pathlib import Path
 
 import pytest
+
 from simple_harness.workflow import (
     SDK_DEPENDENCY_LOCK_HASH,
     WorkflowRegistry,
@@ -31,6 +33,30 @@ def test_embedded_dependency_identity_matches_repository_lock() -> None:
     assert hashlib.sha256((repository / "uv.lock").read_bytes()).hexdigest() == (
         SDK_DEPENDENCY_LOCK_HASH
     )
+
+
+def test_service_sdk_dependency_uses_verified_release_wheel() -> None:
+    repository = Path(__file__).resolve().parents[3]
+    lock_text = (repository / "uv.lock").read_text(encoding="utf-8")
+    release_url = (
+        "https://github.com/DennyWanye/simple-harness-service-sdk/releases/download/"
+        "v0.3.20/simple_harness_service_sdk-0.3.20-py3-none-any.whl"
+    )
+    packages = [
+        package
+        for package in tomllib.loads(lock_text)["package"]
+        if package["name"] == "simple-harness-service-sdk"
+    ]
+    assert len(packages) == 1
+    package = packages[0]
+    assert package["version"] == "0.3.20"
+    assert package["source"] == {"url": release_url}
+    assert len(package["wheels"]) == 1
+    assert package["wheels"][0]["url"] == release_url
+    assert package["wheels"][0]["hash"] == (
+        "sha256:95a5ec79e6b12d7958f282e11c5e833f904f51505220a9d704698c14b2547bbb"
+    )
+    assert ".local-test-evidence" not in lock_text
 
 
 def test_dependency_identity_seams_fail_closed(tmp_path: Path) -> None:
