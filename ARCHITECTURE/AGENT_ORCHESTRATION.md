@@ -1,3 +1,8 @@
+最后更新：2026-10-31（任务书 B 合并到 main：全宿主统一模型并发门；未发版）。
+合并提交 `f6d16b84d`（分支 `sol/B-shared-admission`，gpt-6.1-sol 实现，审核补修两处）。**当前源码链路**：`OrchestrationHost` 启动时建一个进程内共享模型门 `LocalProviderAdmission(settings.max_concurrent_model_calls)`，经 `OrchestratorConfig.shared_provider_admission`（不入比较、不入序列化、不入策略快照）套在每个任务池/聊天池自己的准入之外（`with_admission` 组合：先过池内准入，再过宿主的门），关宿主时清掉；准入指纹与各池编号不变。
+`provider_admission.py` 的在途记录改为按票据对象记 `(ticket, identity)`，旧槽位子类同键同值；`governance/policies.py` 的 `SNAPSHOT_FIELDS` 补登 `control_commands` 与 `shared_provider_admission` 两个"不入快照的运行时对象"（前者是基线上就漏登的）。
+验证：新测试文件 `test_shared_admission.py` 13 条对基线 9 条红；合并后 7 个测试文件 182 通过（见审核记录）；变异"聊天池不拿宿主的门"7/13 红；两个 opus 子代理按规范与任务书审阅，阻断级两条（旧槽位子类改键、快照分类表漏登）已补修。记录：[plans/2026-10-30-agentos-main-session-contract/审核记录-任务书B-2026-10-31.md](../plans/2026-10-30-agentos-main-session-contract/审核记录-任务书B-2026-10-31.md)。下文保留先前状态作为历史记录。
+
 最后更新：2026-10-31（阶段 0：停止回答后会话不可用，已修并发版 **SDK opt.223**，SDK 提交 `fcb0c8cfa`、Host 钉版 `76704babf`，发版门 180 通过）。
 **现象**：请求已交给线路时点"停止回答"，那次调用费用记"不明"（`provider_cancelled_after_handoff`）；`host/chat.py` 的 `_given_up` 不换代，执行层见不明费用就在调模型前按 COST 终止，会话从此 `react_cost_exceeded`。同根：宿主在回合在途时关掉再开，旧回合停在 `running`、账上有不明费用，新一句永远排在它后面。
 **改法**：`_given_up` 返回原因（`executor_closed` / `provider_result_unknown` / `unknown_charge_after_cancel` / `unknown_charge_in_open_turn`），**账上有不明费用就换一代执行者**；旧执行者与不明账原样留在执行库，不清零、不重放；回执加 `executor_replaced_reason`。不改任务层、池身份、提示词。
