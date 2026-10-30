@@ -473,3 +473,263 @@ def test_real_task_requirement_keeps_application_chain_and_shares_effects(tmp_pa
             await session.close()
 
     asyncio.run(case())
+
+
+def test_f2_settings_action_limit_is_explicit_and_validated():
+    from agent_orchestrator.host.settings import host_settings_from_mapping
+
+    assert HostSettings().max_actions_per_turn == 4
+    assert HostSettings(max_actions_per_turn=2).max_actions_per_turn == 2
+    assert host_settings_from_mapping({"max_actions_per_turn": 2}).max_actions_per_turn == 2
+    for value in (0, -1, True, "2"):
+        with pytest.raises(ValueError, match="max_actions_per_turn"):
+            HostSettings(max_actions_per_turn=value)
+
+
+def test_f2_invalid_arguments_do_not_consume_action_slots(tmp_path):
+    async def case():
+        connector = Photos()
+        session = fake(tmp_path, connector)
+        for i, arguments in enumerate([{}, {"target": "picture"}] * 4):
+            result = await session._actions.invoke(
+                connector, "move", arguments, turn_id="t", run_id="r", call_id=f"bad{i}"
+            )
+            assert result["status"] == "invalid_argument"
+        assert session._store.rows("command_routes") == []
+        assert (await invoke(session, connector, turn="t", run="r"))["status"] == "committed"
+        assert len(connector.calls) == 1
+
+    asyncio.run(case())
+
+
+def test_f2_new_authorization_failure_does_not_reuse_denied_reason(tmp_path):
+    class Port:
+        decision = AuthorizationDecision.deny("earlier denial")
+
+        async def decide(self, request):
+            if isinstance(self.decision, Exception):
+                raise self.decision
+            return self.decision
+
+    async def case():
+        connector, port = Photos(), Port()
+        session = fake(tmp_path, connector, port=port)
+        assert (await invoke(session, connector))["reason"] == "earlier denial"
+        port.decision = RuntimeError("offline")
+        assert (await invoke(session, connector)) == {"status": "authorization_required"}
+        assert not connector.calls
+
+    asyncio.run(case())
+
+
+def test_f2_pending_lookup_uses_binding_without_scanning_requests(tmp_path, monkeypatch):
+    async def case():
+        connector = Photos(approval=True)
+        session = fake(tmp_path, connector)
+        rows = session._store.rows
+
+        def checked(namespace):
+            assert namespace != "authorization_requests"
+            return rows(namespace)
+
+        monkeypatch.setattr(session._store, "rows", checked)
+        assert (await invoke(session, connector))["status"] == "pending_approval"
+
+    asyncio.run(case())
+
+
+def test_f2_action_and_normal_authorization_share_pending_shape(tmp_path):
+    from agent_orchestrator.host.authorization import SessionAuthorization
+    from agent_orchestrator.host.session_ledger import SessionError
+
+    connector = Photos(approval=True)
+    action_session = fake(tmp_path / "action", connector)
+    asyncio.run(invoke(action_session, connector))
+    [action_row] = action_session._store.rows("authorization_requests")
+    ordinary_session = fake(tmp_path / "ordinary", connector)
+    auth = SessionAuthorization(ordinary_session)
+    from agent_orchestrator.host.authorization import AuthorizationRequest
+
+    request = AuthorizationRequest(**action_row["request"])
+    with pytest.raises(SessionError, match="authorization_required"):
+        auth._apply(request, AuthorizationDecision.needs_approval(action_row["request_ref"]))
+    [ordinary_row] = ordinary_session._store.rows("authorization_requests")
+    assert set(action_row) == set(ordinary_row)
+    assert action_row["request_kind"] == "action"
+    assert ordinary_row["request_kind"] == "authorization"
+    assert {k: v for k, v in action_row.items() if k != "request_kind"} == {
+        k: v for k, v in ordinary_row.items() if k != "request_kind"
+    }
+
+
+def test_f2_response_and_queue_rollback_together(tmp_path, monkeypatch):
+    async def case():
+        connector = Photos(approval=True)
+        session = fake(tmp_path, connector)
+        pending = await invoke(session, connector)
+        [request] = session._store.rows("authorization_requests")
+        responded = session._actions.responded
+
+        def crash(row):
+            responded(row)
+            raise RuntimeError("failed before transaction commit")
+
+        with monkeypatch.context() as patch:
+            patch.setattr(session._actions, "responded", crash)
+            with pytest.raises(RuntimeError, match="before transaction commit"):
+                session.respond(pending["request_id"], "approve", request["version"])
+        assert (
+            session._store.get("authorization_requests", pending["request_id"])["state"]
+            == "pending"
+        )
+        assert session._store.rows("action_followups") == []
+        assert session.queued_inputs() == []
+        session.respond(pending["request_id"], "approve", request["version"])
+        await session._run_inputs()
+        assert len(connector.calls) == 1
+
+    asyncio.run(case())
+
+
+def test_f2_idle_approved_history_has_no_writes_or_request_scans(tmp_path, monkeypatch):
+    async def case():
+        connector = Photos(approval=True)
+        session = fake(tmp_path, connector)
+        for i in range(50):
+            pending = await invoke(session, connector, turn=f"t{i}")
+            row = session._store.get("authorization_requests", pending["request_id"])
+            session.respond(pending["request_id"], "approve", row["version"])
+        await session._run_inputs()
+        with session._store.transaction():
+            for notice in session.inbox():
+                notice["applied_turn_id"] = "consumed"
+                session._store.put("inbox", notice["event_id"], notice)
+        await session.recover()
+        statements, scans, ticks = [], [], []
+        rows, recover = session._store.rows, session.recover
+
+        def counted_rows(namespace):
+            if namespace == "authorization_requests":
+                scans.append(namespace)
+            return rows(namespace)
+
+        async def counted_recover():
+            ticks.append(True)
+            await recover()
+
+        monkeypatch.setattr(session._store, "rows", counted_rows)
+        monkeypatch.setattr(session, "recover", counted_recover)
+        session._store.connection.set_trace_callback(statements.append)
+        pump = asyncio.create_task(session._pump())
+        try:
+            await asyncio.sleep(3.05)
+        finally:
+            pump.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await pump
+            session._store.connection.set_trace_callback(None)
+        assert len(ticks) >= 12
+        assert not scans
+        assert not [s for s in statements if s.upper().startswith("BEGIN")]
+
+    asyncio.run(case())
+
+
+def test_f2_child_only_action_is_absent_from_catalog(tmp_path):
+    async def case():
+        connector = Photos(roles=("child",))
+        session = await real_session(tmp_path, connector, _chat_script(["done"]))
+        try:
+            assert not any(e.source == "action" for e in session._host.tool_catalog.entries)
+            await session.create_child("topic", command_id="child")
+            assert "photos__move" not in session.child("topic")._chat._registered_tools()
+        finally:
+            await session.close()
+
+    asyncio.run(case())
+
+
+def test_f2_completed_task_actions_are_observed_once(tmp_path, monkeypatch):
+    async def case():
+        connector = Photos()
+        session = fake(tmp_path, connector)
+        delegation = await session._delegations.delegate(
+            "task-turn",
+            "c",
+            {
+                "goal": "写报告",
+                "success_criteria": ["file:NOTES.md"],
+            },
+        )
+        mid = delegation["mission_id"]
+        session._host.finish(mid)
+        actions = []
+        for i in range(2):
+            receipt = Receipt(
+                f"task-{i}", "photos", "move", f"p{i}", params_hash({"to": "a"}), True
+            )
+            actions.append({**receipt.to_json(), "receipt": receipt.to_json()})
+        seen = []
+        monkeypatch.setattr(
+            session._host.store,
+            "list_actions",
+            lambda mission_id: (seen.append(mission_id), actions)[1],
+        )
+        for _ in range(5):
+            session._inbox.catch_up()
+        assert seen == [mid]
+        assert len(session._store.rows("effects")) == 2
+        statements = []
+        session._store.connection.set_trace_callback(statements.append)
+        session._actions.observe_task_actions(mid, delegation)
+        session._store.connection.set_trace_callback(None)
+        assert not [s for s in statements if s.upper().startswith("BEGIN")]
+
+    asyncio.run(case())
+
+
+def test_f2_child_queue_projection_recovers_after_committed_approval(tmp_path, monkeypatch):
+    async def case():
+        connector = Photos(approval=True)
+        script = _chat_script(
+            [
+                ("tool_schema", {"names": ["photos__move"]}),
+                ("photos__move", {"target": "picture", "to": "album"}),
+                "等待批准",
+            ]
+        )
+        parent = await real_session(tmp_path, connector, script)
+        try:
+            await parent.create_child("topic", command_id="child")
+            child = parent.child("topic")
+            await child.send("移动照片", key="one")
+            [request] = parent._store.rows("authorization_requests")
+
+            def crash(_key):
+                raise RuntimeError("before child projection")
+
+            with monkeypatch.context() as patch:
+                patch.setattr(child._actions, "publish_followup", crash)
+                with pytest.raises(RuntimeError, match="before child projection"):
+                    parent.respond(request["request_id"], "approve", request["version"])
+            assert (
+                parent._store.get("authorization_requests", request["request_id"])["state"]
+                == "approved"
+            )
+            [durable] = parent._store.rows("action_followups")
+            assert durable["session_id"] == child.session_id
+            assert child.queued_inputs() == [] and not connector.calls
+        finally:
+            await parent.close()
+        reopened = await real_session(tmp_path, connector, _chat_script(["done"]))
+        try:
+            child = reopened.child("topic")
+            await child._input_task
+            assert len(connector.calls) == 1
+            [queued] = child.queued_inputs()
+            assert queued["state"] == "done"
+            assert child.inbox()[0]["status"] == "committed"
+        finally:
+            await reopened.close()
+
+    asyncio.run(case())
