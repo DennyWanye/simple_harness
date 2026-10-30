@@ -123,8 +123,11 @@ async def partial_read(root, report) -> None:  # type: ignore[no-untyped-def]
                            "SELECT record_json FROM review_records WHERE mission_id=?", (case.mission_id,))
                        for record in [json.loads(raw)] if record["verdict"] == "INCONCLUSIVE"
                        for criterion in record["criteria"] for limitation in criterion["limitations"]]
-        assert limitations and set(limitations) == {"REVIEW_NO_USABLE_REPLY:UNEXPOSED_EVIDENCE"}, limitations
-        reason = (limitations[0].partition(":")[2],)
+        # 标记带两次各自的缘由：第二次仍引用没读全的页（UNEXPOSED_EVIDENCE），第一次是被要求重写（FORMAT_REPAIR）
+        assert limitations and set(limitations) == {
+            "REVIEW_NO_USABLE_REPLY:UNEXPOSED_EVIDENCE;FIRST_CALL=FORMAT_REPAIR"
+        }, limitations
+        reason = (limitations[0].partition(":")[2].partition(";")[0],)
         assert count(store, "SELECT COUNT(*) FROM acceptances WHERE mission_id=?", case.mission_id) == 0
         report["task_content_partial_read"] = {"review_key": review_key, "partial_label_disclosed": disclosed,
                                                "batches": [b["batch_no"] for b in chain], "rejection": reason[0],
