@@ -74,16 +74,16 @@ def test_delegating_to_two_children_runs_in_parallel_and_results_mirror_to_paren
     run(parent.create_child("a", command_id="c-a"))
     run(parent.create_child("b", command_id="c-b"))
     turn = parent._commit_input("两件事一起做", "k")["turn_id"]
-    one = parent._delegations.delegate(turn, "call-1", {**SPEC, "child_key": "a"})
-    two = parent._delegations.delegate(turn, "call-2", {**SPEC, "child_key": "b"})
+    one = asyncio.run(parent._delegations.delegate(turn, "call-1", {**SPEC, "child_key": "a"}))
+    two = asyncio.run(parent._delegations.delegate(turn, "call-2", {**SPEC, "child_key": "b"}))
     assert one["mission_id"] != two["mission_id"] and len(host.made) == 2
     assert one["child_key"] == "a" and two["child_key"] == "b"
     # 同一个工作会话仍是一个在途
     with pytest.raises(SessionError) as busy:
-        parent._delegations.delegate(turn, "call-3", {**SPEC, "child_key": "a"})
+        asyncio.run(parent._delegations.delegate(turn, "call-3", {**SPEC, "child_key": "a"}))
     assert busy.value.code == "busy"
     # 父自己直接委派不受子会话影响
-    direct = parent._delegations.delegate(turn, "call-4", SPEC)
+    direct = asyncio.run(parent._delegations.delegate(turn, "call-4", SPEC))
     assert direct["mission_id"] not in {one["mission_id"], two["mission_id"]}
     tasks = {t.get("child_key"): t for t in parent.tasks()}
     assert set(tasks) == {"a", "b", None}
@@ -105,9 +105,9 @@ def test_delegating_to_two_children_runs_in_parallel_and_results_mirror_to_paren
 def test_child_send_queues_input_without_running_it_and_capabilities_need_no_model(tmp_path):
     host, parent = make(tmp_path)
     run(parent.create_child("a", command_id="c-a"))
-    queued = parent.child_send("a", "也把视频算进去", command_id="in-1")
+    queued = asyncio.run(parent.child_send("a", "也把视频算进去", command_id="in-1"))
     assert queued["status"] == "accepted" and queued["input_id"]
-    assert parent.child_send("a", "也把视频算进去", command_id="in-1") == queued
+    assert asyncio.run(parent.child_send("a", "也把视频算进去", command_id="in-1")) == queued
     [row] = parent.child("a").queued_inputs()
     assert row["input_id"] == queued["input_id"] and row["state"] == "queued"
     assert any(e["kind"] == "input_accepted" for e in parent.child("a")._store.events(0))
@@ -185,8 +185,8 @@ def test_result_mirror_recovers_across_each_durable_boundary(tmp_path, monkeypat
     run(parent.create_child("a", command_id="create"))
     child = parent.child("a")
     turn = parent._commit_input("做报告", "k")["turn_id"]
-    first = parent._delegations.delegate(turn, "call", {**SPEC, "child_key": "a"})
-    repeated = parent._delegations.delegate(turn, "call", {**SPEC, "child_key": "a"})
+    first = asyncio.run(parent._delegations.delegate(turn, "call", {**SPEC, "child_key": "a"}))
+    repeated = asyncio.run(parent._delegations.delegate(turn, "call", {**SPEC, "child_key": "a"}))
     assert repeated["mission_id"] == first["mission_id"] and len(host.made) == 1
     host.finish(first["mission_id"])
 
@@ -218,7 +218,7 @@ def test_parent_scope_task_lookup_cancellation_and_receipts(tmp_path):
     host, parent = make(tmp_path)
     run(parent.create_child("a", command_id="c"))
     turn = parent._commit_input("做报告", "k")["turn_id"]
-    receipt = parent._delegations.delegate(turn, "call", {**SPEC, "child_key": "a"})
+    receipt = asyncio.run(parent._delegations.delegate(turn, "call", {**SPEC, "child_key": "a"}))
     assert parent.task(receipt["mission_id"])["child_key"] == "a"
     assert parent.child("a").tasks()[0]["child_key"] == "a"
     assert parent._delegations.receipts(turn)[0]["mission_id"] == receipt["mission_id"]
@@ -234,14 +234,14 @@ def test_parent_scope_task_lookup_cancellation_and_receipts(tmp_path):
 def test_child_input_conflict_reopen_and_no_execution(tmp_path):
     host, parent = make(tmp_path)
     run(parent.create_child("a", command_id="c"))
-    receipt = parent.child_send("a", "追加细节", command_id="input")
+    receipt = asyncio.run(parent.child_send("a", "追加细节", command_id="input"))
     with pytest.raises(SessionError, match="idempotency_conflict"):
-        parent.child_send("a", "改变细节", command_id="input")
+        asyncio.run(parent.child_send("a", "改变细节", command_id="input"))
     reopened = Session(host, session_id="main")
     run(reopened.recover())
     child = reopened.child("a")
     assert child.command_receipt("input") == receipt
-    assert reopened.child_send("a", "追加细节", command_id="input") == receipt
+    assert asyncio.run(reopened.child_send("a", "追加细节", command_id="input")) == receipt
     [row] = child.queued_inputs()
     assert row["source_session_id"] == "main" and row["directive"] == "next_turn"
     assert row["kind"] == "directive" and row["text"] == "追加细节"
@@ -432,7 +432,7 @@ def test_chat_recovery_sees_child_handles_before_replaying_commands(tmp_path, mo
                 [(run_id,)] = self.session._store.connection.execute(
                     "SELECT key FROM records WHERE namespace='run_inputs'"
                 ).fetchall()
-                receipt = self._command("child_send")(
+                receipt = await self._command("child_send")(
                     {"child_key": "a", "text": "恢复中的追加输入"}, run_id, "recovered-call"
                 )
                 replayed.append(receipt)
@@ -460,20 +460,26 @@ def test_parent_call_slot_freezes_destination(tmp_path, first_key, second_key, r
     turn = parent._commit_input("去做", "one")["turn_id"]
     first = {**SPEC, **({"child_key": first_key} if first_key else {})}
     second = {**SPEC, **({"child_key": second_key} if second_key else {})}
-    receipt = parent._delegations.delegate(turn, "call-one", first, attempt_id="run-one")
+    receipt = asyncio.run(
+        parent._delegations.delegate(turn, "call-one", first, attempt_id="run-one")
+    )
     with pytest.raises(SessionError, match="idempotency_conflict"):
-        parent._delegations.delegate(
-            turn,
-            "new-call" if restart else "call-one",
-            second,
-            attempt_id="run-two" if restart else "run-one",
+        asyncio.run(
+            parent._delegations.delegate(
+                turn,
+                "new-call" if restart else "call-one",
+                second,
+                attempt_id="run-two" if restart else "run-one",
+            )
         )
     assert len(parent._host.made) == 1
-    replay = parent._delegations.delegate(
-        turn,
-        "replay-call" if restart else "call-one",
-        first,
-        attempt_id="run-two" if restart else "run-one",
+    replay = asyncio.run(
+        parent._delegations.delegate(
+            turn,
+            "replay-call" if restart else "call-one",
+            first,
+            attempt_id="run-two" if restart else "run-one",
+        )
     )
     assert replay["mission_id"] == receipt["mission_id"]
 
@@ -547,13 +553,13 @@ def test_recover_finishes_child_delegation_recorded_before_mission_creation(tmp_
 
     monkeypatch.setattr(child, "_checkpoint", crash)
     with pytest.raises(Crash):
-        parent._delegations.delegate(turn, "call", {**SPEC, "child_key": "a"})
+        asyncio.run(parent._delegations.delegate(turn, "call", {**SPEC, "child_key": "a"}))
     assert host.made == {}
     reopened = Session(host, session_id="main")
     run(reopened.recover())
     [task] = reopened.tasks()
     assert task["mission_id"] is not None and len(host.made) == 1
-    replay = reopened._delegations.delegate(turn, "call", {**SPEC, "child_key": "a"})
+    replay = asyncio.run(reopened._delegations.delegate(turn, "call", {**SPEC, "child_key": "a"}))
     assert replay["mission_id"] == task["mission_id"] and len(host.made) == 1
 
 

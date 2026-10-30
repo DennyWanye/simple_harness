@@ -84,8 +84,8 @@ def test_identity_and_hash_are_sdk_bound_and_continuation_is_not_an_action(tmp_p
         run(session._authorization.ensure("continuation", "input", {}))
 
 
-def test_manual_approval_is_bound_idempotent_and_cannot_authorize_new_params(tmp_path):
-    session = make(tmp_path, AutoModeAuthorization(False))
+def test_custom_approval_is_bound_idempotent_and_cannot_authorize_new_params(tmp_path):
+    session = make(tmp_path, Port(AuthorizationDecision.needs_approval("manual-request")))
     with pytest.raises(SessionError, match="authorization_required"):
         run(session._authorization.ensure("accept_input", "input", {"text": "one"}))
     [pending] = session._store.rows("authorization_requests")
@@ -105,7 +105,7 @@ def test_manual_approval_is_bound_idempotent_and_cannot_authorize_new_params(tmp
 
 
 def test_approval_refuses_wrong_principal_expiration_and_cancellation(tmp_path):
-    session = make(tmp_path, AutoModeAuthorization(False))
+    session = make(tmp_path, Port(AuthorizationDecision.needs_approval("manual-request")))
     with pytest.raises(SessionError):
         run(session._authorization.ensure("accept_input", "input", {}))
     [pending] = session._store.rows("authorization_requests")
@@ -197,7 +197,7 @@ def test_missing_authoritative_receipt_stays_unknown_and_does_not_replay(tmp_pat
     assert row["state"] == "unknown" and row["receipt_ref"] is None
 
 
-def test_sync_callback_timeout_and_failure_do_not_touch_ledger_in_worker(tmp_path):
+def test_async_callback_timeout_and_failure_do_not_touch_ledger(tmp_path):
     class Slow:
         async def decide(self, request):
             await asyncio.sleep(0.2)
@@ -207,11 +207,11 @@ def test_sync_callback_timeout_and_failure_do_not_touch_ledger_in_worker(tmp_pat
     session._host.settings = SimpleNamespace(authorization_timeout_seconds=0.01)
     before = time.monotonic()
     with pytest.raises(SessionError, match="authorization_required") as caught:
-        session._authorization.ensure_sync("accept_input", "input", {})
+        run(session._authorization.ensure("accept_input", "input", {}))
     assert caught.value.retryable and time.monotonic() - before < 0.15
     assert session._store.rows("authorization_grants") == []
     session._authorization.port = Port(AuthorizationDecision.allow())
-    request = session._authorization.ensure_sync("accept_input", "input", {})
+    request = run(session._authorization.ensure("accept_input", "input", {}))
     assert session._authorization.check(request) == request
 
 
@@ -256,7 +256,7 @@ def test_expired_allow_is_not_cached_or_made_valid_by_retry(tmp_path):
 
 
 def test_goal_revision_approval_cannot_be_used_for_new_version(tmp_path):
-    session = make(tmp_path, AutoModeAuthorization(False))
+    session = make(tmp_path, Port(AuthorizationDecision.needs_approval("manual-request")))
     old = {"goal_id": "goal", "goal_version": 1}
     new = {"goal_id": "goal", "goal_version": 2}
     with pytest.raises(SessionError):
@@ -324,16 +324,12 @@ def test_public_respond_approves_exact_effect_and_repeat_has_one_handoff(tmp_pat
     assert connector.calls == 1
 
 
-def test_create_child_public_admission_requires_approval_and_replays_once(tmp_path):
+def test_manual_create_child_admission_allows_and_replays_without_approval(tmp_path):
     session = make(tmp_path, AutoModeAuthorization(False))
-    with pytest.raises(SessionError, match="authorization_required"):
-        run(session.create_child("child", command_id="create"))
-    assert session.children() == []
-    [pending] = session._store.rows("authorization_requests")
-    session.respond(pending["request_id"], "approve", pending["version"])
     first = run(session.create_child("child", command_id="create"))
     assert run(session.create_child("child", command_id="create")) == first
     assert len(session.children()) == 1
+    assert session._store.rows("authorization_requests") == []
 
 
 def test_root_revoke_invalidates_child_cached_allow_immediately(tmp_path):
@@ -418,7 +414,7 @@ def test_public_queued_work_rechecks_revocation_after_send_lock(tmp_path, kind):
         worker._chat = FakeChat(worker)
         await worker._send_lock.acquire()
         if kind == "directive":
-            accepted = session.child_send("worker", "queued input", command_id="queued")
+            accepted = await session.child_send("worker", "queued input", command_id="queued")
         else:
             accepted = await session.send("queued input", key="queued", wait=False)
         worker._wake_inputs()
@@ -431,7 +427,7 @@ def test_public_queued_work_rechecks_revocation_after_send_lock(tmp_path, kind):
         row = worker._store.get("queued_inputs", accepted["input_id"])
         assert row["receipt"]["error"]["code"] == "authorization_revoked"
         assert worker._chat.calls == 0 and worker._store.rows("turns") == []
-        await session.close(force=True)
+        await session.close()
 
     run(check())
 
@@ -463,7 +459,7 @@ def test_queued_input_without_goal_does_not_borrow_new_goal_authorization(tmp_pa
         requests = [request for request in port.requests if request.action == "accept_input"]
         assert len(requests) >= 2
         assert all(request.goal_ref is None and request.grant_ref is None for request in requests)
-        await session.close(force=True)
+        await session.close()
 
     run(check())
 
@@ -587,7 +583,7 @@ def test_goal_update_during_authorization_cannot_accept_new_version_unasked(tmp_
             await pending
         assert not session.children() and not session.queued_inputs()
         assert not session._store.rows("turns") and session._chat.calls == 0
-        await session.close(force=True)
+        await session.close()
 
     asyncio.run(case())
 
@@ -607,7 +603,7 @@ def test_repeated_approval_returns_original_after_goal_closes(tmp_path, outcome)
         expected_version=0,
     )
     with pytest.raises(SessionError, match="authorization_required"):
-        run(session._authorization.ensure("accept_input", "input", {}))
+        run(session._authorization.ensure("connector_effect", "input", {}))
     [pending] = session._store.rows("authorization_requests")
     receipt = session.respond(pending["request_id"], "approve", pending["version"])
     session.finish_goal("g", outcome, command_id="finish", expected_version=1, basis="facts")
@@ -615,7 +611,7 @@ def test_repeated_approval_returns_original_after_goal_closes(tmp_path, outcome)
     with pytest.raises(SessionError, match="stale_version"):
         run(
             session._authorization.ensure(
-                "accept_input", "new", {}, goal_ref={"goal_id": "g", "goal_version": 1}
+                "connector_effect", "new", {}, goal_ref={"goal_id": "g", "goal_version": 1}
             )
         )
     session.revoke_authorization("grant")
@@ -636,7 +632,7 @@ def test_repeated_approval_after_goal_cancelled_is_still_refused(tmp_path):
         expected_version=0,
     )
     with pytest.raises(SessionError):
-        run(session._authorization.ensure("accept_input", "input", {}))
+        run(session._authorization.ensure("connector_effect", "input", {}))
     [pending] = session._store.rows("authorization_requests")
     session.respond(pending["request_id"], "approve", pending["version"])
     session.finish_goal("g", "cancelled", command_id="finish", expected_version=1)
@@ -715,3 +711,381 @@ def test_cancel_after_effect_handoff_preserves_authoritative_receipt(tmp_path, b
     row = run(EffectLedger(session).execute(connector, "write", "target", {}, operation_key="k"))
     assert row["state"] == "committed" and row["receipt_ref"] and row["handed_off"]
     assert connector.calls == 1
+
+
+@pytest.mark.parametrize("action", ["accept_input", "create_child", "delegate"])
+def test_manual_mode_allows_session_control_without_approval_cards(tmp_path, action):
+    session = make(tmp_path, AutoModeAuthorization(False))
+    run(session._authorization.ensure(action, "target", {}))
+    assert session._store.rows("authorization_requests") == []
+
+
+def test_registered_delegation_rechecks_revocation_before_mission_creation(tmp_path):
+    from test_session import SPEC, Crash
+
+    async def case():
+        session = make(tmp_path, Port(AuthorizationDecision.allow()))
+        host = session._host
+        session.put_goal(
+            {
+                "goal_id": "g",
+                "objective": "write",
+                "completion_criteria": ["written"],
+                "budget": {"turns": 2},
+                "grant_ref": "grant",
+            },
+            command_id="goal",
+            expected_version=0,
+        )
+
+        def crash(point):
+            if point == "delegation_recorded":
+                raise Crash()
+
+        session._checkpoint = crash
+        with pytest.raises(Crash):
+            await session._delegations.delegate("turn", "call", SPEC)
+        assert not host.made
+        session.revoke_authorization("grant")
+        reopened = Session(host, session_id="main")
+        await reopened._delegations.recover()
+        [row] = reopened._store.rows("delegations")
+        assert row["mission_id"] is None and row["held_reason"] == "authorization_revoked"
+        assert not host.made
+
+    run(case())
+
+
+def test_child_send_denied_at_admission_leaves_no_queued_input(tmp_path):
+    async def case():
+        session = make(tmp_path, Port(AuthorizationDecision.allow()))
+        await session.create_child("a", command_id="child")
+        child = session.child("a")
+        child._authorization.port = Port(AuthorizationDecision.deny("no"))
+        with pytest.raises(SessionError, match="authorization_required"):
+            await session.child_send("a", "instruction", command_id="input")
+        assert child.queued_inputs() == []
+        assert not child._store.rows("commands")
+
+    run(case())
+
+
+def test_async_delegation_port_uses_host_loop_future_without_blocking_it(tmp_path):
+    from test_session import SPEC
+
+    async def case():
+        host_loop = asyncio.get_running_loop()
+        allowed = host_loop.create_future()
+        times = []
+        stopping = False
+
+        class FuturePort:
+            async def decide(self, request):
+                assert asyncio.get_running_loop() is host_loop
+                await allowed
+                return AuthorizationDecision.allow()
+
+        session = make(tmp_path, FuturePort())
+        session._host.settings = SimpleNamespace(authorization_timeout_seconds=0.25)
+
+        async def release():
+            await asyncio.sleep(0.1)
+            allowed.set_result(True)
+
+        async def monitor():
+            while not stopping:
+                times.append(time.monotonic())
+                await asyncio.sleep(0.005)
+
+        releaser = asyncio.create_task(release())
+        heartbeat = asyncio.create_task(monitor())
+        await asyncio.sleep(0)
+        try:
+            receipt = await session._delegations.delegate("turn", "call", SPEC)
+            assert receipt["mission_id"] and len(session._host.made) == 1
+        finally:
+            stopping = True
+            await releaser
+            await heartbeat
+        assert len(times) >= 10
+        assert max(b - a for a, b in zip(times, times[1:])) < 0.05
+
+    run(case())
+
+
+def test_claimed_recovery_rebinds_existing_mission_before_rechecking_grant(tmp_path):
+    from test_session import SPEC, Crash
+
+    async def case():
+        port = Port(AuthorizationDecision.allow())
+        session = make(tmp_path, port)
+        session.put_goal(
+            {
+                "goal_id": "g",
+                "objective": "write",
+                "completion_criteria": ["written"],
+                "budget": {"turns": 2},
+                "grant_ref": "grant",
+            },
+            command_id="goal",
+            expected_version=0,
+        )
+
+        def crash(point):
+            if point == "mission_created":
+                raise Crash()
+
+        session._checkpoint = crash
+        with pytest.raises(Crash):
+            await session._delegations.delegate("turn", "call", SPEC)
+        [row] = session._store.rows("delegations")
+        assert row["mission_id"] is None and row["dispatch_state"] == "claimed"
+        assert len(session._host.made) == 1
+        authorized_before = len(port.requests)
+        session.revoke_authorization("grant")
+        reopened = Session(session._host, session_id="main")
+        await reopened._delegations.recover()
+        [recovered] = reopened._store.rows("delegations")
+        assert (
+            recovered["mission_id"]
+            and recovered["receipt"]["mission_id"] == recovered["mission_id"]
+        )
+        assert len(session._host.made) == 1 and len(port.requests) == authorized_before
+
+    run(case())
+
+
+def test_repeated_recovery_does_not_rewrite_same_held_reason(tmp_path, monkeypatch):
+    from test_session import SPEC, Crash
+
+    async def case():
+        session = make(tmp_path, Port(AuthorizationDecision.allow()))
+        session.put_goal(
+            {
+                "goal_id": "g",
+                "objective": "write",
+                "completion_criteria": ["written"],
+                "budget": {"turns": 2},
+                "grant_ref": "grant",
+            },
+            command_id="goal",
+            expected_version=0,
+        )
+
+        def crash(point):
+            if point == "delegation_recorded":
+                raise Crash()
+
+        session._checkpoint = crash
+        with pytest.raises(Crash):
+            await session._delegations.delegate("turn", "call", SPEC)
+        session.revoke_authorization("grant")
+        reopened = Session(session._host, session_id="main")
+        await reopened._delegations.recover()
+        writes = []
+        original = reopened._store.put
+
+        def count(namespace, key, value):
+            writes.append((namespace, key))
+            return original(namespace, key, value)
+
+        monkeypatch.setattr(reopened._store, "put", count)
+        for _ in range(3):
+            await reopened._delegations.recover()
+        assert writes == [] and not session._host.made
+
+    run(case())
+
+
+def test_cancel_pending_creation_during_async_authorization_never_builds_mission(tmp_path):
+    from test_session import SPEC
+
+    async def case():
+        entered, release = asyncio.Event(), asyncio.Event()
+        calls = 0
+
+        class GatedPort:
+            async def decide(self, request):
+                nonlocal calls
+                calls += 1
+                if calls == 2:
+                    entered.set()
+                    await release.wait()
+                return AuthorizationDecision.allow()
+
+        session = make(tmp_path, GatedPort())
+        pending = asyncio.create_task(session._delegations.delegate("turn", "call", SPEC))
+        await entered.wait()
+        [row] = session._store.rows("delegations")
+        session.cancel_task(row["delegation_id"])
+        release.set()
+        with pytest.raises(SessionError, match="cancelled"):
+            await pending
+        assert not session._host.made
+        [row] = session._store.rows("delegations")
+        assert row["cancel_requested"] and row["terminal_status"] == "CANCELLED"
+
+    run(case())
+
+
+def test_model_delegate_task_authorizes_on_host_future_without_loop_stall(tmp_path):
+    from test_chat import _chat_script
+    from test_session import SPEC
+
+    from agent_orchestrator.host import Principal
+    from agent_orchestrator.host.offline import FixtureWordCounter, ScriptedProvider
+
+    async def case():
+        loop = asyncio.get_running_loop()
+        gate = loop.create_future()
+        ticks = []
+        monitoring = False
+        monitor_task = release_task = None
+
+        async def monitor():
+            while monitoring:
+                ticks.append(time.monotonic())
+                await asyncio.sleep(0.005)
+
+        async def release():
+            nonlocal monitoring
+            await asyncio.sleep(0.1)
+            ticks.append(time.monotonic())
+            monitoring = False
+            gate.set_result(True)
+
+        class FuturePort:
+            async def decide(self, request):
+                nonlocal monitoring, monitor_task, release_task
+                assert asyncio.get_running_loop() is loop
+                if request.action == "delegate":
+                    if release_task is None:
+                        monitoring = True
+                        monitor_task = asyncio.create_task(monitor())
+                        release_task = asyncio.create_task(release())
+                    await gate
+                return AuthorizationDecision.allow()
+
+        session = await Session.open(
+            tmp_path / "host",
+            principal=Principal("u", "User"),
+            provider=ScriptedProvider(chat=_chat_script([("delegate_task", SPEC), "Accepted."])),
+            counter=FixtureWordCounter(),
+            authorization_port=FuturePort(),
+            require_acceptance=False,
+        )
+        try:
+            reply = await session.send("Write a report", key="request")
+            assert reply["state"] == "committed"
+            assert reply["tool_calls"][0]["outcome"] == "succeeded"
+            assert len(session.tasks()) == 1
+            await release_task
+            await monitor_task
+            assert len(ticks) >= 10
+            assert max(b - a for a, b in zip(ticks, ticks[1:])) < 0.05
+        finally:
+            await session.close()
+
+    run(case())
+
+
+@pytest.mark.parametrize("when", ["before_authorization", "during_authorization"])
+def test_cancelled_parent_turn_cannot_escape_barrier_by_delegating_to_child(tmp_path, when):
+    from test_session import SPEC
+
+    async def case():
+        session = make(tmp_path, Port(AuthorizationDecision.allow()))
+        await session.create_child("a", command_id="child")
+        child = session.child("a")
+        row = session._commit_input("parent work", "parent-work")
+        session._current_input = row
+        entered, release = asyncio.Event(), asyncio.Event()
+
+        class GatedPort:
+            async def decide(self, request):
+                if request.action == "delegate":
+                    entered.set()
+                    await release.wait()
+                return AuthorizationDecision.allow()
+
+        if when == "before_authorization":
+            session.cancel("session_tree", "main", command_id="cancel")
+            with pytest.raises(SessionError, match="cancelled"):
+                await session._delegations.delegate(
+                    row["turn_id"], "call", {**SPEC, "child_key": "a"}
+                )
+        else:
+            child._authorization.port = GatedPort()
+            pending = asyncio.create_task(
+                session._delegations.delegate(row["turn_id"], "call", {**SPEC, "child_key": "a"})
+            )
+            await entered.wait()
+            session.cancel("session_tree", "main", command_id="cancel")
+            release.set()
+            with pytest.raises(SessionError, match="cancelled"):
+                await pending
+        assert not session._host.made and child._store.rows("delegations") == []
+        session._current_input = None
+        await session.close()
+
+    run(case())
+
+
+def test_child_delegation_keeps_parent_origin_and_replays_existing_receipt_after_cancel(tmp_path):
+    from test_session import SPEC
+
+    async def case():
+        session = make(tmp_path, Port(AuthorizationDecision.allow()))
+        await session.create_child("a", command_id="child")
+        turn = session._commit_input("parent work", "parent-work")
+        session._current_input = turn
+        first = await session._delegations.delegate(
+            turn["turn_id"], "call", {**SPEC, "child_key": "a"}
+        )
+        [row] = session.child("a")._store.rows("delegations")
+        assert row["origin_session_id"] == session.session_id
+        assert row["origin_turn_id"] == turn["turn_id"]
+        session._current_input = None
+        session.cancel("session_tree", "main", command_id="cancel")
+        replay = await session._delegations.delegate(
+            turn["turn_id"], "call", {**SPEC, "child_key": "a"}
+        )
+        assert replay["mission_id"] == first["mission_id"]
+        assert len(session._host.made) == 1 and replay["intent_binding"] == "replayed"
+        await session.close()
+
+    run(case())
+
+
+def test_cancelled_parent_origin_prevents_late_approval_card(tmp_path):
+    from test_session import SPEC
+
+    async def case():
+        session = make(tmp_path, Port(AuthorizationDecision.allow()))
+        await session.create_child("a", command_id="child")
+        child = session.child("a")
+        row = session._commit_input("parent work", "parent-work")
+        session._current_input = row
+        entered, release = asyncio.Event(), asyncio.Event()
+
+        class LateApproval:
+            async def decide(self, request):
+                entered.set()
+                await release.wait()
+                return AuthorizationDecision.needs_approval("late-parent-work")
+
+        child._authorization.port = LateApproval()
+        pending = asyncio.create_task(
+            session._delegations.delegate(row["turn_id"], "call", {**SPEC, "child_key": "a"})
+        )
+        await entered.wait()
+        session.cancel("session_tree", "main", command_id="cancel")
+        release.set()
+        with pytest.raises(SessionError, match="cancelled"):
+            await pending
+        assert session._store.rows("authorization_requests") == []
+        assert not session._host.made and child._store.rows("delegations") == []
+        session._current_input = None
+        await session.close()
+
+    run(case())

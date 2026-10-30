@@ -121,7 +121,13 @@ class Goals:
     def current_ref(self) -> dict[str, Any] | None:
         root = self.session._root_session()
         for row in root._store.rows("goals"):
-            if row["state"] not in GOAL_TERMINAL:
+            if row["state"] not in GOAL_TERMINAL and row["state"] != "cancel_requested":
+                cancelled = root._is_cancelled(
+                    goal_ref={"goal_id": row["goal_id"], "goal_version": row["goal_version"]},
+                    for_new_input=True,
+                )
+                if cancelled:
+                    continue
                 return {"goal_id": row["goal_id"], "goal_version": row["goal_version"]}
         return None
 

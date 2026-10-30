@@ -309,13 +309,13 @@ class SessionChatService(ChatService):
         return replace(native, authorization=DeploymentToolAuthorization(self._registered_tools()))
 
     def _command(self, name: str):
-        def invoke(arguments, run_id, call_id):
+        async def invoke(arguments, run_id, call_id):
             input_key = self.session._store.get("run_inputs", run_id)
             active = None if input_key is None else self.session._store.get("turns", input_key)
             if active is None:
                 raise SessionError("permission_denied", "no committed input belongs to this run")
             if name == "delegate_task":
-                return self.session._delegations.delegate(
+                return await self.session._delegations.delegate(
                     active["turn_id"], call_id, arguments, attempt_id=run_id
                 )
             if name == "task_status":

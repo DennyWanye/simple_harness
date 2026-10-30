@@ -105,6 +105,12 @@ class FakeHost:
         self.cancelled = []
         self.requests = []
         self.decisions = []
+        self.orchestrator = SimpleNamespace(store=SimpleNamespace(find_mission=self.find_mission))
+
+    def find_mission(self, tenant_id, key):
+        if tenant_id != self.tenant_id or key not in self.made:
+            return None
+        return SimpleNamespace(id=self.made[key]["mission_id"]), {}
 
     def door(self, body):
         return deepcopy(body)
@@ -192,18 +198,20 @@ def test_missing_key_cannot_replay_the_literal_none_key(tmp_path):
 def test_delegation_idempotency_matrix_and_busy(tmp_path):
     host, session = make_session(tmp_path)
     turn = session._commit_input("do it", "k")["turn_id"]
-    first = session._delegations.delegate(turn, "c1", SPEC)
-    replay = session._delegations.delegate(turn, "c1", SPEC)
+    first = asyncio.run(session._delegations.delegate(turn, "c1", SPEC))
+    replay = asyncio.run(session._delegations.delegate(turn, "c1", SPEC))
     assert replay["mission_id"] == first["mission_id"] and replay["intent_binding"] == "replayed"
     with pytest.raises(Exception, match="busy"):
-        session._delegations.delegate(turn, "c2", SPEC)
-    drift = session._delegations.delegate(turn, "c1", {**SPEC, "success_criteria": ["different"]})
+        asyncio.run(session._delegations.delegate(turn, "c2", SPEC))
+    drift = asyncio.run(
+        session._delegations.delegate(turn, "c1", {**SPEC, "success_criteria": ["different"]})
+    )
     assert drift["mission_id"] == first["mission_id"] and drift["spec_drift"]
     second_turn = session._commit_input("again", "k2")["turn_id"]
     with pytest.raises(Exception, match="busy"):
-        session._delegations.delegate(second_turn, "c4", SPEC)
+        asyncio.run(session._delegations.delegate(second_turn, "c4", SPEC))
     host.finish(first["mission_id"])
-    second = session._delegations.delegate(second_turn, "c4", SPEC)
+    second = asyncio.run(session._delegations.delegate(second_turn, "c4", SPEC))
     assert second["mission_id"] != first["mission_id"] and len(host.made) == 2
 
 
@@ -225,10 +233,10 @@ def test_crash_recovery_at_each_durable_boundary(tmp_path, point):
     turn = session._commit_input("do it", "k")["turn_id"]
     if point in {"delegation_recorded", "mission_created"}:
         with pytest.raises(Crash):
-            session._delegations.delegate(turn, "c1", SPEC)
+            asyncio.run(session._delegations.delegate(turn, "c1", SPEC))
         session = Session(host, session_id="s")
-        session._delegations.recover()
-    receipt = session._delegations.delegate(turn, "c1", SPEC)
+        asyncio.run(session._delegations.recover())
+    receipt = asyncio.run(session._delegations.delegate(turn, "c1", SPEC))
     assert len(host.made) == 1
     host.finish(receipt["mission_id"])
     if point == "inbox_written":
@@ -259,16 +267,18 @@ def test_cancel_creation_then_recover_and_completed_is_immutable(tmp_path):
 
     session._checkpoint = fail
     with pytest.raises(Crash):
-        session._delegations.delegate(turn, "c", SPEC)
+        asyncio.run(session._delegations.delegate(turn, "c", SPEC))
     [pending] = session.tasks()
     session.cancel_task(pending["delegation_id"])
     session = Session(host, session_id="s")
-    session._delegations.recover()
+    asyncio.run(session._delegations.recover())
     [task] = session.tasks()
-    assert host.cancelled == [task["mission_id"]]
-    host.finish(task["mission_id"])
-    session.cancel_task(task["mission_id"])
-    assert len(host.cancelled) == 1
+    assert task["status"] == "CANCELLED" and task["mission_id"] is None
+    assert host.made == {} and host.cancelled == []
+    completed = asyncio.run(session._delegations.delegate("completed-turn", "completed", SPEC))
+    host.finish(completed["mission_id"])
+    assert session.cancel_task(completed["mission_id"])["status"] == "COMPLETED"
+    assert host.cancelled == []
     with pytest.raises(Exception, match="permission_denied"):
         session.task("foreign")
 
@@ -276,7 +286,7 @@ def test_cancel_creation_then_recover_and_completed_is_immutable(tmp_path):
 def test_respond_version_scope_and_human_only_ack(tmp_path):
     host, session = make_session(tmp_path)
     turn = session._commit_input("do it", "k")["turn_id"]
-    mid = session._delegations.delegate(turn, "c", SPEC)["mission_id"]
+    mid = asyncio.run(session._delegations.delegate(turn, "c", SPEC))["mission_id"]
     host.requests = [{"question_id": "q", "mission_id": mid, "state": "PENDING", "version": 2}]
     with pytest.raises(Exception, match="stale_request"):
         session.respond("q", "answer", version=1, answer="yes")
@@ -398,7 +408,7 @@ def test_live_text_pieces_are_ordered_and_never_replayed(tmp_path):
 def test_approval_binding_version_expiration_and_identity_fields(tmp_path):
     host, session = make_session(tmp_path)
     turn = session._commit_input("do it", "k")["turn_id"]
-    mid = session._delegations.delegate(turn, "c", SPEC)["mission_id"]
+    mid = asyncio.run(session._delegations.delegate(turn, "c", SPEC))["mission_id"]
     approval = {
         "request_id": "a",
         "mission_id": mid,
@@ -446,7 +456,7 @@ def test_approval_binding_version_expiration_and_identity_fields(tmp_path):
 def test_session_respond_forwards_bound_approval_decision_fields(tmp_path, decision, fields):
     host, session = make_session(tmp_path)
     turn = session._commit_input("do it", "k")["turn_id"]
-    mid = session._delegations.delegate(turn, "c", SPEC)["mission_id"]
+    mid = asyncio.run(session._delegations.delegate(turn, "c", SPEC))["mission_id"]
     request = {"request_id": "auto-request", "mission_id": mid, "state": "PENDING"}
     host.approvals = lambda mission_id: [request]
     host.decide = lambda rid, command, **values: (
@@ -548,7 +558,7 @@ def test_sources_validation_and_untrusted_model_identity(tmp_path):
         {**SPEC, "sources": [{"path": str(i), "content": "x"} for i in range(9)]},
     ):
         with pytest.raises(Exception, match="invalid_arguments"):
-            session._delegations.delegate(turn, "call", spec)
+            asyncio.run(session._delegations.delegate(turn, "call", spec))
     assert session.tasks() == []
 
 
@@ -587,9 +597,9 @@ def test_budget_refusal_does_not_leave_a_recovery_loop(tmp_path, monkeypatch):
 
     monkeypatch.setattr(session, "_reserve_result", exhausted)
     with pytest.raises(Exception, match="budget_exhausted"):
-        session._delegations.delegate(turn, "c", SPEC)
+        asyncio.run(session._delegations.delegate(turn, "c", SPEC))
     assert len(host.made) == 0
-    session._delegations.recover()
+    asyncio.run(session._delegations.recover())
     assert all(task["status"] == "REJECTED" for task in session.tasks())
 
 
@@ -630,7 +640,7 @@ def test_control_reconciliation_uses_durable_turn_binding(tmp_path):
 def test_polling_unchanged_mission_does_not_reproject_or_write(tmp_path):
     host, session = make_session(tmp_path)
     turn = session._commit_input("do it", "k")["turn_id"]
-    mid = session._delegations.delegate(turn, "c", SPEC)["mission_id"]
+    mid = asyncio.run(session._delegations.delegate(turn, "c", SPEC))["mission_id"]
     host.finish(mid)
     connection = sqlite3.connect(":memory:")
     connection.execute("CREATE TABLE events(mission_id TEXT, seq INTEGER)")
@@ -665,7 +675,7 @@ def test_combined_inbox_releases_every_result_allowance(tmp_path):
             # Seed two completed input turns before the pump gets CPU time.
             for index in range(2):
                 row = session._commit_input(f"request {index}", f"k{index}")
-                receipt = session._delegations.delegate(row["turn_id"], f"c{index}", SPEC)
+                receipt = await session._delegations.delegate(row["turn_id"], f"c{index}", SPEC)
                 session.cancel_task(receipt["mission_id"])
                 with session._store.transaction():
                     row["receipt"] = {"state": "committed", "text": "Accepted."}

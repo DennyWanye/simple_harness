@@ -7,6 +7,7 @@ import asyncio
 import os
 import subprocess
 import sys
+import time
 
 import pytest
 
@@ -41,11 +42,15 @@ def test_owner_generation_persists_and_conflict_does_not_advance(tmp_path):
 def test_instance_lock_detects_replaced_inode(tmp_path):
     lock = InstanceLock(tmp_path)
     assert lock.acquire()
+    assert lock.held
     try:
         os.replace(tmp_path / ".instance.lock", tmp_path / "detached-lock")
         replacement = InstanceLock(tmp_path)
         assert replacement.acquire()
         try:
+            deadline = time.monotonic() + 0.65
+            while lock.held and time.monotonic() < deadline:
+                time.sleep(0.01)
             assert not lock.held
             assert replacement.owner_generation == 2
         finally:
@@ -165,39 +170,50 @@ def c1_session(tmp_path):
     return host, Session(host, session_id="main")
 
 
-def test_c1_close_refuses_live_delegation_without_cancelling_it(tmp_path):
+def test_c1_archive_refuses_live_delegation_but_close_preserves_it(tmp_path):
     from test_session import SPEC
 
     async def run():
         host, session = c1_session(tmp_path)
-        task = session._delegations.delegate("turn", "call", SPEC)
+        task = await session._delegations.delegate("turn", "call", SPEC)
         with pytest.raises(SessionError, match="active_work"):
-            await session.close()
+            session.archive(command_id="archive")
         assert not session._closed
         assert session.task(task["delegation_id"])["status"] == "ACTIVE"
         assert host.cancelled == []
-        await session.close(force=True)
+        await session.close()
         assert session._closed and host.cancelled == []
         assert next(iter(host.made.values()))["status"] == "ACTIVE"
+        reopened = Session(host, session_id="main")
+        assert reopened.task(task["delegation_id"])["status"] == "ACTIVE"
+        with pytest.raises(SessionError, match="active_work"):
+            reopened.archive(command_id="archive")
+        await reopened.close()
 
     asyncio.run(run())
 
 
-def test_c1_unconsumed_result_blocks_close_until_trusted_exclusion(tmp_path):
+def test_c1_archive_refuses_unconsumed_result_and_close_preserves_it(tmp_path):
     from test_session import SPEC
 
     async def run():
         host, session = c1_session(tmp_path)
-        task = session._delegations.delegate("turn", "call", SPEC)
+        task = await session._delegations.delegate("turn", "call", SPEC)
         host.finish(task["mission_id"])
         session._inbox.catch_up()
         [notice] = session.inbox()
         session.ack(notice["event_id"])
         with pytest.raises(SessionError, match="active_work"):
-            await session.close()
+            session.archive(command_id="archive")
         assert not session._closed and session.inbox()[0]["applied_turn_id"] is None
-        session.exclude_result(notice["event_id"], "可信宿主不采用此结果", command_id="exclude")
         await session.close()
+        reopened = Session(host, session_id="main")
+        assert reopened.inbox()[0]["applied_turn_id"] is None
+        with pytest.raises(SessionError, match="active_work"):
+            reopened.archive(command_id="archive")
+        reopened.exclude_result(notice["event_id"], "可信宿主不采用此结果", command_id="exclude")
+        assert reopened.archive(command_id="archive")["archived"] is True
+        await reopened.close()
         assert session._closed and host.cancelled == []
 
     asyncio.run(run())
@@ -212,22 +228,29 @@ def test_c1_unconsumed_result_blocks_close_until_trusted_exclusion(tmp_path):
         ("continuation_results", "queued"),
     ],
 )
-def test_c1_queued_and_running_responsibility_refuses_close(tmp_path, namespace, state):
+def test_c1_archive_refuses_queued_responsibility_and_close_preserves_it(
+    tmp_path, namespace, state
+):
     async def run():
-        _, session = c1_session(tmp_path)
+        host, session = c1_session(tmp_path)
         row = {"input_id": "input", "event_id": "event", "kind": "directive", "state": state}
         with session._store.transaction():
             session._store.put(namespace, "row", row)
         with pytest.raises(SessionError, match="active_work"):
-            await session.close()
+            session.archive(command_id="archive")
         assert not session._closed
-        await session.close(force=True)
+        await session.close()
         assert session._store.get(namespace, "row")["state"] == state
+        reopened = Session(host, session_id="main")
+        assert reopened._store.get(namespace, "row")["state"] == state
+        with pytest.raises(SessionError, match="active_work"):
+            reopened.archive(command_id="archive")
+        await reopened.close()
 
     asyncio.run(run())
 
 
-def test_c1_force_close_leaves_running_input_recoverable(tmp_path):
+def test_c1_close_leaves_running_input_recoverable(tmp_path):
     from test_session_async import GatedChat, eventually
 
     async def run():
@@ -236,8 +259,8 @@ def test_c1_force_close_leaves_running_input_recoverable(tmp_path):
         accepted = await session.send("已受理输入", key="input", wait=False)
         await asyncio.wait_for(chat.entered.wait(), 2)
         with pytest.raises(SessionError, match="active_work"):
-            await session.close()
-        await session.close(force=True)
+            session.archive(command_id="archive")
+        await session.close()
         assert session._input_task.done()
         assert session.queued_inputs()[0]["state"] == "running"
         reopened = Session(host, session_id="main")
@@ -339,3 +362,99 @@ asyncio.run(run())
         assert owner.held and owner.owner_generation == 1
     finally:
         owner.release()
+
+
+def test_instance_lock_caches_probes_for_half_a_second(tmp_path, monkeypatch):
+    from agent_orchestrator.host import instance_lock as module
+
+    clock = [100.0]
+    monkeypatch.setattr(time, "monotonic", lambda: clock[0])
+    attempts = []
+    original = module._try_lock
+
+    def probe(fd):
+        attempts.append(fd)
+        return original(fd)
+
+    monkeypatch.setattr(module, "_try_lock", probe)
+    lock = InstanceLock(tmp_path)
+    assert lock.acquire()
+    try:
+        assert lock.held
+        count = len(attempts)
+        for _ in range(100):
+            assert lock.held
+        assert len(attempts) == count
+        clock[0] += 0.499
+        assert lock.held and len(attempts) == count
+        clock[0] += 0.002
+        assert lock.held and len(attempts) == count + 1
+    finally:
+        lock.release()
+    assert not lock.held
+    assert lock.acquire() and lock.owner_generation == 2
+    try:
+        assert lock.held and len(attempts) == count + 3
+    finally:
+        lock.release()
+
+
+def test_cached_owner_loss_is_detected_within_half_a_second(tmp_path, monkeypatch):
+    clock = [100.0]
+    monkeypatch.setattr(time, "monotonic", lambda: clock[0])
+    owner = InstanceLock(tmp_path)
+    assert owner.acquire() and owner.held
+    replacement = InstanceLock(tmp_path)
+    try:
+        os.replace(tmp_path / ".instance.lock", tmp_path / "detached-lock")
+        assert replacement.acquire()
+        clock[0] += 0.499
+        assert owner.held
+        clock[0] += 0.002
+        assert not owner.held
+        assert replacement.owner_generation == 2
+    finally:
+        replacement.release()
+        owner.release()
+
+
+def test_real_host_reopen_exposes_second_owner_generation(tmp_path):
+    from test_host_sessions import running_host
+
+    async def run():
+        first = await running_host(tmp_path, [])
+        try:
+            session = await first.open_session("generation")
+            assert (
+                first.status()["owner_generation"]
+                == session.capabilities()["owner_generation"]
+                == 1
+            )
+        finally:
+            await first.close()
+        second = await running_host(tmp_path, [])
+        try:
+            reopened = await second.open_session("generation")
+            assert second.status()["owner_generation"] == 2
+            assert reopened.capabilities()["owner_generation"] == 2
+        finally:
+            await second.close()
+
+    asyncio.run(run())
+
+
+def test_closed_root_rejects_child_without_recreating_ledger_handle(tmp_path):
+    async def run():
+        host, root = c1_session(tmp_path)
+        child = await root.create_child("worker", command_id="child")
+        child_id = child["child_session_id"]
+        worker = root.child("worker")
+        await root.close()
+        assert "main" not in host._session_handles
+        assert child_id not in host._session_handles
+        with pytest.raises(SessionError, match="session_closed|not_found_or_forbidden"):
+            worker._root_session()
+        assert "main" not in host._session_handles
+        assert child_id not in host._session_handles
+
+    asyncio.run(run())

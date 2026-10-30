@@ -7,8 +7,6 @@ import asyncio
 import inspect
 import json
 import math
-import queue
-import threading
 import time
 from collections.abc import Mapping
 from dataclasses import asdict, dataclass, field
@@ -81,19 +79,13 @@ class AutoModeAuthorization:
         mode = await mode if inspect.isawaitable(mode) else mode
         return (
             AuthorizationDecision.allow()
-            if mode is True
+            if mode is True or request.action != "connector_effect"
             else AuthorizationDecision.needs_approval("authorization-" + digest(asdict(request)))
         )
 
 
 async def _decision(port: AuthorizationPort, request: AuthorizationRequest):
-    method = port.decide
-    value = (
-        await method(request)
-        if inspect.iscoroutinefunction(method)
-        else await asyncio.to_thread(method, request)
-    )
-    return await value if inspect.isawaitable(value) else value
+    return await port.decide(request)
 
 
 class SessionAuthorization:
@@ -187,8 +179,10 @@ class SessionAuthorization:
         return None
 
     async def ensure(
-        self, action: str, target_ref: str, params: Any, **fields: Any
+        self, action: str, target_ref: str, params: Any, *, _guard=None, **fields: Any
     ) -> AuthorizationRequest:
+        if _guard is not None:
+            _guard()
         request = self._request(action, target_ref, params, **fields)
         decision = self._cached(request)
         if decision is None:
@@ -210,37 +204,14 @@ class SessionAuthorization:
                     raise
             except Exception:
                 raise SessionError("authorization_required", retryable=True) from None
+        if _guard is not None:
+            _guard()
         return self._apply(request, decision)
 
     @staticmethod
     def _consume_result(task):
         if not task.cancelled():
             task.exception()
-
-    def ensure_sync(
-        self, action: str, target_ref: str, params: Any, **fields: Any
-    ) -> AuthorizationRequest:
-        request = self._request(action, target_ref, params, **fields)
-        decision = self._cached(request)
-        if decision is None:
-            # 同步控制命令不能递归驱动宿主的事件循环；线程只运行回调，不碰 SQLite。
-            result: queue.Queue[Any] = queue.Queue(maxsize=1)
-
-            def decide():
-                try:
-                    result.put(asyncio.run(_decision(self.port, request)))
-                except BaseException as error:
-                    result.put(error)
-
-            thread = threading.Thread(target=decide, daemon=True)
-            thread.start()
-            try:
-                decision = result.get(timeout=self.timeout)
-            except queue.Empty:
-                raise SessionError("authorization_required", retryable=True) from None
-            if isinstance(decision, BaseException):
-                raise SessionError("authorization_required", retryable=True) from None
-        return self._apply(request, decision)
 
     def _apply(self, request: AuthorizationRequest, decision: AuthorizationDecision):
         self.check(request, require_allow=False)
@@ -346,7 +317,10 @@ class SessionAuthorization:
             raise SessionError("authorization_revoked")
         cancelled = getattr(self.session, "_is_cancelled", None)
         if cancelled is not None and cancelled(
-            goal_ref=request.goal_ref, delegation_id=request.delegation_id
+            goal_ref=request.goal_ref,
+            delegation_id=request.delegation_id,
+            operation_key=request.operation_key,
+            for_new_input=request.action == "accept_input",
         ):
             raise SessionError("cancelled")
         if request.goal_ref is not None:

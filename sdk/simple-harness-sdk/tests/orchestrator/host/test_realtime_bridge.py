@@ -870,7 +870,7 @@ def test_review_announcement_origin_survives_multiple_followups_and_playback(tmp
     async def run():
         host, session = make_session(tmp_path)
         text_turn = session._commit_input("Create a report", "task-input")
-        task = session._delegations.delegate(text_turn["turn_id"], "task-create", SPEC)
+        task = await session._delegations.delegate(text_turn["turn_id"], "task-create", SPEC)
         client = Client()
         binding = await session.attach_voice(Audio(), VoiceProfile(client_factory=client))
         wire = client.wires[0]
@@ -1133,7 +1133,7 @@ def test_review2_delayed_announcement_followup_cannot_take_new_user_origin(tmp_p
     async def run():
         host, session = make_session(tmp_path)
         turn = session._commit_input("Write a report", "existing-task")
-        task = session._delegations.delegate(turn["turn_id"], "create-existing", SPEC)
+        task = await session._delegations.delegate(turn["turn_id"], "create-existing", SPEC)
         if command == "delegate_task":
             host.finish(task["mission_id"])
         entered, release = asyncio.Event(), asyncio.Event()

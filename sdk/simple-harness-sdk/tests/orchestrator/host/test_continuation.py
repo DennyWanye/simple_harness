@@ -19,7 +19,7 @@ async def parent_with_result(root, *, settings=None, policy=None):
     parent = Session(host, session_id="main", continuation_policy=policy)
     parent._chat = FakeChat(parent)
     await parent.create_child("a", command_id="create")
-    mission = parent._delegations.delegate("original", "call", {**SPEC, "child_key": "a"})
+    mission = await parent._delegations.delegate("original", "call", {**SPEC, "child_key": "a"})
     host.finish(mission["mission_id"])
     parent._inbox.catch_up()
     return host, parent
@@ -37,7 +37,9 @@ def test_default_merge_freezes_event_set_applies_once_and_ack_is_separate(tmp_pa
         await tick(parent)
         assert not parent.queued_inputs()
         await parent.create_child("b", command_id="b")
-        second = parent._delegations.delegate("original", "call-2", {**SPEC, "child_key": "b"})
+        second = await parent._delegations.delegate(
+            "original", "call-2", {**SPEC, "child_key": "b"}
+        )
         host.finish(second["mission_id"])
         parent._inbox.catch_up()
         await tick(parent)
@@ -157,7 +159,7 @@ def test_budget_persists_and_idle_never_invokes_model(tmp_path):
         parent = Session(host, session_id="main")
         parent._chat = FakeChat(parent)
         await parent.recover()
-        second = parent._delegations.delegate("second", "call", {**SPEC, "child_key": "a"})
+        second = await parent._delegations.delegate("second", "call", {**SPEC, "child_key": "a"})
         host.finish(second["mission_id"])
         parent._inbox.catch_up()
         for _ in range(4):
@@ -226,7 +228,9 @@ def test_real_host_summary_narrows_tools_and_search_without_authorizing_result(t
         try:
             await parent.create_child("a", command_id="create")
             child = parent.child("a")
-            mission = parent._delegations.delegate("original", "call", {**SPEC, "child_key": "a"})
+            mission = await parent._delegations.delegate(
+                "original", "call", {**SPEC, "child_key": "a"}
+            )
             parent._host.cancel(mission["mission_id"])
             child._inbox.catch_up()
             [notice] = child.inbox()
@@ -410,7 +414,9 @@ def test_same_child_second_result_is_independent_and_merge_survives_restart(tmp_
         await tick(parent)
         await eventually(lambda: len(parent.history()) == 1)
         first_id = parent.queued_inputs()[0]["input_id"]
-        second = parent._delegations.delegate("next-turn", "next-call", {**SPEC, "child_key": "a"})
+        second = await parent._delegations.delegate(
+            "next-turn", "next-call", {**SPEC, "child_key": "a"}
+        )
         host.finish(second["mission_id"])
         parent._inbox.catch_up()
         await tick(parent)
@@ -487,7 +493,9 @@ async def process_continuation(root, point, resume):
                     os._exit(77)
 
             parent._checkpoint = crash
-            mission = parent._delegations.delegate("original", "call", {**SPEC, "child_key": "a"})
+            mission = await parent._delegations.delegate(
+                "original", "call", {**SPEC, "child_key": "a"}
+            )
             parent._host.cancel(mission["mission_id"])
         await eventually(
             lambda: bool(parent.inbox() and parent.inbox()[0]["applied_turn_id"]), seconds=30
@@ -584,7 +592,7 @@ def test_foreground_consumption_does_not_repeat_or_change_result_application(tmp
         await chat.entered.wait()
         if partial:
             await parent.create_child("b", command_id="b")
-            second = parent._delegations.delegate(
+            second = await parent._delegations.delegate(
                 "second", "second-call", {**SPEC, "child_key": "b"}
             )
             host.finish(second["mission_id"])
@@ -794,7 +802,7 @@ def test_out_of_order_repeated_mirrors_freeze_one_sorted_event_set(tmp_path):
     async def case():
         host, parent = await parent_with_result(tmp_path)
         await parent.create_child("b", command_id="b")
-        second = parent._delegations.delegate("second", "call", {**SPEC, "child_key": "b"})
+        second = await parent._delegations.delegate("second", "call", {**SPEC, "child_key": "b"})
         host.finish(second["mission_id"])
         parent._children = dict(reversed(list(parent._children.items())))
         parent._inbox.catch_up()
@@ -916,7 +924,7 @@ def test_d2_voice_attach_race_never_runs_applied_continuation_as_text(tmp_path):
         parent = Session(host, session_id="main")
         chat = parent._chat = GatedChat(parent)
         await parent.create_child("a", command_id="create")
-        mission = parent._delegations.delegate("original", "call", {**SPEC, "child_key": "a"})
+        mission = await parent._delegations.delegate("original", "call", {**SPEC, "child_key": "a"})
         await parent.send("hello", key="u1", wait=False)
         await chat.entered.wait()
         host.finish(mission["mission_id"])
@@ -1067,7 +1075,7 @@ def test_d2_directive_runs_while_parent_busy_and_does_not_poll_terminal_history(
         original = host.snapshot
         seen = []
         host.snapshot = lambda mid: seen.append(mid) or original(mid)
-        parent.child_send("a", "next", command_id="next")
+        (await parent.child_send("a", "next", command_id="next"))
         assert child._next_input() is not None
         assert child._next_input() is not None
         assert not seen
@@ -1091,7 +1099,7 @@ def test_d2_user_message_resets_consecutive_continuation_budget(tmp_path):
         await tick(parent)
         await eventually(lambda: len(parent.history()) == 1)
         await parent.send("继续看下一份结果", key="user")
-        nxt = parent._delegations.delegate("next", "call", {**SPEC, "child_key": "a"})
+        nxt = await parent._delegations.delegate("next", "call", {**SPEC, "child_key": "a"})
         host.finish(nxt["mission_id"])
         parent._inbox.catch_up()
         await tick(parent)
@@ -1126,7 +1134,7 @@ def test_d2_directive_crash_after_delegation_does_not_create_second_mission(tmp_
         await parent.create_child("a", command_id="create")
         child = parent.child("a")
         child._chat = FakeChat(child, goal="Report")
-        receipt = parent.child_send("a", "work", command_id="work")
+        receipt = await parent.child_send("a", "work", command_id="work")
         fired = []
 
         def crash(point):
@@ -1215,7 +1223,7 @@ def test_d2_policy_context_includes_conservative_unknown_calls(tmp_path):
         parent._continuation.claim(row)
         parent._continuation.fail(row, "unknown")
         usage = parent._store.get("continuation_usage", row["input_id"])
-        second = parent._delegations.delegate("next", "call", {**SPEC, "child_key": "a"})
+        second = await parent._delegations.delegate("next", "call", {**SPEC, "child_key": "a"})
         host.finish(second["mission_id"])
         parent._inbox.catch_up()
         await tick(parent)

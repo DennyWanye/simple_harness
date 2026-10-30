@@ -726,7 +726,9 @@ class VoiceBinding:
         )
         turn = store.get("turns", input_key)
         if call.name == "delegate_task":
-            result = self.session._delegations.delegate(turn["turn_id"], call.call_id, arguments)
+            result = await self.session._delegations.delegate(
+                turn["turn_id"], call.call_id, arguments
+            )
             result = {**result, "status": "accepted"}
         elif call.name == "task_status":
             result = (

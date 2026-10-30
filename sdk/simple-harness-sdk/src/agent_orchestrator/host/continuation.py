@@ -136,17 +136,15 @@ class Continuation:
                 if self.session._is_cancelled(
                     goal_ref=notice.get("goal_ref"), delegation_id=notice["delegation_id"]
                 ):
-                    with self.store.transaction():
-                        self.store.put(
-                            "continuation_results",
-                            event_id,
-                            {
-                                "event_id": event_id,
-                                "state": "cancelled",
-                                "reason": "cancelled",
-                                "input_id": None,
-                            },
-                        )
+                    cancelled = {
+                        "event_id": event_id,
+                        "state": "cancelled",
+                        "reason": "cancelled",
+                        "input_id": None,
+                    }
+                    if self.store.get("continuation_results", event_id) != cancelled:
+                        with self.store.transaction():
+                            self.store.put("continuation_results", event_id, cancelled)
                     continue
                 if self.store.get("continuation_results", event_id) is not None:
                     continue

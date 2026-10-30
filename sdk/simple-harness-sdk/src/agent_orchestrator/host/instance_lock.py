@@ -13,6 +13,7 @@ from __future__ import annotations
 import os
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 from .session_ledger import SessionError
@@ -66,6 +67,8 @@ class InstanceLock:
         self._fd: int | None = None
         self._generation_path = self._path.parent / GENERATION_NAME
         self.owner_generation = 0
+        self._probe_at: float | None = None
+        self._probe_result = False
 
     def observed_generation(self) -> int:
         try:
@@ -100,6 +103,15 @@ class InstanceLock:
     def held(self) -> bool:
         if self._fd is None:
             return False
+        now = time.monotonic()
+        if self._probe_at is not None and now - self._probe_at < 0.5:
+            return self._probe_result
+        self._probe_result = self._probe_held()
+        self._probe_at = now
+        return self._probe_result
+
+    def _probe_held(self) -> bool:
+        # 提交路径会反复读此属性，最多半秒重查一次；失锁也最多晚半秒才被发现。
         probe = None
         try:
             opened, current = os.fstat(self._fd), self._path.stat()
@@ -141,9 +153,13 @@ class InstanceLock:
             os.close(fd)
             raise
         self._fd = fd
+        self._probe_at = None
+        self._probe_result = False
         return True
 
     def release(self) -> None:
+        self._probe_at = None
+        self._probe_result = False
         if self._fd is None:
             return
         try:

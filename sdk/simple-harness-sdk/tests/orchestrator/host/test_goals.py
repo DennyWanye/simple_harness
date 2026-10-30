@@ -107,7 +107,7 @@ def test_goal_success_requires_basis_and_structural_facts_in_children(tmp_path):
         parent.finish_goal("g", "succeeded", command_id="blank", expected_version=1)
     asyncio.run(parent.create_child("a", command_id="child"))
     assert parent.children()[0]["goal_ref"] == {"goal_id": "g", "goal_version": 1}
-    task = parent._delegations.delegate("turn", "call", {**SPEC, "child_key": "a"})
+    task = asyncio.run(parent._delegations.delegate("turn", "call", {**SPEC, "child_key": "a"}))
     assert task["goal_ref"] == {"goal_id": "g", "goal_version": 1}
     with pytest.raises(SessionError, match="active_work"):
         parent.finish_goal("g", "succeeded", command_id="busy", expected_version=1, basis="看过了")
@@ -143,7 +143,7 @@ def test_goal_old_result_keeps_frozen_version_and_root_scope(tmp_path):
     host, parent = make(tmp_path)
     put(parent)
     asyncio.run(parent.create_child("a", command_id="child"))
-    task = parent._delegations.delegate("turn", "call", {**SPEC, "child_key": "a"})
+    task = asyncio.run(parent._delegations.delegate("turn", "call", {**SPEC, "child_key": "a"}))
     frozen = deepcopy(host.made)
     put(parent, command="update", version=1, objective="新版目标")
     assert host.made == frozen
@@ -201,7 +201,7 @@ def test_goal_pending_request_and_unknown_effect_block_success(tmp_path, namespa
 def test_goal_unknown_and_pending_requests_in_task_store_block_finish(tmp_path):
     host, session = make(tmp_path)
     put(session)
-    task = session._delegations.delegate("turn", "call", SPEC)
+    task = asyncio.run(session._delegations.delegate("turn", "call", SPEC))
     host.finish(task["mission_id"])
     session._inbox.catch_up()
     session.exclude_result(session.inbox()[0]["event_id"], "不采用该结果", command_id="exclude")
@@ -273,7 +273,7 @@ def test_goal_applied_parent_mirror_does_not_remain_blocked_by_child_copy(tmp_pa
     host, parent = make(tmp_path)
     put(parent)
     asyncio.run(parent.create_child("a", command_id="child"))
-    task = parent._delegations.delegate("turn", "call", {**SPEC, "child_key": "a"})
+    task = asyncio.run(parent._delegations.delegate("turn", "call", {**SPEC, "child_key": "a"}))
     host.finish(task["mission_id"])
     parent._inbox.catch_up()
     [notice] = parent.inbox()
@@ -292,7 +292,7 @@ def test_goal_applied_parent_mirror_does_not_remain_blocked_by_child_copy(tmp_pa
 def test_goal_and_report_read_unknown_effect_from_actual_task_snapshot(tmp_path):
     host, parent = make(tmp_path)
     put(parent)
-    task = parent._delegations.delegate("turn", "call", SPEC)
+    task = asyncio.run(parent._delegations.delegate("turn", "call", SPEC))
     host.finish(task["mission_id"])
     parent._inbox.catch_up()
     parent.exclude_result(parent.inbox()[0]["event_id"], "另有验收依据", command_id="exclude")
@@ -340,7 +340,7 @@ def test_goal_identity_is_the_authenticated_store_owner(tmp_path):
 def test_goal_and_recovery_include_task_planning_authorization(tmp_path):
     host, parent = make(tmp_path)
     put(parent)
-    task = parent._delegations.delegate("turn", "call", SPEC)
+    task = asyncio.run(parent._delegations.delegate("turn", "call", SPEC))
     host.finish(task["mission_id"])
     parent._inbox.catch_up()
     parent.exclude_result(parent.inbox()[0]["event_id"], "另有验收依据", command_id="exclude")
@@ -396,7 +396,7 @@ def test_excluding_result_releases_continuation_responsibility_and_archive(tmp_p
             assert parent.archive(command_id="archive")["archived"]
         finally:
             parent._send_lock.release()
-            await parent.close(force=True)
+            await parent.close()
 
     asyncio.run(case())
 
@@ -407,7 +407,7 @@ def test_excluding_one_member_of_queued_batch_preserves_other_results(tmp_path):
     async def case():
         host, parent = await parent_with_result(tmp_path)
         await parent.create_child("b", command_id="b")
-        task = parent._delegations.delegate("turn", "call-b", {**SPEC, "child_key": "b"})
+        task = await parent._delegations.delegate("turn", "call-b", {**SPEC, "child_key": "b"})
         host.finish(task["mission_id"])
         parent._inbox.catch_up()
         await parent._send_lock.acquire()
@@ -424,7 +424,7 @@ def test_excluding_one_member_of_queued_batch_preserves_other_results(tmp_path):
                 parent.archive(command_id="archive")
         finally:
             parent._send_lock.release()
-            await parent.close(force=True)
+            await parent.close()
 
     asyncio.run(case())
 
@@ -432,7 +432,8 @@ def test_excluding_one_member_of_queued_batch_preserves_other_results(tmp_path):
 def test_unknown_mission_handoff_keeps_goal_waiting_with_durable_reason(tmp_path, monkeypatch):
     from test_session import Crash
 
-    _, parent = make(tmp_path)
+    host, parent = make(tmp_path)
+    host.orchestrator = None
     put(parent)
 
     def crash(point):
@@ -441,7 +442,7 @@ def test_unknown_mission_handoff_keeps_goal_waiting_with_durable_reason(tmp_path
 
     monkeypatch.setattr(parent, "_checkpoint", crash)
     with pytest.raises(Crash):
-        parent._delegations.delegate("turn", "call", SPEC)
+        asyncio.run(parent._delegations.delegate("turn", "call", SPEC))
     [delegation] = parent._store.rows("delegations")
     parent.cancel("session_tree", "main", command_id="cancel")
     with pytest.raises(SessionError, match="active_work"):

@@ -60,7 +60,9 @@ def test_session_continues_after_stop_with_unknown_charge(tmp_path):
             stopped = await _cancel_in_flight(host, provider, "s", "s-1")
             # 旧 key 重试：返回原来的失败回执，线路上没有第二次请求
             asked_before = len(provider.asked)
-            replay = await host.chat({"session_id": "s", "text": "慢慢答", "idempotency_key": "s-1"})
+            replay = await host.chat(
+                {"session_id": "s", "text": "慢慢答", "idempotency_key": "s-1"}
+            )
             assert replay["state"] == "failed" and replay["turn_id"] == stopped["turn_id"]
             assert len(provider.asked) == asked_before
             # 新 key：会话换一代执行者接着聊，不再报超预算
@@ -135,7 +137,7 @@ def test_stop_does_not_touch_a_running_delegation(tmp_path):
         )
         try:
             # 直接登记一条委派（不经模型），模拟"会话里已有一个在跑的后台任务"
-            receipt = session._delegations.delegate(
+            receipt = await session._delegations.delegate(
                 "turn-earlier",
                 "call-1",
                 {"goal": "Write a report", "success_criteria": ["file:report.md"]},

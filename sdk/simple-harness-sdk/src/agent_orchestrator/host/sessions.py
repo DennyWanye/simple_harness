@@ -63,7 +63,7 @@ async def open_session(
                 await session._chat.open()
                 if not session._chat.available:
                     raise SessionError("chat_unavailable", session._chat.reason or "")
-                session._delegations.recover()
+                await session._delegations.recover()
                 session._inbox.catch_up()
                 host.start_driver()
                 session._pump_task = asyncio.create_task(
@@ -80,7 +80,7 @@ async def open_session(
     try:
         await session.recover()
     except BaseException:
-        await session.close(force=True)
+        await session.close()
         raise
     return session
 

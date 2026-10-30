@@ -327,7 +327,7 @@ async def run(root, principal, model, tools, render, last_seen=0):
 parent = await host.open_session("main")
 created = await parent.create_child("photos", command_id="create-photos", purpose="整理照片")
 child = parent.child("photos")
-queued = parent.child_send("photos", "也算上视频", command_id="photos-input-1")
+queued = await parent.child_send("photos", "也算上视频", command_id="photos-input-1")
 assert queued["status"] == "accepted"
 assert child.queued_inputs()[0]["directive"] == "next_turn"
 receipt = parent.command_receipt("create-photos")
@@ -913,7 +913,7 @@ SDK 没有推送。定时调 `events(mission_id, after_seq=上次的 through_seq
 最终 `turn_id`；`events()` 继续提供 `input_queued / turn_committed`。同一会话串行，主会话及各子会话
 各自执行；宿主总模型并发仍经过现有统一并发门。关闭时等待本地写入者退出，重开自动恢复已受理队列。
 
-`child_send(..., command_id=...)` 登记的 `directive=next_turn` 在子会话没有在途委派、没有正在执行的
+`await child_send(..., command_id=...)` 登记的 `directive=next_turn` 在子会话没有在途委派、没有正在执行的
 回合后，按受理顺序执行。输入本身的 `input_id` 是回合幂等键，新委派记录 `source_input_id`；
 重复命令或恢复不会重复创建逻辑 Mission，也不会改变正在执行的冻结任务。
 
@@ -975,10 +975,11 @@ SDK 没有推送。定时调 `events(mission_id, after_seq=上次的 through_seq
 输入受理、创建子会话、委派受理及建 Mission 前均检查授权；排队输入执行前重新检查冻结授权。
 带有效期的 allow 可缓存；`session.revoke_authorization(grant_ref)` 持久撤销，父子会话立即共享。
 撤销后未执行的工作返回 `authorization_revoked`。默认 `AutoModeAuthorization` 沿用 `auto_mode`：
-自动模式允许，人工模式发 `needs_response` 卡片，由可信宿主调用
+自动模式允许；人工模式下 `accept_input / create_child / delegate` 同样允许，只有
+`connector_effect` 发 `needs_response` 卡片，由可信宿主调用
 `session.respond(request_id, "approve", version)`；同一参数、目标与版本的批准重复返回原回执。
-批准之后以原命令身份重试，不能用旧批准替换参数。同步控制命令的授权回调在独立线程事件循环
-执行；端口应只根据请求决定，不应直接访问会话 SQLite，也不应依赖宿主事件循环绑定的对象。
+批准之后以原命令身份重试，不能用旧批准替换参数。所有控制命令和授权统一异步等待，
+端口可使用宿主事件循环上的 Future 或异步客户端；等待授权期间不阻塞模型、泵或其他会话。
 续办仍只有 `ContinuationPolicy` 一个策略决定点，不再额外调用 AuthorizationPort。
 
 ```python
@@ -1004,8 +1005,9 @@ Goal 只对可信宿主公开，模型没有登记/完成 Goal 的命令。每�
 
 `cancel(target_kind, target_id, *, command_id, expected_version=None, reason="")` 支持
 `goal`、`delegation`、`session_tree`，只允许本树范围；模型可调用同名受限命令。
-回执 `cancel_requested` 表示屏障已持久，不表示外部效果已撤回。屏障之后不建新 Mission、
-不消费受影响的队列输入、不再排入相关结果续办。建 Mission 响应丢失时按原幂等键只读对账；
+回执 `cancel_requested` 表示屏障已持久，不表示外部效果已撤回。树取消在事务内冻结屏障前
+的委派、输入、在途回合、Goal、审批和效果身份，不跨子库比较序号。旧活不再派发或消费，
+旧结果不再排入续办；屏障后的新用户输入和其新委派照常工作，不会永久封住会话。建 Mission 响应丢失时按原幂等键只读对账；
 不能确定时保留 `unknown`，不通过再次创建来探测。
 屏障前已交接的任务/语音保持 `handed_off / completed / unknown` 的真实事实；
 已提交的语音仅标 `cancel_requested`，播放完仍为 `played`。取消后的结果仍可审计，
@@ -1013,14 +1015,16 @@ Goal 只对可信宿主公开，模型没有登记/完成 Goal 的命令。每�
 有未消费结果或未知效果时 Goal 仍待结构收口，处理/排除后可收敛，或显式 `finish_goal`。
 `interrupt()` 只停止当前回答，不取消任何 Mission 或子会话。
 
-`close(force=False)` 在有未终态委派、未消费且未排除的结果、queued/running 输入、
-pending/queued 续办时拒绝并返回 `active_work`。`force=True` 仅释放资源，业务责任与账本保留，
-重新打开继续恢复；Host 关闭同样是资源停机。`archive(command_id=...)` 还要求无未收口 Goal，
-保留数据并禁止重新打开；子会话归档不会使父会话恢复失败。
+`await close()` 只放手：释放资源、取消后台协程，任务、排队输入和未消费结果仍留在账本，
+重开后继续恢复。Host 关闭同样是资源停机。`archive(command_id=...)` 才是收口：
+有未终态委派、未消费且未排除的结果、未收口 Goal、queued/running 输入或 pending/queued
+续办时返回 `active_work`。归档保留数据并禁止重新打开；子会话归档不会使父会话恢复失败。
+根句柄关闭后子操作报 `session_closed`，不会悄悄重建根连接。
 
 `session.capabilities()` 与 `host.status()` 暴露持久单调递增的 `owner_generation`。
 第二进程打开同一根目录在公开入口报 `SessionError("owner_conflict")`，其公开错误含当前代次。
-丢失锁的旧 owner 拒绝新工作及后续提交，并发出在线 `owner_lost` 事件，不向失去所有权的账本
+锁探测结果在进程内缓存 0.5 秒，显式释放和重新获取立即失效；外部失锁最多延迟 0.5 秒发现。
+发现失锁后旧 owner 拒绝新工作及后续提交，并发出在线 `owner_lost` 事件，不向失去所有权的账本
 追加伪造持久事件。
 
 `session.recovery_report()` 返回 `store_version`、`owner_generation`、`resumed_refs`、

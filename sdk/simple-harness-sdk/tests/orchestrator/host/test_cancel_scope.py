@@ -22,7 +22,7 @@ def test_cancel_tree_is_idempotent_persistent_and_cannot_cross_tree(tmp_path):
     async def case():
         host, parent = make(tmp_path)
         await parent.create_child("a", command_id="child")
-        task = parent._delegations.delegate("t", "c", {**SPEC, "child_key": "a"})
+        task = await parent._delegations.delegate("t", "c", {**SPEC, "child_key": "a"})
         receipt = parent.cancel("session_tree", "main", command_id="stop", reason="结束")
         assert receipt["status"] == "cancel_requested"
         assert parent.cancel("session_tree", "main", command_id="stop", reason="结束") == receipt
@@ -30,14 +30,14 @@ def test_cancel_tree_is_idempotent_persistent_and_cannot_cross_tree(tmp_path):
             parent.cancel("session_tree", "main", command_id="stop", reason="不同")
         with pytest.raises(SessionError, match="not_found_or_forbidden"):
             parent.cancel("session_tree", "other", command_id="other")
-        with pytest.raises(SessionError, match="cancelled"):
-            parent._delegations.delegate("new", "call", SPEC)
         assert len(host.made) == 1 and host.cancelled == [task["mission_id"]]
+        later = await parent._delegations.delegate("new", "call", SPEC)
+        assert later["mission_id"] != task["mission_id"] and len(host.made) == 2
         reopened = Session(host, session_id="main")
-        assert reopened._is_cancelled()
+        assert not reopened._is_cancelled()
         kinds = [e["kind"] for e in parent._store.events(0)]
         assert "cancel_requested" in kinds and "cancelled" in kinds
-        await parent.close(force=True)
+        await parent.close()
 
     asyncio.run(case())
 
@@ -49,7 +49,7 @@ def test_barrier_is_checked_after_send_lock_before_queue_claim(tmp_path):
         child = parent.child("a")
         child._chat = FakeChat(child)
         await child._send_lock.acquire()
-        parent.child_send("a", "追加", command_id="directive")
+        (await parent.child_send("a", "追加", command_id="directive"))
         child._wake_inputs()
         await asyncio.sleep(0)
         parent.cancel("session_tree", "main", command_id="stop")
@@ -58,7 +58,7 @@ def test_barrier_is_checked_after_send_lock_before_queue_claim(tmp_path):
         assert child.queued_inputs()[0]["state"] == "cancelled"
         assert child._chat.calls == 0
         assert not child._store.rows("continuation_usage")
-        await parent.close(force=True)
+        await parent.close()
 
     asyncio.run(case())
 
@@ -77,7 +77,7 @@ def test_late_goal_result_is_auditable_and_does_not_start_continuation(tmp_path)
             expected_version=0,
         )
         await parent.create_child("a", command_id="child")
-        task = parent._delegations.delegate("t", "c", {**SPEC, "child_key": "a"})
+        task = await parent._delegations.delegate("t", "c", {**SPEC, "child_key": "a"})
         parent.cancel("goal", "g", command_id="stop", expected_version=1)
         host.finish(task["mission_id"])
         parent._inbox.catch_up()
@@ -87,7 +87,7 @@ def test_late_goal_result_is_auditable_and_does_not_start_continuation(tmp_path)
         assert events and events[-1]["after_cancel"] is True
         assert parent.inbox()[0]["goal_ref"] == {"goal_id": "g", "goal_version": 1}
         assert parent.children()[0]["goal_ref"] == {"goal_id": "g", "goal_version": 1}
-        await parent.close(force=True)
+        await parent.close()
 
     asyncio.run(case())
 
@@ -95,11 +95,11 @@ def test_late_goal_result_is_auditable_and_does_not_start_continuation(tmp_path)
 def test_interrupt_only_stops_current_reply(tmp_path):
     async def case():
         host, parent = make(tmp_path)
-        task = parent._delegations.delegate("t", "c", SPEC)
+        task = await parent._delegations.delegate("t", "c", SPEC)
         await parent.interrupt()
         assert host.cancelled == []
         assert parent.task(task["delegation_id"])["status"] == "ACTIVE"
-        await parent.close(force=True)
+        await parent.close()
 
     asyncio.run(case())
 
@@ -116,9 +116,9 @@ def test_cancel_before_mission_creation_cannot_recover_into_new_effect(tmp_path)
 
     parent._checkpoint = stop
     with pytest.raises(Crash):
-        parent._delegations.delegate("t", "c", SPEC)
+        asyncio.run(parent._delegations.delegate("t", "c", SPEC))
     parent.cancel("session_tree", "main", command_id="stop")
-    parent._delegations.recover()
+    asyncio.run(parent._delegations.recover())
     assert not parent._host.made
     assert parent._store.rows("delegations")[0]["terminal_status"] == "CANCELLED"
 
@@ -152,12 +152,12 @@ def test_cancel_scopes_do_not_mix_and_late_cancel_keeps_succeeded_goal(tmp_path)
         assert parent._goals.find("g")["state"] == "succeeded"
         await parent.create_child("a", command_id="a")
         await parent.create_child("b", command_id="b")
-        a = parent._delegations.delegate("t", "a", {**SPEC, "child_key": "a"})
-        b = parent._delegations.delegate("t", "b", {**SPEC, "child_key": "b"})
+        a = await parent._delegations.delegate("t", "a", {**SPEC, "child_key": "a"})
+        b = await parent._delegations.delegate("t", "b", {**SPEC, "child_key": "b"})
         parent.cancel("delegation", a["mission_id"], command_id="cancel-a")
         assert host.cancelled == [a["mission_id"]]
         assert parent.task(b["delegation_id"])["status"] == "ACTIVE"
-        await parent.close(force=True)
+        await parent.close()
 
     asyncio.run(case())
 
@@ -200,6 +200,7 @@ def test_real_model_cancel_command_reaches_scope_barrier(tmp_path):
                     {"target_kind": "session_tree", "target_id": "main", "reason": "用户停止"},
                 ),
                 "已请求停止",
+                "屏障后的新回复",
             ],
         )
         try:
@@ -207,8 +208,8 @@ def test_real_model_cancel_command_reaches_scope_barrier(tmp_path):
             result = await parent.send("停止本树", key="stop")
             assert result["state"] == "committed"
             assert parent._store.get("cancellations", "session_tree:main") is not None
-            with pytest.raises(SessionError, match="cancelled"):
-                await parent.send("新任务", key="later", wait=False)
+            later = await parent.send("新任务", key="later")
+            assert later["state"] == "committed" and later["text"] == "屏障后的新回复"
         finally:
             await host.close()
 
@@ -220,8 +221,8 @@ def test_cancel_child_tree_blocks_only_its_late_result_at_root(tmp_path):
         host, parent = make(tmp_path)
         await parent.create_child("a", command_id="a")
         await parent.create_child("b", command_id="b")
-        a = parent._delegations.delegate("t", "a", {**SPEC, "child_key": "a"})
-        parent._delegations.delegate("t", "b", {**SPEC, "child_key": "b"})
+        a = await parent._delegations.delegate("t", "a", {**SPEC, "child_key": "a"})
+        (await parent._delegations.delegate("t", "b", {**SPEC, "child_key": "b"}))
         parent.cancel("session_tree", parent.child("a").session_id, command_id="stop-a")
         host.finish(a["mission_id"])
         parent._inbox.catch_up()
@@ -231,7 +232,7 @@ def test_cancel_child_tree_blocks_only_its_late_result_at_root(tmp_path):
         assert received[-1]["after_cancel"] is True
         assert parent._chat.calls == 0
         assert len(host.cancelled) == 1
-        await parent.close(force=True)
+        await parent.close()
 
     asyncio.run(case())
 
@@ -252,12 +253,12 @@ def test_old_input_without_goal_does_not_borrow_new_goal_when_routed(tmp_path):
             command_id="goal",
             expected_version=0,
         )
-        task = parent._delegations.delegate("old", "a", {**SPEC, "child_key": "a"})
+        task = await parent._delegations.delegate("old", "a", {**SPEC, "child_key": "a"})
         assert task["goal_ref"] is None
         row = parent.child("a")._store.rows("delegations")[0]
         assert row["authorization"]["goal_ref"] is None
         assert row["authorization"]["grant_ref"] is None
-        await parent.close(force=True)
+        await parent.close()
 
     asyncio.run(case())
 
@@ -268,14 +269,14 @@ def test_archived_child_does_not_break_parent_recovery(tmp_path):
         await parent.create_child("a", command_id="a")
         child = parent.child("a")
         child.archive(command_id="archive")
-        await parent.close(force=True)
+        await parent.close()
         reopened = Session(host, session_id="main")
         await reopened.recover()
         assert reopened.children()[0]["archived"] is True
         assert not reopened.children()[0]["open"]
         with pytest.raises(SessionError, match="not_found_or_forbidden"):
             reopened.child("a")
-        await reopened.close(force=True)
+        await reopened.close()
 
     asyncio.run(case())
 
@@ -294,7 +295,7 @@ def test_cancel_lost_mission_create_response_reconciles_without_replay(tmp_path)
 
     parent._checkpoint = crash
     with pytest.raises(Crash):
-        parent._delegations.delegate("t", "c", SPEC)
+        asyncio.run(parent._delegations.delegate("t", "c", SPEC))
     assert parent._store.rows("delegations")[0]["mission_id"] is None
     assert len(host.made) == 1
     host.orchestrator = SimpleNamespace(
@@ -316,6 +317,7 @@ def test_cancel_unreconcilable_mission_handoff_stays_unknown(tmp_path):
 
     host, parent = make(tmp_path)
     parent._chat = None
+    host.orchestrator = None
 
     def crash(point):
         if point == "mission_created":
@@ -323,7 +325,7 @@ def test_cancel_unreconcilable_mission_handoff_stays_unknown(tmp_path):
 
     parent._checkpoint = crash
     with pytest.raises(Crash):
-        parent._delegations.delegate("t", "c", SPEC)
+        asyncio.run(parent._delegations.delegate("t", "c", SPEC))
     parent.cancel("session_tree", "main", command_id="stop")
     barrier = parent._store.get("cancellations", "session_tree:main")
     assert barrier["effect_state"] == "unknown" and barrier["state"] == "cancel_requested"
@@ -366,7 +368,7 @@ def test_cancel_goal_cancels_its_pending_authorization_request(tmp_path):
         assert parent._goals.find("g")["state"] == "cancelled"
         with pytest.raises(SessionError, match="cancelled"):
             parent.respond(request["request_id"], "approve", request["version"])
-        await parent.close(force=True)
+        await parent.close()
 
     asyncio.run(case())
 
@@ -376,7 +378,7 @@ def test_unrelated_submitted_voice_does_not_hold_another_cancel_scope(tmp_path):
         _, parent = make(tmp_path)
         await parent.create_child("a", command_id="a")
         await parent.create_child("b", command_id="b")
-        parent._delegations.delegate("t", "b", {**SPEC, "child_key": "b"})
+        (await parent._delegations.delegate("t", "b", {**SPEC, "child_key": "b"}))
         child = parent.child("a")
         with child._store.transaction():
             child._store.put(
@@ -400,7 +402,7 @@ def test_unrelated_submitted_voice_does_not_hold_another_cancel_scope(tmp_path):
         )
         b = parent._store.get("cancellations", f"session_tree:{parent.child('b').session_id}")
         assert b["state"] == "cancelled" and b["target_statuses"] == ["CANCELLED"]
-        await parent.close(force=True)
+        await parent.close()
 
     asyncio.run(case())
 
@@ -442,8 +444,122 @@ def test_directive_reuses_terminal_facts_without_polling_task_history(tmp_path):
             raise AssertionError("terminal result is already durable")
 
         host.snapshot = forbid_snapshot
-        parent.child_send("a", "追加", command_id="directive")
+        (await parent.child_send("a", "追加", command_id="directive"))
         assert parent.child("a")._next_input() is not None
-        await parent.close(force=True)
+        await parent.close()
+
+    asyncio.run(case())
+
+
+def test_running_continuation_rechecks_barrier_after_send_lock(tmp_path):
+    from test_continuation import parent_with_result
+
+    async def case():
+        _, parent = await parent_with_result(tmp_path)
+        await parent._send_lock.acquire()
+        try:
+            await parent._continuation.tick()
+            [queued] = parent.queued_inputs()
+            assert queued["kind"] == "result_event"
+            with parent._store.transaction():
+                queued["state"] = "running"
+                parent._store.put("queued_inputs", queued["input_id"], queued)
+            parent._wake_inputs()
+            await asyncio.sleep(0)
+            parent.cancel("session_tree", parent.session_id, command_id="stop-running")
+            assert parent.queued_inputs()[0]["state"] == "running"
+        finally:
+            parent._send_lock.release()
+        from test_session_async import eventually
+
+        await eventually(
+            lambda: parent.queued_inputs()[0]["state"] in {"cancelled", "done", "failed"}
+        )
+        assert parent.queued_inputs()[0]["state"] == "cancelled"
+        assert parent._chat.calls == 0
+        assert not parent._store.rows("continuation_usage")
+        await parent.close()
+
+    asyncio.run(case())
+
+
+def test_unknown_handoff_idle_pump_does_not_rewrite_ledger(tmp_path):
+    from test_session import Crash
+
+    async def case():
+        host, parent = make(tmp_path)
+        host.orchestrator = None
+
+        def crash(point):
+            if point == "mission_created":
+                raise Crash()
+
+        parent._checkpoint = crash
+        with pytest.raises(Crash):
+            await parent._delegations.delegate("turn", "call", SPEC)
+        parent.cancel("session_tree", "main", command_id="stop")
+        assert parent._store.get("cancellations", "session_tree:main")["effect_state"] == "unknown"
+        before = parent._store.connection.total_changes
+        parent._pump_task = asyncio.create_task(parent._pump())
+        try:
+            await asyncio.sleep(3.05)
+            writes = parent._store.connection.total_changes - before
+            assert writes <= 2, writes
+            assert parent._chat.calls == 0
+            assert len(host.made) == 1
+        finally:
+            await parent.close()
+
+    asyncio.run(case())
+
+
+def test_cancelled_parent_turn_cannot_send_directive_through_child(tmp_path):
+    async def case():
+        _, parent = make(tmp_path)
+        await parent.create_child("a", command_id="a")
+        parent._current_input = parent._commit_input("old", "old")
+        parent.cancel("session_tree", parent.session_id, command_id="stop")
+        with pytest.raises(SessionError, match="cancelled"):
+            await parent.child_send("a", "late", command_id="late")
+        assert parent.child("a").queued_inputs() == []
+        parent._current_input = None
+        accepted = await parent.child_send("a", "new", command_id="new")
+        assert accepted["status"] == "accepted"
+        await parent.close()
+
+    asyncio.run(case())
+
+
+def test_directive_authorization_freezes_goal_while_waiting(tmp_path):
+    from agent_orchestrator.host import AuthorizationDecision
+
+    async def case():
+        _, parent = make(tmp_path)
+        body = {
+            "goal_id": "g",
+            "objective": "报告",
+            "completion_criteria": ["交付"],
+            "budget": {"turns": 2},
+        }
+        parent.put_goal(body, command_id="g", expected_version=0)
+        await parent.create_child("a", command_id="a")
+        entered, release = asyncio.Event(), asyncio.Event()
+
+        class Port:
+            async def decide(self, request):
+                assert request.goal_ref["goal_version"] == 1
+                entered.set()
+                await release.wait()
+                return AuthorizationDecision.allow()
+
+        parent.child("a")._authorization.port = Port()
+        pending = asyncio.create_task(parent.child_send("a", "work", command_id="work"))
+        await entered.wait()
+        parent.put_goal({**body, "objective": "新版"}, command_id="v2", expected_version=1)
+        release.set()
+        with pytest.raises(SessionError, match="stale_version"):
+            await pending
+        assert parent.child("a").queued_inputs() == []
+        await parent.close()
 
     asyncio.run(case())

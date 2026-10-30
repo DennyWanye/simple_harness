@@ -68,7 +68,7 @@ def test_two_host_sessions_isolate_history_tasks_and_scope(tmp_path):
                 run_id = next(iter(session._chat._runs))
                 assert host._resolve_output_scope(run_id)["session_id"] == session.session_id
             turn = alpha._commit_input("Write a report", "task")
-            receipt = alpha._delegations.delegate(turn["turn_id"], "delegate", SPEC)
+            receipt = await alpha._delegations.delegate(turn["turn_id"], "delegate", SPEC)
             assert len(alpha.tasks()) == 1 and beta.tasks() == []
             with pytest.raises(Exception, match="permission_denied"):
                 beta.cancel_task(receipt["mission_id"])
@@ -367,9 +367,7 @@ def test_close_failure_preserves_ownership_until_executor_is_released(
     asyncio.run(run())
 
 
-def test_host_and_session_close_share_teardown_despite_cancelled_host_waiter(
-    tmp_path, monkeypatch
-):
+def test_host_and_session_close_share_teardown_despite_cancelled_host_waiter(tmp_path, monkeypatch):
     from agent_orchestrator.host.instance_lock import InstanceLock
 
     async def run():

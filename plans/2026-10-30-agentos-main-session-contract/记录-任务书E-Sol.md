@@ -143,3 +143,44 @@ uv run --frozen ruff format --check src/agent_orchestrator/host/{authorization,g
 分支：`sol/E-authorization-goal`。源码与测试提交：红`4a06b5b47`、实现`6a4e65af0`、消费收敛修复`7f859c1ce`；最终记录单独提交。未push、未merge、未发版。
 
 VERDICT: BLOCKED — 任务书E实现及108项新增测试通过；指定旧回归35项与新关闭/取消合同冲突 — 2026-10-31 — 7f859c1ce
+
+## E2 补修
+
+基线 `f8d798ca3`，仍在 `simple_harness-sol-E` / `sol/E-authorization-goal`；以补修任务书§0、§1、§1b、§2为新权威，覆盖上文E轮关闭与永久封树口径。没有按E轮建议批量修改35条旧测试的关闭预期。
+
+### 改动与验收预期
+
+- `close()` 删掉force和拒活，恢复只释放资源、任务/结果/排队责任留账；拒活统一在archive。新C1用例改为archive拒绝，然后close放手、重开责任仍在。关闭时正等待授权的输入若被唤醒，不再误记session_closed业务失败。
+- 仅按审核授权修`test_session.py::test_cancel_creation_then_recover_and_completed_is_immutable`：未派发取消后Mission为空、委派公开状态CANCELLED、host.cancelled为空；另建一个已完成任务验证迟到取消不改终态。其余旧用例只改必要await/asyncio.run调用；没有放宽业务断言。
+- 删ensure_sync、queue.get与独立线程事件循环授权；delegate/_create/recover、child_send、模型create_child、realtime dispatch统一async。tool_gateway仅两处控制命令调用增加可等待返回值的await，保留同步只读控制命令协议。人工默认端口只对connector_effect发卡，accept_input/create_child/delegate允许。
+- 模型/公开create_child共用异步登记入口，参数摘要同为child_key/purpose并冻结根当前Goal；模型恢复时只登记身份，避免持宿主打开锁再次打开子执行器。
+- claimed恢复先只读find_mission：已存在即补关联，不再索授权/重建；只有权威确认不存在才重新授权建任务。授权等待后的委派行重读当前事实，不覆盖已写的取消意图。
+- session_tree屏障冻结旧委派、排队input、在途turn、Goal、审批和效果身份；同目标再次取消合并既有快照。旧unknown尚待对账不阻止新用户输入与新委派；旧结果仍after_cancel且不续办。父来源session/turn沿子委派、追加输入冻结，避免旧父回合借子身份绕屏障。
+- 授权回调返回后、决定/审批落账前再次核冻结来源与Goal；needs_approval分支也不能迟到发出已取消卡片。内部guard不进入授权请求摘要，不增加第二宿主决定路径。
+- 取消只在根泵每轮收敛一次（显式cancel/exclude仍即时收敛），无变化不重写屏障、委派、语音意图或取消结果。三秒未知交接闲置测试要求SQLite写增量≤2。
+- root句柄缺失/关闭报session_closed，不开新连接；成功close清理_session_handles。owner探测进程内缓存0.5秒，显式release/acquire立即失效；外部失锁最晚在缓存过期后的下一次检查发现。审核人明确允许最多0.5秒的检查窗口，以减少每次提交的文件I/O。重开宿主status/capabilities代次验证为2。
+
+### 先红后绿、变异与独立审查
+
+- C1清理新预期先红4项；缓存及根句柄先红3项。修后FakeHost分组通过。
+- 授权E2红测：manual三项、宿主Future、已登记委派撤销等，首轮5失败/1通过；父来源绕过两项先红，再修为拒绝且零Mission。needs_approval迟到落卡反例同样先红再绿。
+- `test_running_continuation_rechecks_barrier_after_send_lock`：先拿send锁、tick入队、将旧续办改running、取消树、放锁，模型零调用/状态cancelled/无扣额。仅在进程内绕过_run_inputs两处检查后，明确失败done!=cancelled，MUTATION_KILLED。
+- 另两个进程内AST变异：仅删除_create_locked派发前授权，撤销测试错误创建Mission而失败；仅删除child_send受理授权，deny测试DID NOT RAISE。均原码PASS→变异FAIL→恢复PASS，源码SHA256前后相同，未改源码来造证据。
+- 独立审查发现并复验修正：旧父turn路由子委派/指令绕屏障、追加输入await期间Goal换绑、迟到needs_approval分支落卡；当前所审范围无遗留P0/P1。
+
+原始证据仅在`.local-test-evidence/2026-10-31/sol-E/e2/`：auth-red.log、origin-red.log、origin-approval-red.log及对应绿测；running-mutation.py/log、dispatch-mutation.command.txt/log。变异复现（SDK目录）：
+
+```sh
+uv run --frozen python ../../.local-test-evidence/2026-10-31/sol-E/e2/running-mutation.py
+uv run --frozen python - < ../../.local-test-evidence/2026-10-31/sol-E/e2/dispatch-mutation.command.txt
+```
+
+变异日志SHA-256：running `de8552dc29663c1daacc1ddbc24b32f5f5f0987bf35bc66a9a155adb44ccb15b`；dispatch `699804b2a59a7268a2492bb79905addb0b290f057233444ed657f24db6b74e05`。
+
+### 验证进行中与存量检查问题
+
+新FakeHost集中组123通过（其后补父来源与迟到审批决定性用例，最终数量见下文）；重生成855项源码清单deployment_id `0830c25e919f09c791aed8240479caba849cc753c6cbc50f81f615e22c364435`后，真宿主Future + owner/close + cancel冒烟 **46 passed in 21.05s**。所需19文件和直接受异步调用影响的test_session_finish.py已一并运行，使用`uv run --frozen --extra realtime`。
+
+其余22个改动Python文件ruff check/format --check全绿，git diff --check绿。**tool_gateway.py整文件在基线已有18条Ruff诊断：14×E402、3×E501、1×F811；补修后完全相同，没有新增**（baseline/current JSON对照存e2）。任务书只放宽该文件两处控制命令调用，因此保留周边既有代码，没有为全文件lint绿越车道搬动导入、删方法或改工具说明。此项为存量限制，不冒称整文件Ruff已绿；最终测试结果在后文回写。首轮fake selector误包含名字不带real的模型Future测试且未生成对应源码清单，该试跑不作真宿主证据，后续已明确重生成并通过。
+
+欠账按任务书保留：session.py取消收敛职责较多，后续拆独立取消模块；本轮不扩大重构。未推送、未合并、未提交清单、未跑全量回归。
