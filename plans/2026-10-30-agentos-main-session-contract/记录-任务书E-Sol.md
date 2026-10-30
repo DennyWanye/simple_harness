@@ -69,3 +69,32 @@
 ## 未做
 
 未接入任务书F动作工具、未增加运行期工具注册、未改任务审批链、工具层或连接器协议；未迁移旧库、未发版、未推送、未合并。部署清单只在本地生成，不提交。
+
+## 提交态验证与可复跑命令
+
+- 红测试提交：`4a06b5b47`。
+- 实现提交（被测源码 HEAD）：`6a4e65af0`。
+- 该HEAD四新增测试文件：**104 passed in 11.90s，exit 0**，日志`new-head.log`（前一轮104 passed in 11.36s，同源码）。组成：authorization 44、cancel 16、goals 27、owner/close 17。
+- 原有第二宿主让位行为定向回归：**1 passed in 4.48s**，日志`lock-regression.log`。
+- 独立完成度审计覆盖A1/A2/I7/O1/C1/R1/G1/E1，无已知P0/P1遗留；验收结论仍须受下述指定回归结果约束，不能把新增104绿替代原回归全绿。
+
+执行目录：`sdk/simple-harness-sdk`。以下均加`-q -p no:cacheprovider`，所有真宿主执行前先重生成清单：
+
+```sh
+uv run --frozen python scripts/build/taskgraph_manifest.py generate --upstream ../../.local-test-evidence/2026-10-05/f2-upstream/evidence.json
+uv run --frozen python -m pytest tests/orchestrator/host/test_authorization_port.py tests/orchestrator/host/test_cancel_scope.py tests/orchestrator/host/test_goals.py tests/orchestrator/host/test_owner_and_close.py -q -p no:cacheprovider
+uv run --frozen python -m pytest tests/orchestrator/host/test_session_tree.py tests/orchestrator/host/test_continuation.py tests/orchestrator/host/test_session.py tests/orchestrator/host/test_session_replay.py tests/orchestrator/host/test_host_sessions.py tests/orchestrator/host/test_host_connectors.py tests/orchestrator/host/test_host_recovery.py tests/test_public_api.py -q -p no:cacheprovider
+uv run --frozen python -m pytest tests/orchestrator/host/test_orchestration_host.py::test_a_second_host_on_the_same_directory_stands_aside -q -p no:cacheprovider
+uv run --frozen ruff check src/agent_orchestrator/host/{authorization,goals,recovery_report,session,sessions,delegation,inbox,session_tree,continuation,host,instance_lock,settings,session_chat,__init__}.py src/agent_orchestrator/public_api.py tests/orchestrator/host/test_{authorization_port,cancel_scope,goals,owner_and_close,session_tree,continuation}.py
+uv run --frozen ruff format --check src/agent_orchestrator/host/{authorization,goals,recovery_report,session,sessions,delegation,inbox,session_tree,continuation,host,instance_lock,settings,session_chat,__init__}.py src/agent_orchestrator/public_api.py tests/orchestrator/host/test_{authorization_port,cancel_scope,goals,owner_and_close,session_tree,continuation}.py
+```
+
+证据均在工作树根`.local-test-evidence/2026-10-31/sol-E/`，不提交原始日志。`acceptance-first.log`及`acceptance.log`是中途因发现P1或脚本夹具形状错误中止的试跑，不作最终完整验收证据；实际完成输出取`new-head.log`与`regression.log`。
+
+自我批评：首次并行推进污染了仍在运行的基线清单校验，已改成不可变git archive快照重跑。决定性崩溃/授权等待/调度间隙测试与独立审查拦住实际缺陷；机械要求旧测试全绿与禁止改其清理调用相冲突，必须保留精确失败事实。
+
+## 指定回归首轮与实际缺陷修正
+
+`regression.log`：**255 passed /35 failed，274.68s**。33项直接在无参数close清理时报active_work；另1项是旧cancel_task要求“尚未派发也先创建Mission再取消”，与新屏障禁止取消后派发相冲突；最后1项发现child_send重复查询已终态历史，是实际性能/行为回归，已修。
+
+另外由独立复现实锤修正：用户已成功消费结果，但continuation_results残留pending会使close永久拒活，hold/deny也会在恢复报告误报责任。现在用户提交消费事实时，同事务把相应续办标applied并绑定实际回合，已完全消费的未执行批次同步done。追加enqueue/hold/deny三条决定性测试；child_send追加已终态不轮询测试。未放宽关闭门或修改旧测试清理调用。将对新HEAD重新生成清单并跑全部指定文件。

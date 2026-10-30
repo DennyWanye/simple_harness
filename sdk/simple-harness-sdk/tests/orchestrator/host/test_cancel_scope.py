@@ -403,3 +403,47 @@ def test_unrelated_submitted_voice_does_not_hold_another_cancel_scope(tmp_path):
         await parent.close(force=True)
 
     asyncio.run(case())
+
+
+@pytest.mark.parametrize("policy_action", ["enqueue", "hold", "deny"])
+def test_user_consumption_settles_continuation_responsibility(tmp_path, policy_action):
+    from test_continuation import parent_with_result
+
+    from agent_orchestrator.host import ContinuationDecision
+
+    class Policy:
+        async def decide(self, context):
+            return ContinuationDecision(policy_action)
+
+    async def case():
+        _, parent = await parent_with_result(
+            tmp_path, settings=HostSettings(continuation_merge_window_seconds=100), policy=Policy()
+        )
+        await parent._continuation.tick()
+        assert parent.continuations()[0]["state"] in {"pending", "hold", "deny"}
+        receipt = await parent.send("读结果", key="read")
+        assert receipt["state"] == "committed"
+        state = parent.continuations()[0]
+        assert state["state"] == "applied" and state["applied_turn_id"] == receipt["turn_id"]
+        assert not parent.recovery_report()["held_refs"]
+        assert not parent.recovery_report()["rejected_refs"]
+        await parent.close()
+
+    asyncio.run(case())
+
+
+def test_directive_reuses_terminal_facts_without_polling_task_history(tmp_path):
+    from test_continuation import parent_with_result
+
+    async def case():
+        host, parent = await parent_with_result(tmp_path)
+
+        def forbid_snapshot(*args, **kwargs):
+            raise AssertionError("terminal result is already durable")
+
+        host.snapshot = forbid_snapshot
+        parent.child_send("a", "追加", command_id="directive")
+        assert parent.child("a")._next_input() is not None
+        await parent.close(force=True)
+
+    asyncio.run(case())

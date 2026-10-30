@@ -940,6 +940,19 @@ class Session:
                             notice = self._store.get("inbox", event_id)
                             notice["applied_turn_id"] = row["turn_id"]
                             self._store.put("inbox", event_id, notice)
+                            result = self._store.get("continuation_results", event_id)
+                            if result is not None:
+                                result.update(state="applied", applied_turn_id=row["turn_id"])
+                                self._store.put("continuation_results", event_id, result)
+                        for queued in self.queued_inputs():
+                            if queued["kind"] == "result_event" and queued["state"] == "queued":
+                                if all(
+                                    self._store.get("inbox", eid).get("applied_turn_id") is not None
+                                    or self._store.get("result_exclusions", eid)
+                                    for eid in queued["payload"]
+                                ):
+                                    queued.update(state="done", turn_id=row["turn_id"])
+                                    self._store.put("queued_inputs", queued["input_id"], queued)
                     if (
                         reply["state"] == "committed"
                         and row.get("source") != "continuation"
@@ -1224,13 +1237,15 @@ class Session:
             raise SessionError("invalid_argument", "text must be bounded nonempty text")
 
         input_id = f"input-{digest([child.session_id, command_id])[:32]}"
+        finished = {notice["delegation_id"] for notice in child.inbox()}
         pending = next(
             (
                 r
                 for r in reversed(child._store.rows("delegations"))
                 if not r.get("error")
-                and r.get("mission_id")
-                and child._delegations.status(r) not in TERMINAL
+                and r.get("terminal_status") not in TERMINAL
+                and r["delegation_id"] not in finished
+                and (not r.get("mission_id") or child._delegations.status(r) not in TERMINAL)
             ),
             None,
         )
