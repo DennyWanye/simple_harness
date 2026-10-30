@@ -100,3 +100,74 @@ uv run --frozen python -m pytest tests/orchestrator/host/test_action_tools.py te
 - 收尾 DoD：车道审计通过、既有测试没有变化、提交态 301 项定向测试全绿、format 全绿、独立审阅无 P0/P1；正式配置字段与继承的 lint 红灯仍未达成，不宣称整任务完成。没有机器 receipt。部署清单恢复后，只剩本记录待提交；文档提交不改变被测代码身份。
 
 VERDICT: BLOCKED — 任务书 F 车道内定向测试 301 通过；正式 max_actions_per_turn 字段未完成，Ruff 原有 E501 未解决 — 2026-10-31 — 83724572b15e6396d96055e9cedb9ed6dea6a74e
+
+## F2 补修
+
+执行日期：2026-10-31（客户端 Asia/Taipei）；F2 任务书标注日期为 2026-11-01。本节依据用户明确指令，在同一工作树、同一 `sol/F-action-tools` 分支继续。F2 覆盖上节仍记录为 BLOCKED 的配置字段和 lint，不改写历史结果。
+
+### 并入 main 与测试基线
+
+- 先进入 `/Users/taiwan/PROJECTS/SimplaHarness/simple_harness-sol-F/sdk/simple-harness-sdk`，确认原 HEAD 为 `4a31b143b960de6e4b1a53dc3089d40b0d9da4ae`、工作树干净。
+- 执行 `git merge main`；并入的 main 为 `2eeca3818`，含 `668266aa7` 的原始事件尾游标修复。合并提交为 `935ec0a14d7e4ee388691de7e16f5dd1d8d96a40`，自动合并无冲突，保留 F 动作接线与 main 游标补尾两边改动。
+- 合并后先生成清单，再完整执行 F2 §4 指定的十个测试文件：**358 passed / 0 failed，232.37 秒**。基线期间没有修改生产源码。
+- F2 新增十个场景先红：**9 failed / 1 passed / 16 deselected，9.50 秒**。已有卡片键集合测试通过，但不掩盖九项新行为失败。红灯提交：`fed093532`。
+- 集中串行修改依赖链，独立代理只做事务方案与代码审阅/probe。测试对象为 SDK 宿主，不新增 UI 或真实付费模型验收，也不引入机器 receipt。
+
+### 逐条改动
+
+1. **§1 配置与 E501**：正式加入 `HostSettings.max_actions_per_turn: int = 4`，校验为正整数，配置映射可读取；适配器直接读取它与既有 `max_action_level`。原 connectors.py 注释折为两行，未改连接器协议。
+2. **§2.1 空闲扫描与审批入队**：从 `inbox.catch_up()` 删除动作恢复，只在 `Session.recover()` 首次恢复段运行一次，FakeHost 的子打开分支也经过首次恢复。`responded()` 先读已有记录，缺失才进入事务。
+3. **§2.1 原子边界的必要细化**：实际的授权单位于根 Session 库，子输入队列位于另一份 SQLite WAL 库；两次独立事务不能当成跨库原子提交。采用根库权威 `action_followups` 受理记录：在原 `SessionAuthorization.respond()` 的既有事务中，通过内部 `_on_decided` 回调将授权决定与待执行输入一起提交；主会话 `queued_inputs` 也在同一事务中写入。子队列是根库受理记录提交后的幂等投影，首次重开或重放 respond 均能补同一 `input_id`，不重置已经完成的队列。投影未完成也计作在途工作，归档不能藏掉已受理动作。没有 ATTACH、跨库锁或另造效果执行器。
+4. **授权文件车道解释**：§2.3 明确开放 `_apply` 的改动；§2.1 同时要求 respond 决定与入队共享提交。原 respond 自行开事务，没有可插入的提交内接缝，因此增加内部回调是满足 §2.1 的必要最小改动；没有复制批准校验或修改公开 Session 命令。独立事务审阅认可上述边界，记录明确不宣称子库和根库的跨库原子性。
+5. **§2.2 终态任务观察**：将 `observe_task_actions` 移到“原始事件尾 ≤ 游标”跳过判断之后；已有 effect 先按任务幂等键只读检查，不重复解析回执或开写事务。保留 main 最后一页把游标补至原始事件尾的修复。
+6. **§2.3 单一审批投影**：给 `SessionAuthorization._apply` 加 `request_kind="authorization"` 默认参数，动作路径传 `"action"`。删除复制的待批行、绑定、编号、版本和 `needs_response` 事件创建逻辑。
+7. **§2.4 直接约定**：`action_tools.py` 直接访问 `host._session_handles`、`settings.max_action_level/max_actions_per_turn`、`host.store.list_actions`，不再用缺失属性回退。`getattr(receipt, field)` 仅用于遍历核对既有回执字段，没有默认值，不是兼容回退。
+8. **§3 参数、拒绝与绑定**：缺 target、缺必填参数先返回，不占动作槽位；开始新一次执行/授权前清掉上次 `denied_reason`，端口离线不会沿用旧拒绝原因；待批/拒绝状态按持久 `authorization_key → authorization_bindings → authorization_requests` 定点读取，不扫全表。
+9. **§3 类型与目录**：`ContinuationContext.delegation_id/mission_id` 改为 `str | None`；注册时不登记只声明 child 的动作，使目录与可调用权限一致；补目录断言并更新文档的正式配置与恢复边界。
+10. **测试替身**：`test_session.py` 的 FakeHost 补执行库的 `list_actions/read_view/transaction/事件尾` 约定，将直接修改的替身状态同步为单调事件；finish 也使用单调序号。main 自带隐藏事件尾测试的局部 MissionStore 补空动作查询。既有断言全部保留，没有改表、放宽断言或在生产路径补测试兼容分支。
+
+### 决定性验证与命令
+
+新增测试仍在 `test_action_tools.py`，覆盖：正式配置与坏值、无效参数不占槽位、旧拒绝原因清除、授权请求定点查询、动作/普通卡片行键一致、审批事务失败整笔回滚、50 条已批准历史闲置 3.05 秒至少 12 拍无授权扫描且零 BEGIN、child-only 不登记、终态任务两条动作五次 catch-up 只查询一次、子投影前失败后重开补执行且不能提前归档。
+
+首次新增/原动作测试小组为 **26 passed / 0 failed，38.00 秒**；之后又加强了已记账回执预查与投影未完成的归档断言，最终组以提交态复验为准。
+
+以下命令均在该工作树 `sdk/simple-harness-sdk/` 运行：
+
+```bash
+uv run --frozen python scripts/build/taskgraph_manifest.py generate --upstream ../../.local-test-evidence/2026-10-05/f2-upstream/evidence.json
+uv run --frozen python -m pytest tests/orchestrator/host/test_action_tools.py tests/orchestrator/host/test_host_connectors.py tests/orchestrator/host/test_tool_catalog.py tests/orchestrator/host/test_authorization_port.py tests/orchestrator/host/test_session_tree.py tests/orchestrator/host/test_continuation.py tests/orchestrator/host/test_session.py tests/orchestrator/host/test_owner_and_close.py tests/orchestrator/host/test_host_recovery.py tests/test_public_api.py -q -p no:cacheprovider
+uv run --frozen ruff check src/agent_orchestrator/runtime/{action_tools,connectors}.py src/agent_orchestrator/host/{authorization,session,settings,inbox,continuation,host}.py tests/orchestrator/host/{test_session,test_action_tools}.py
+uv run --frozen ruff format --check src/agent_orchestrator/runtime/{action_tools,connectors}.py src/agent_orchestrator/host/{authorization,session,settings,inbox,continuation,host}.py tests/orchestrator/host/{test_session,test_action_tools}.py
+```
+
+- 首次指定回归：**367 passed / 1 failed，243.87 秒**。唯一失败为旧 `test_polling_unchanged_mission_does_not_reproject_or_write` 的局部 SimpleNamespace 执行库缺少 `list_actions`；补齐该替身方法，没有修改断言或增加生产回退。
+- 加强本地已完成队列的只读预查后，重跑 F2 十场景与上述 polling 案例：**11 passed / 45 deselected，10.81 秒**；旧完成队列重放原回执一致、仍为唯一 done、真实效果仍为 1、BEGIN 为 0。
+- 实现提交与最终被测代码：`c4880175ffa1bc400d000f919d0c2584e900a96f`。在此提交上重新生成清单并完整执行十文件复验：**368 passed / 0 failed，243.87 秒，exit 0**；此后生产源码与测试保持不变。
+- 最终质量检查：**ruff check 全绿；ruff format --check 为 10 files already formatted**，包含原 connectors.py E501 的修复。
+- 独立审阅：累计 diff 与条款覆盖 PASS，无剩余 P0/P1。独立子集 **5 passed / 21 deselected，8.40 秒**；另以真实子进程在根 COMMIT 后、子投影前 `os._exit(77)`，重开后 approved/outbox=1/子队列 done/效果=1，重放仍唯一。子回调写根受理后抛错会整笔回滚为 pending/outbox=0/childqueue=0；未投影时取消 session_tree，重开后队列 cancelled、效果 0。最终本地队列预查也有独立零 BEGIN 复验。
+- 原始证据目录：`.local-test-evidence/2026-10-31/sol-f2/`；保留 baseline/red/green/regression/final、清单与审阅日志，全部 ignored，索引与 SHA-256 见下表。
+- 被测清单 `deployment_id=332962d1e3ff28166fc8df3d7ab562d8613b236ddf00bbbca83d33f78e7df7fa`，856 个来源文件；ignored 副本已保留，交付前已恢复工作树原清单，未提交清单。之后只有本记录更新，不改变被测代码。
+- 本轮没有修改命令表、池编号、既有工具说明、任务申请单/审阅/执行器、连接器协议；只把 main 并入当前工作树，未将本分支合回 main、未推送、不跑全量。`ARCHITECTURE/` 按 F2 §5 留给审核人合并时回写。
+- 自我批评：先等完整基线结束再改生产源码，避免 F 首轮的快照污染。事务结构核对发现父子分库，先用独立反例澄清原子边界，再选择根库受理与子队列投影；不把两个 WAL 提交包装成“同事务”。
+
+证据 SHA-256（均相对于 `.local-test-evidence/2026-10-31/sol-f2/`）：
+
+| 文件 | SHA-256 |
+|---|---|
+| `baseline.log` | `7848c2e607c893970fd5db5bd9b113c4a97506db89ab66e18da32620e164adea` |
+| `red.log` | `770b80a82203c97a5023e1acfd87c13eea5185835bded87a8163f6f96c10855d` |
+| `green.log` | `403717f05e23ec8e6a75b42baa8473c18d411555fef8453adbec36bf35e6c7c9` |
+| `regression.log` | `b3668144729ef8d9a5e7691950f040e027c165fcd13ce516757ee32fdabfdc64` |
+| `focused.log` | `fc2ada1bf3db001d00505957e56ad248785f5fcb17b9fbe6b140c31fe6e457f2` |
+| `transaction-review.md` | `1054bca2eb2921cfc941b1a13eb085f2918bed1c12a11ed4f23e9112e35da002` |
+| `review.md` | `547bb22d1ffd50f3e21eab3bd116fbfff53eeff667809bc2be3facd702689545` |
+| `final.log` | `40b7401f337c7e905b1f00649366e2e0ca86fd1b42bf8e74f5fc407626d6ea45` |
+| `final-manifest.log` | `07b94ee7e3a493bdbcbfd2a0433f3a7af541602b818c9cd09ad3c6e2f800bdad` |
+| `tested-taskgraph-deployment-manifest.json` | `93e001c00f2832a3733067e78c1dd011f39059b9d5df708bc188ede2e9b963de` |
+| `final-lint.log` | `82b3e6a6c090a57601d22943bd23fca9218d1031dbe5a7b754092f9a156b4f18` |
+| `final-format.log` | `5b9f70ad96522f492ef846065642c069b5627379aff2ab3f74acd2e3b9ecfe34` |
+
+F2 DoD：§1 两项原 BLOCKED 均解除；§2 四项阻断补修与§3 小项完成，新增决定性测试、独立审阅与提交态十文件回归全绿；Ruff/format 含 connectors.py 全绿；部署清单恢复；只提交授权车道和记录，未推送、未合回 main。完成判定依据本节验收与证据，无机器 receipt。
+
+VERDICT: PASS — F2 补修完成，提交态 368 项全绿、Ruff/format 全绿、独立审阅无剩余 P0/P1 — 2026-10-31 — c4880175ffa1bc400d000f919d0c2584e900a96f
