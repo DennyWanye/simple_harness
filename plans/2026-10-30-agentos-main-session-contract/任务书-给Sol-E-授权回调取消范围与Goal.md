@@ -112,3 +112,16 @@ Simple Harness SDK 的会话层已经有：父子会话、委派到子会话、�
 ## 9. 有问题怎么办
 
 写进记录"拿不准的"，按最合理的做法先做完，不停下等。
+
+## 10. 任务书 D（异步受理与自动汇总）合并后的补充说明（2026-10-31 审核人追加）
+
+发包基线已含 D 与 D2 的改动，以下几点与本任务书直接相关：
+
+- **续办的"能不能做"只有一个决定点。** D 已有 `continuation.py` 的 `ContinuationPolicy.decide(context) → enqueue / hold / deny`（默认 enqueue，异常或超时 5 秒按 hold）。本任务书 §4.1 列的调用点里**去掉**"续办入队前问 `AuthorizationPort`"这一处，`AuthorizationRequest.action` 不要 `continuation` 这个值——同一件事不留两条路径。宿主要管续办就实现 `ContinuationPolicy`。
+- **取消屏障要落在 D 的队列机制上。** 排队输入统一在 `Session._run_inputs` 里消费，它**先拿 `_send_lock`、再重读队列行状态**才标 `running` 和扣额；屏障检查放在这同一处（拿锁后、标 running 前），屏障后的 `result_event`（续办）和 `directive`（子会话追加输入）都不再起回合，状态记 `cancelled` 并发事件。`Continuation.tick()` 入队前也看屏障：被取消 Goal 名下的迟到结果记 `result_received(after_cancel=True)`，不入队。
+- **D 的状态与表**：`queued_inputs`（`kind ∈ user_message / directive / result_event`，`state ∈ queued / running / done / failed`，`source`，`receipt`）、`continuation_results`（`pending / queued / applied / hold / deny / waiting`）、`continuation_usage`（`reserved_model_calls`、`model_calls`、`unknown`、`epoch`）、`voice_deliveries`（`queued / submitted / played`）。恢复报告（§4.5）的 `resumed_refs / held_refs / unknown_effect_refs` 要把这些算进去：`running` 的排队输入算 resumed，`hold` 的续办算 held，`voice_deliveries.submitted` 且绑定已不在的算 unknown。
+- **关闭有活拒绝（§4.4）的"活"**：未终态委派、未消费结果（`applied_turn_id is None`）之外，加上 `queued / running` 的排队输入与 `pending / queued` 的续办。`force=True` 时 D 现有的 `close()` 行为不变（取消 `_input_task`，排队行留 `running`，重开接着跑）。
+- **用量规则**：续办用量按"可多算不可少算"结算（`Continuation.settle_usage`）；效果账本 `effects` 的回执哈希与它无关，但 Goal 的 `budget` 若要算模型调用数，取 `continuation_usage` 与会话回合的保守值，不另起计数。
+- **会话账本**：`SessionLedger` 已有 `delete(namespace, key)`；`meta.configuration` 只冻结 `version` 与 `policy`（不含工具名单）；`capabilities()` 已含 `catalog_version`、`async_accept`、`queued_input_execution`、`continuation`。本任务书 §4.6 加能力时放同一个字典，`unsupported` 只剩 `steer_running_mission`。
+- **语音**：`VoiceBinding.announce(text, *, priority, source, input_id)` 已带结构化来源；取消一个 Goal 时，它名下已 `submitted` 的语音播报不撤回，只在 `voice_deliveries` 上标 `cancel_requested`，播完照常记 `played`（效果如实）。
+- **提示词与命令**：`SESSION_INSTRUCTIONS` 已有 ToolSearch 与续办两段，本任务书只再追加 `cancel` 命令的一句；`COMMAND_SCHEMAS` 只加 `cancel`。
