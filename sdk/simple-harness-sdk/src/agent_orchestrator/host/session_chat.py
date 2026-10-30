@@ -237,10 +237,9 @@ class SessionChatService(ChatService):
             + digest(self.session.policy.public())[:12]
         )
 
-    def _registered_tools(self) -> tuple[str, ...]:
+    def _registered_tools(self, *, source: str | None = None) -> tuple[str, ...]:
         allowed = super()._registered_tools()
-        active = self.session._current_input
-        if active is None or active.get("source") != "continuation":
+        if source != "continuation":
             return allowed
         queries = {
             *HISTORY_TOOLS,
@@ -255,6 +254,15 @@ class SessionChatService(ChatService):
             for name in allowed
             if name in queries or (name in self._host.tools and self._host.tools[name].read_only)
         )
+
+    def _bind(self, pool: Any, agent: Any, session_id: str, allowed: tuple[str, ...]) -> None:
+        active = self.session._current_input
+        if active is None:
+            key = self.session._store.get("run_inputs", agent.run_id)
+            active = self.session._store.get("turns", key) if key is not None else None
+        # 工具全集属于持续的 Agent；只有当前绑定收窄，下一句用户仍有它原有的权限与历史。
+        current = self._registered_tools(source=None if active is None else active["source"])
+        super()._bind(pool, agent, session_id, tuple(name for name in allowed if name in current))
 
     def _configuration(self, config: Any) -> Any:
         config = super()._configuration(config)

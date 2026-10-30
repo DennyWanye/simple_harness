@@ -115,7 +115,6 @@ class HostSettings:
     continuation_enabled: bool = True
     continuation_merge_window_seconds: float = 5.0
     continuation_max_turns_per_session: int = 50
-    continuation_max_model_calls_per_turn: int | None = None
     continuation_voice_max_wait_seconds: float = 60.0
     tool_search: bool = True
     main_session_sandbox_run: bool = False
@@ -133,9 +132,6 @@ class HostSettings:
             or self.continuation_max_turns_per_session < 0
         ):
             raise ValueError("continuation_max_turns_per_session must be nonnegative")
-        calls = self.continuation_max_model_calls_per_turn
-        if calls is not None and (type(calls) is not int or calls < 1):
-            raise ValueError("continuation_max_model_calls_per_turn must be positive or None")
         if self.context_input_tokens not in CONTEXT_INPUT_CHOICES:
             raise ValueError(f"context_input_tokens 只能是 {CONTEXT_INPUT_CHOICES} 之一")
         for name in ("max_concurrency", "max_concurrent_model_calls"):

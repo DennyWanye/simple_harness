@@ -305,6 +305,25 @@ class Delegations:
         detail = self.host.snapshot(str(row["mission_id"]))
         return str(detail["snapshot"]["mission"]["status"])
 
+    def has_in_flight(self) -> bool:
+        results = {notice["delegation_id"] for notice in self.store.rows("inbox")}
+        for row in self.store.rows("delegations"):
+            if (
+                row.get("error")
+                or row["delegation_id"] in results
+                or row.get("terminal_status") in TERMINAL
+            ):
+                continue
+            if row["mission_id"] is None:
+                return True
+            status = self.status(row)
+            if status not in TERMINAL:
+                return True
+            with self.store.transaction():
+                row["terminal_status"] = status
+                self.store.put("delegations", row["key"], row)
+        return False
+
     def _creation_absent(self, row: Mapping[str, Any]) -> bool:
         orchestrator = getattr(self.host, "orchestrator", None)
         if orchestrator is None:

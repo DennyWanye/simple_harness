@@ -6,6 +6,7 @@ from __future__ import annotations
 import asyncio
 import inspect
 import time
+from contextlib import nullcontext
 from dataclasses import dataclass
 from typing import Any
 
@@ -63,10 +64,42 @@ class Continuation:
 
     @property
     def model_limit(self) -> int:
-        configured = self.settings.continuation_max_model_calls_per_turn
-        return min(
-            self.session.policy.max_model_calls, configured or self.session.policy.max_model_calls
-        )
+        return self.session.policy.max_model_calls
+
+    def input_id_for(self, event_ids) -> str:
+        return "cont-" + digest([self.session.session_id, sorted(event_ids)])
+
+    def user_input_accepted(self) -> None:
+        epoch = self.store.get("meta", "continuation_epoch")
+        self.store.put("meta", "continuation_epoch", epoch + 1)
+
+    def consecutive_turns(self) -> int:
+        epoch = self.store.get("meta", "continuation_epoch")
+        return sum(row["epoch"] == epoch for row in self.store.rows("continuation_usage"))
+
+    def settle_usage(
+        self,
+        input_id: str,
+        *,
+        model_calls: int | None,
+        unknown: bool = False,
+        known_model_calls: int = 0,
+    ) -> None:
+        with nullcontext() if self.store.connection.in_transaction else self.store.transaction():
+            usage = self.store.get("continuation_usage", input_id)
+            if usage is None:
+                return
+            accurate = type(model_calls) is int and model_calls >= 0
+            usage.update(
+                state="settled",
+                model_calls=max(
+                    usage["model_calls"],
+                    known_model_calls,
+                    model_calls if accurate else usage["reserved_model_calls"],
+                ),
+                unknown=usage["unknown"] or unknown or not accurate,
+            )
+            self.store.put("continuation_usage", input_id, usage)
 
     def received(self, notice: dict[str, Any]) -> None:
         event_id = notice["event_id"]
@@ -85,6 +118,7 @@ class Continuation:
             return
         async with self._lock:
             self.reconcile()
+            self.session._queue_pending_turns()
             notices = [
                 n
                 for n in self.session.inbox()
@@ -104,7 +138,7 @@ class Continuation:
                     mission_id=notice["mission_id"],
                     event_id=event_id,
                     pending_event_ids=tuple(n["event_id"] for n in notices),
-                    used_turns=len(usage),
+                    used_turns=self.consecutive_turns(),
                     used_model_calls=sum(u["model_calls"] for u in usage),
                 )
                 if not self.settings.continuation_enabled:
@@ -161,7 +195,7 @@ class Continuation:
             ):
                 return
             event_ids = sorted(r["event_id"] for r in pending)
-            input_id = "cont-" + digest([self.session.session_id, event_ids])
+            input_id = self.input_id_for(event_ids)
             turn_id = f"turn-{digest([self.session.session_id, input_id])[:32]}"
             with self.store.transaction():
                 queued = self.store.get("queued_inputs", input_id)
@@ -179,6 +213,7 @@ class Continuation:
                         ),
                         "state": "queued",
                         "created_at": time.time(),
+                        "receipt": None,
                     }
                     self.store.put("queued_inputs", input_id, queued)
                     self.store.event(
@@ -212,10 +247,7 @@ class Continuation:
         with self.store.transaction():
             if self.store.get("continuation_usage", input_id) is not None:
                 return True
-            if (
-                len(self.store.rows("continuation_usage"))
-                >= self.settings.continuation_max_turns_per_session
-            ):
+            if self.consecutive_turns() >= self.settings.continuation_max_turns_per_session:
                 queued.update(state="failed", waiting=True, reason="budget_exhausted")
                 self.store.put("queued_inputs", input_id, queued)
                 for event_id in queued["payload"]:
@@ -238,21 +270,20 @@ class Continuation:
                     "model_calls": 0,
                     "reserved_model_calls": self.model_limit,
                     "state": "reserved",
+                    "unknown": False,
+                    "epoch": self.store.get("meta", "continuation_epoch"),
                 },
             )
         return True
 
     def finish(self, queued: dict[str, Any], receipt: dict[str, Any]) -> None:
         input_id = queued["input_id"]
-        with self.store.transaction():
-            usage = self.store.get("continuation_usage", input_id)
-            if usage is not None:
-                usage.update(
-                    state="settled",
-                    model_calls=receipt.get("model_calls", 0),
-                    unknown=receipt.get("usage", {}).get("unknown", False),
-                )
-                self.store.put("continuation_usage", input_id, usage)
+        calls = receipt.get("model_calls")
+        if receipt["state"] == "failed" and not calls:
+            calls = None
+        self.settle_usage(
+            input_id, model_calls=calls, unknown=receipt.get("usage", {}).get("unknown", False)
+        )
         # 回合已经落账、结果还没应用：重开只补应用，不能再请求模型。
         self.session._checkpoint("continuation_applied")
         if receipt["state"] == "committed":
@@ -308,7 +339,11 @@ class Continuation:
                 self.store.put("continuation_results", event_id, result)
             usage = self.store.get("continuation_usage", queued["input_id"])
             if usage is not None and usage["state"] == "reserved":
-                usage.update(state="settled", unknown=True)
+                usage.update(
+                    state="settled",
+                    unknown=True,
+                    model_calls=max(usage["model_calls"], usage["reserved_model_calls"]),
+                )
                 self.store.put("continuation_usage", queued["input_id"], usage)
             self.store.event(
                 "continuation_waiting",
@@ -373,20 +408,9 @@ class Continuation:
                                 "error": {"code": "not_submitted"},
                             }
                             self.store.put("turns", prepared_key, draft)
-                        self.store.connection.execute(
-                            "DELETE FROM records WHERE namespace='voice_deliveries' AND key=?",
-                            (queued["input_id"],),
-                        )
+                        self.store.delete("voice_deliveries", queued["input_id"])
                 else:
-                    with self.store.transaction():
-                        usage = self.store.get("continuation_usage", queued["input_id"])
-                        if usage is not None:
-                            usage.update(
-                                model_calls=usage["reserved_model_calls"],
-                                unknown=True,
-                                state="settled",
-                            )
-                            self.store.put("continuation_usage", queued["input_id"], usage)
+                    self.settle_usage(queued["input_id"], model_calls=None, unknown=True)
                     self.fail(queued, "effect_unknown")
                     continue
             turn = self.store.get("turns", queued["input_id"])
@@ -397,7 +421,7 @@ class Continuation:
         return [
             r
             for r in self.session.queued_inputs()
-            if r["kind"] == "result_event" and r["state"] in {"queued", "running"}
+            if r["kind"] == "result_event" and r["state"] == "queued"
         ]
 
     def voice_text(self, queued: dict[str, Any]) -> str:

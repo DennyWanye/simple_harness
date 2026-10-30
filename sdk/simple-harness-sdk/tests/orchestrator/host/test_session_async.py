@@ -246,7 +246,11 @@ def test_reopen_finishes_earlier_sync_turn_before_later_async_input(tmp_path):
         await reopened.recover()
         await eventually(lambda: len(reopened.history()) == 2, seconds=0.5)
         assert [h["input"] for h in reopened.history()] == ["earlier sync", "later async"]
-        assert reopened.queued_inputs()[0]["turn_id"] == accepted["turn_id"]
+        assert [r["idempotency_key"] for r in reopened.queued_inputs()] == ["first", "second"]
+        assert (
+            reopened._store.get("queued_inputs", accepted["input_id"])["turn_id"]
+            == accepted["turn_id"]
+        )
         await reopened.close()
 
     asyncio.run(case())

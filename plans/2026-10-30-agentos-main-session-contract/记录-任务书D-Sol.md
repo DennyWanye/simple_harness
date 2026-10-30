@@ -184,3 +184,25 @@ VERDICT: SHIPPED — 任务书 D 指定源码车道与 327 项定向验证（仅
 删除每条续办创建 Agent 的覆盖，复用主 Agent 历史，权限只在 `_bind` 收窄。Agent 的冻结工具全集仍按角色创建；本回合网关绑定才按来源取只读子集，避免首次输入恰为续办时把主 Agent 永久冻成只读。
 
 任务书放宽到明确涉及的会话文件（含 `session_ledger.py`、语音结构化来源与会话绑定处）；命令表、池编号、工具说明、任务/工具/连接器层不动。通用技能与仓库要求的车道外模板/架构文件仍不新增，过程统一追加本节；按用户授权继续，不重复询问。
+
+### 实现与阶段验证
+
+- 两条阻断：删 `TreeSessionChatService._agent` 覆盖，主用户/续办回合复用同一 Agent；`_registered_tools(source=...)` 保留查询子集算法，由 `_bind` 传当前或持久 `run_inputs` 来源。Agent 创建冻结完整角色工具名单，网关逐回合只缩不放。专用调用旋钮已从配置、校验、文档和测试删除，上限只来自 SessionPolicy。
+- 后台消费先拿 `_send_lock`，随后查语音、重读队列、检查终态与扣额，再调用已持锁的 `_send`；`_send(_queued)` 锁内再次查应用和终态；`voice_pending()` 仅 queued，已应用/失败输入不再触发文字模型或覆盖语音用量。
+- `settle_usage` 统一文字、语音、恢复的结算：未知按预扣上限，所有数字取最大已知值，unknown 不倒退；策略 context 汇总这份保守用量。独立 reviewer 找出旧 submitted 恢复直接覆盖数字的剩余 P1，新增 `known > reserved` 反例先红 **1 failed，0.69 秒**，统一走 helper 后与未知/迟到回执/策略用量测试合跑 **5 passed，0.51 秒**。末次复核确认唯一 P1 关闭，无其他范围内 P0/P1，最小化通过。
+- 结构化播报：SpeechHandle 和 announce 带 source/input_id，来源标记不再解析正文；needs_response 等普通播报不标 task_result；续办 ID 摘要集中在 input_id_for。
+- directive 不等父空闲。已在 inbox 的终态/委派 error 直接按账本判定；缺通知时只对未确定终态的任务查快照并缓存 terminal_status；恢复已经 running 的 directive 允许补收回执，不因自己已创建的 Mission 在途而卡住。委派后、队列 done 前崩溃反例证明只创建一个 Mission。
+- 子结果事件在策略未裁定前保留游标等待会话泵；pending/queued/applied 交给续办；hold/deny/disabled 走原 result_ready 播报，避免静默丢声音或抢在用户开口前播报。
+- 连续轮次用持久 epoch，用户新输入推进 epoch，同键重放不重置；历史用量保留。未完成用户回合统一先排队恢复，语音未提交草稿不进入用户路径。仅有 wait=True 等待者的异常才进入内存，读走/等待取消即清理。
+- SessionLedger.delete 封装删记录；inbox 说明同步为“下一句附资料或自动汇总”。旧 queued.idempotency_key 回落均删除；命令表、池编号、工具说明及任务/工具/连接器层未改。
+
+阶段结果：原异步+续办两文件 **54 passed，52.73 秒**；关联七文件 **252 passed，127.12 秒**。新增终态缓存与策略 used_model_calls 两项 **2 passed，0.68 秒**。扩大至 16 项 D2 新用例后，最终指定 12 文件应为 385 项，提交后统一终验。
+
+本轮已有测试的语义调整逐条：
+1. `test_reopen_finishes_earlier_sync_turn_before_later_async_input`：原先只异步输入有 queue 行；D2 统一排队后断言两个 key 均在队列、顺序 first→second，并按 input_id 查第二条回合身份，不再假定它是下标 0。
+2. `test_settings_and_capabilities` 删除已移除旋钮的默认值/非法值断言。
+3. `test_real_host_continuation_model_call_limit` 和语音单轮上限用例改用 SessionPolicy.max_model_calls，数值上限和“超过即停止/事件可见”预期保留。
+4. announcement input_committed 崩溃用例按 D2 结构化参数显式传 source/input_id，不再依赖正文 JSON 自认来源。
+5. 新 directive 性能反例把无快照断言放在重复消费条件检查上；真正执行新回合附结果资料仍允许读取所需快照，未把测试范围扩成禁止所有快照读取。
+
+开工时源清单由审核生成；之后每次源码改变后真宿主运行前均执行既定 `taskgraph_manifest.py generate --upstream ...`。本轮原始证据均在 ignored `sol-D2/`，不提交。

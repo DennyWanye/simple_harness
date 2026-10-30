@@ -106,6 +106,9 @@ class SessionLedger:
             (namespace, key, encoded(value)),
         )
 
+    def delete(self, namespace: str, key: str) -> None:
+        self.connection.execute("DELETE FROM records WHERE namespace=? AND key=?", (namespace, key))
+
     def rows(self, namespace: str) -> list[Any]:
         return [
             json.loads(row[0])

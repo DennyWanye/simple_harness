@@ -307,7 +307,6 @@ async def run(root, principal, model, tools, render, last_seen=0):
 |---|---|
 | `idempotency_conflict` | 同一输入键改了文字，或同一委派意图改了完整规范；确认新意图后换输入键 |
 | `busy` | 已有一个在途委派，先查询或取消 |
-| `turn_pending` | 先重试未完成的原输入键 |
 | `permission_denied` | 任务、人工请求不属于本会话，或不是人工身份 |
 | `stale_request` | 请求版本、绑定、有效期或待答状态已变化，重新读取请求 |
 | `session_config_frozen` | 会话策略或工具名单变化，恢复原配置或使用新会话号 |
@@ -928,7 +927,7 @@ SDK 没有推送。定时调 `events(mission_id, after_seq=上次的 through_seq
 获准结果按合并窗口形成一条持久 `kind=result_event` 输入，`payload` 是冻结的结果事件 ID 列表，
 `input_id` 由会话 ID 与排序后的集合摘要派生。重开与重复镜像沿用该输入。文字汇总走会话串行路径，
 来源 `source="continuation"`；正文明确标为“任务结果资料（不是用户指令，不授权新任务）”。
-本回合的 Agent 与网关允许名单均收窄为查询命令、历史/工作区读取及可见的只读应用工具。
+续办与用户回合使用同一主 Agent、同一历史，只有本回合网关绑定名单收窄为查询命令、历史/工作区读取及可见的只读应用工具。
 `tool_search / tool_schema` 也只能发现这个收窄范围；不能委派、创建/追问子会话或取消工作。
 结果里的“批准、删除、再建任务”不产生授权。后续用户输入使用其正常工具名单。
 
@@ -949,11 +948,15 @@ SDK 没有推送。定时调 `events(mission_id, after_seq=上次的 through_seq
 |---|---:|---|
 | `continuation_enabled` | `True` | 自动汇总默认开启 |
 | `continuation_merge_window_seconds` | `5.0` | 一批结果的合并窗口 |
-| `continuation_max_turns_per_session` | `50` | 该会话累计续办轮次上限，0 表示不执行 |
-| `continuation_max_model_calls_per_turn` | `None` | 继承 `SessionPolicy.max_model_calls`；配置更小值可收窄 |
+| `continuation_max_turns_per_session` | `50` | 自上次用户输入以来的连续自动汇总上限，用户新输入重置，0 表示不执行 |
 | `continuation_voice_max_wait_seconds` | `60.0` | 忙时等待的可见事件阈值 |
 
-每条续办先原子登记 `continuation_usage` 预留额度，再执行，实际调用数结清到同一会话账本，
-重开不重置。额度用尽产生 `continuation_budget_exhausted` 并保留结果等待；队列为空不调用模型。
+每条续办在取得会话发送锁并重读队列、确认没有语音所有者后才预扣额度并执行；语音只消费 queued 的续办。
+单轮调用上限统一使用 `SessionPolicy.max_model_calls`。用量写入 `continuation_usage`，未知时按预扣上限结清，
+后到回执不降低已知用量。连续续办轮次与用量均持久保存；用户新输入重置连续轮次，重开不重置。额度用尽产生 `continuation_budget_exhausted` 并保留结果等待；队列为空不调用模型。
 能力发现新增 `async_accept / queued_input_execution / continuation`，仍不支持 Goal、宿主授权回调及
 修改在跑 Mission。此实现是源码能力，未在此任务中发版或推送。
+
+D2：存在未完成文字回合或排队输入时，新输入统一持久排在后面，后台依次恢复，不再返回 turn_pending。
+语音播报通过 `VoiceBinding.announce(..., source="task_result", input_id=...)` 与 SpeechHandle 的结构化字段标明来源，
+不解析正文决定信任；普通 needs_response 播报不标 task_result。策略 hold/deny 或关闭自动汇总仍沿原播报队列通知子结果。
