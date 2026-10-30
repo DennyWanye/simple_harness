@@ -560,3 +560,25 @@ def test_recover_finishes_child_delegation_recorded_before_mission_creation(tmp_
     assert task["mission_id"] is not None and len(host.made) == 1
     replay = reopened._delegations.delegate(turn, "call", {**SPEC, "child_key": "a"})
     assert replay["mission_id"] == task["mission_id"] and len(host.made) == 1
+
+
+def test_model_command_ids_survive_executor_replacement(tmp_path):
+    """换执行者后同一回合的第 n 次子会话命令要得到同一个命令号，排队输入才不会重复登记。"""
+
+    _, parent = make(tmp_path)
+    turn = parent._commit_input("去做", "k")["turn_id"]
+    first = parent._model_command_id("child_send", turn, "run-1", "call-x")
+    second = parent._model_command_id("child_send", turn, "run-1", "call-y")
+    assert first != second
+    # 同一执行者重放同一调用：同号
+    assert parent._model_command_id("child_send", turn, "run-1", "call-x") == first
+    # 换代执行者从零重放：调用号全变，命令号不变
+    assert parent._model_command_id("child_send", turn, "run-2", "call-p") == first
+    assert parent._model_command_id("child_send", turn, "run-2", "call-q") == second
+    # 不同命令种类、不同回合互不串号
+    assert parent._model_command_id("create_child", turn, "run-1", "call-x") != first
+    other = parent._commit_input("再做", "k2")["turn_id"]
+    assert parent._model_command_id("child_send", other, "run-1", "call-x") != first
+    # 重开后号仍然稳定
+    reopened = Session(parent._host, session_id="main")
+    assert reopened._model_command_id("child_send", turn, "run-3", "call-z") == first

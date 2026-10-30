@@ -518,6 +518,31 @@ class Session:
     def queued_inputs(self) -> list[dict[str, Any]]:
         return self._store.rows("queued_inputs")
 
+    def _model_command_id(self, kind: str, turn_id: str, attempt_id: str, call_id: str) -> str:
+        """模型发出的子会话命令的稳定身份：回合 + 命令种类 + 调用槽位。
+
+        执行者换代后 run_id 与 call_id 都会变，只有"这是该回合里第几次这种命令"不变；
+        与委派的槽位同一个道理，这样换代重放不会把同一条追加输入登记两次。"""
+
+        binding_key = digest([kind, turn_id, attempt_id, call_id])
+        with self._store.transaction():
+            binding = self._store.get("command_routes", binding_key)
+            if binding is not None:
+                slot = binding["slot"]
+            else:
+                slot = sum(
+                    row["kind"] == kind
+                    and row["turn_id"] == turn_id
+                    and row["attempt_id"] == attempt_id
+                    for row in self._store.rows("command_routes")
+                )
+                self._store.put(
+                    "command_routes",
+                    binding_key,
+                    {"kind": kind, "turn_id": turn_id, "attempt_id": attempt_id, "slot": slot},
+                )
+        return "command-" + digest([self.session_id, turn_id, kind, slot])
+
     def command_receipt(self, command_id: str) -> dict[str, Any]:
         row = self._store.get("commands", str(command_id))
         if row is None:
@@ -797,9 +822,7 @@ class TreeSessionChatService(SessionChatService):
             active = None if input_key is None else session._store.get("turns", input_key)
             if active is None:
                 raise SessionError("permission_denied", "no committed input belongs to this run")
-            command_id = "command-" + digest(
-                [session.session_id, active["turn_id"], run_id, call_id]
-            )
+            command_id = session._model_command_id(name, active["turn_id"], run_id, call_id)
             if name == "create_child":
                 receipt = session._tree.register(
                     arguments["child_key"], command_id, arguments.get("purpose", "")
