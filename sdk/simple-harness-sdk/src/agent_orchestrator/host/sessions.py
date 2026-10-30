@@ -32,6 +32,8 @@ async def open_session(
             raise SessionError("invalid_request", "tool conflicts with a session command")
         session = host._sessions.get(session_id)
         if session is not None:
+            if session._store.get("meta", "archived"):
+                raise SessionError("not_found_or_forbidden", "session is archived")
             given = (
                 None if parent is None else {"parent_session_id": parent[0], "child_key": parent[1]}
             )
@@ -78,7 +80,7 @@ async def open_session(
     try:
         await session.recover()
     except BaseException:
-        await session.close()
+        await session.close(force=True)
         raise
     return session
 

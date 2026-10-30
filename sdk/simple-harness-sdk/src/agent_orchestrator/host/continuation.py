@@ -111,6 +111,10 @@ class Continuation:
                 mission_id=notice["mission_id"],
                 delegation_id=notice["delegation_id"],
                 payload={"event_id": event_id},
+                goal_ref=notice.get("goal_ref"),
+                after_cancel=self.session._is_cancelled(
+                    goal_ref=notice.get("goal_ref"), delegation_id=notice["delegation_id"]
+                ),
             )
 
     async def tick(self) -> None:
@@ -121,11 +125,29 @@ class Continuation:
             notices = [
                 n
                 for n in self.session.inbox()
-                if n.get("child_key") and n["applied_turn_id"] is None
+                if n.get("child_key")
+                and n["applied_turn_id"] is None
+                and self.session._root_session()._store.get("result_exclusions", n["event_id"])
+                is None
             ]
             for notice in notices:
                 self.received(notice)
                 event_id = notice["event_id"]
+                if self.session._is_cancelled(
+                    goal_ref=notice.get("goal_ref"), delegation_id=notice["delegation_id"]
+                ):
+                    with self.store.transaction():
+                        self.store.put(
+                            "continuation_results",
+                            event_id,
+                            {
+                                "event_id": event_id,
+                                "state": "cancelled",
+                                "reason": "cancelled",
+                                "input_id": None,
+                            },
+                        )
+                    continue
                 if self.store.get("continuation_results", event_id) is not None:
                     continue
                 usage = self.store.rows("continuation_usage")
@@ -174,6 +196,11 @@ class Continuation:
                     "received_at": time.time(),
                     "input_id": None,
                 }
+                self.session._check_open()
+                if self.session._is_cancelled(
+                    goal_ref=notice.get("goal_ref"), delegation_id=notice["delegation_id"]
+                ):
+                    row.update(state="cancelled", reason="cancelled")
                 with self.store.transaction():
                     self.store.put("continuation_results", event_id, row)
                     if decision.action != "enqueue":
@@ -191,6 +218,11 @@ class Continuation:
                 for r in self.store.rows("continuation_results")
                 if r["state"] == "pending"
                 and self.store.get("inbox", r["event_id"])["applied_turn_id"] is None
+                and not self.session._is_cancelled(
+                    goal_ref=self.store.get("inbox", r["event_id"]).get("goal_ref"),
+                    delegation_id=self.store.get("inbox", r["event_id"])["delegation_id"],
+                )
+                and self.store.get("result_exclusions", r["event_id"]) is None
             ]
             if (
                 not pending

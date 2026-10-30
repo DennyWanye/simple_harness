@@ -112,6 +112,7 @@ class HostSettings:
     chat_max_model_calls: int = 8
     chat_max_tool_calls: int = 8
     chat_turn_seconds: float = 180.0
+    authorization_timeout_seconds: float = 5.0
     continuation_enabled: bool = True
     continuation_merge_window_seconds: float = 5.0
     continuation_max_turns_per_session: int = 50
@@ -120,6 +121,11 @@ class HostSettings:
     main_session_sandbox_run: bool = False
 
     def __post_init__(self) -> None:
+        if (
+            not math.isfinite(self.authorization_timeout_seconds)
+            or not 0 < self.authorization_timeout_seconds <= 5
+        ):
+            raise ValueError("authorization_timeout_seconds must be finite and in (0, 5]")
         for name in ("tool_search", "main_session_sandbox_run", "continuation_enabled"):
             if type(getattr(self, name)) is not bool:
                 raise ValueError(f"{name} must be bool")

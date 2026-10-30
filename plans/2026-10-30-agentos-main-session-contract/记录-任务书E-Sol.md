@@ -34,3 +34,38 @@
 ## 结果
 
 实施中；未宣称完成。
+
+## 实现与审查补记
+
+- 授权：可信字段、超时失败关闭、allow缓存/持久撤销、人工审批绑定参数及Goal版本，默认auto_mode端口；同步命令端口保留，回调只在线程内运行，账本仍由会话线程写入。异步受理等待期间Goal更新则拒绝本次受理（stale_version），不让旧授权覆盖新版关系/输入。
+- 取消：根账本持久屏障，消费队列在拿锁重读后检查；取消排队输入不会扣续办额度。子树迟到结果从delegation定位实际子身份，审计after_cancel且不续办；各范围独立收敛，已提交语音只标意图并保留handed_off/played事实。创建Mission先claim，回执丢失后按原幂等键只读查任务库，不能确定就unknown，禁止用再次创建探测。待审批随范围持久取消。
+- Goal：根唯一未收口目标，规格版本和历史；子关系/委派/输入/结果冻结原版本（显式None也不会借新Goal）。收口核任务、通知、审批、排队责任和未知效果；可信排除释放未执行续办，混合批保留未排除资料。
+- Owner：锁旁代次原子递增，公开冲突错误含代次；旧owner拒绝后续写入，在线owner_lost不向失锁库写假持久事件。原start未持锁实例仍保持既有unavailable行为；公开open/Session.open报owner_conflict。
+- 关闭/归档：close默认拒活、force资源停机保留责任；Host关闭保持停机语义。归档不删库，归档子不阻断父恢复。
+- 恢复：报告读会话和真实任务快照，包括D表、待审批、失绑定语音、claimed但Mission关联丢失的未知交接。
+- EffectLedger：会话效果接口预备，claim后在真正handoff前再查授权/owner/屏障；交接前拒绝记not_committed，交接后如实对账；缺回执保持unknown，不重放。宿主动作等级上限和回调约束同时生效。
+
+独立代码审查由非本人模块执行者交叉完成。发现并修复的P1均有决定性自动测试：子树迟到续办、显式None冻结、归档子恢复、Mission成功/关联前崩溃、授权期间Goal更新、Goal收口后审批重放、Python3.11调度缝隙的claim后handoff前屏障、未知Mission在报告/Goal中遗漏、跨取消范围语音责任串入。未修改任务/工具/连接器协议。
+
+既有测试改动仅两处，均为新能力字段的断言：
+1. `test_session_tree.py::test_capabilities_are_local_and_errors_do_not_disclose_details` 的unsupported由goals/authorization_port/steer改为只剩steer。
+2. `test_continuation.py` 能力发现断言同上。
+未改既有关闭清理调用，未改池编号；命令表只加cancel，提示词只追加一段。
+
+## 可信基线
+
+最初baseline.log在源码变动期间仍在运行，其清单校验结果不可作为基线，已弃用。
+重新用`git archive 5f1a11c1b:sdk/simple-harness-sdk`在ignored证据目录导出快照，打印两个包的__file__确认来自该快照，重生成快照清单后在同进程pytest跑八指定文件：**287 passed in 312.06s，exit 0**。
+日志 `baseline-frozen.log` SHA-256：`a651ffbcf50cea3444f4335bb826440ead48fca31910a20d9ae38b1c307904ee`。
+快照清单SHA-256：`7ed5489a457a91e9d9bccf16a2845944a53390c21f08a49114220f0fa08f7d27`。
+
+## 验收进行中与约束冲突
+
+新真实宿主冒烟（取消模型命令 + owner/关闭/归档新文件）首轮 **18 passed in 10.13s**。此后补了取消范围语音隔离，已重生成855项源码清单（deployment_id `06657f0c1b311698e3468b5dc562e98f118c2065921dae21c75ae295a17d867b`），开始完整指定回归及新增四文件。
+源码稳定后改动文件ruff check、ruff format --check（21文件）与git diff --check通过；最后结果在后文回写。
+
+已确认任务书内部存在关闭测试冲突：§4.4/§10明确要求未消费结果时close()拒活；既有`test_policy_context_and_fail_closed_decisions`四种情形保留未消费结果却无参数close()清理，因此4项在清理时报active_work。§3仅允许改现有测试中新字段直接相关的断言，不允许把这些调用改为force=True，也不能为绿测在实现中放行关闭。依§9采用合理做法：实现按新合同，保留老测试，记录精确失败，不声称§7全绿。继续执行其余所有指定验证。
+
+## 未做
+
+未接入任务书F动作工具、未增加运行期工具注册、未改任务审批链、工具层或连接器协议；未迁移旧库、未发版、未推送、未合并。部署清单只在本地生成，不提交。

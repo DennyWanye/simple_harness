@@ -190,7 +190,7 @@ def test_settings_and_capabilities(tmp_path):
             replace(settings, **changes)
     caps = Session(FakeHost(tmp_path)).capabilities()
     assert {"async_accept", "queued_input_execution", "continuation"} <= set(caps["capabilities"])
-    assert set(caps["unsupported"]) == {"goals", "authorization_port", "steer_running_mission"}
+    assert set(caps["unsupported"]) == {"steer_running_mission"}
 
 
 def test_real_host_summary_narrows_tools_and_search_without_authorizing_result(tmp_path):

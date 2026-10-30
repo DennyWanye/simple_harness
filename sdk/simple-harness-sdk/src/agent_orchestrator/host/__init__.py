@@ -23,8 +23,16 @@
 from ..governance.permissions import Principal
 from ..runtime.domain_tools import DomainTool, ToolCallContext
 from ..runtime.tool_catalog import CatalogEntry, ToolCatalog
+from .authorization import (
+    AuthorizationDecision,
+    AuthorizationPort,
+    AuthorizationRequest,
+    AutoModeAuthorization,
+    EffectLedger,
+)
 from .chat import ChatRequestError
 from .continuation import ContinuationContext, ContinuationDecision, ContinuationPolicy
+from .goals import GoalSpec
 from .host import (
     HostRequestError,
     HostUnavailable,
@@ -32,6 +40,7 @@ from .host import (
     with_publish_sources,
 )
 from .realtime_bridge import AudioIO, SpeechHandle, VoiceBinding, VoiceProfile
+from .recovery_report import RecoveryReport
 from .session import Session, SessionError, SessionPolicy
 from .session_ledger import ERROR_CODES
 from .settings import (
@@ -45,6 +54,13 @@ from .settings import (
 
 __all__ = (
     "ERROR_CODES",
+    "AuthorizationDecision",
+    "AuthorizationPort",
+    "AuthorizationRequest",
+    "AutoModeAuthorization",
+    "EffectLedger",
+    "GoalSpec",
+    "RecoveryReport",
     "ContinuationContext",
     "ContinuationDecision",
     "ContinuationPolicy",

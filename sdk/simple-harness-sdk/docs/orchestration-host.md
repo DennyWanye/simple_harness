@@ -961,3 +961,73 @@ SDK 没有推送。定时调 `events(mission_id, after_seq=上次的 through_seq
 存在未完成文字回合或排队输入时，新输入统一持久排在后面，由会话后台依次恢复执行。
 语音播报通过 `VoiceBinding.announce(..., source="task_result", input_id=...)` 与 SpeechHandle 的结构化字段标明来源，
 不解析正文决定信任；普通 needs_response 播报不标 task_result。策略 hold/deny 或关闭自动汇总仍沿原播报队列通知子结果。
+
+## 授权回调、取消范围、Goal、恢复报告
+
+`OrchestrationHost.open(..., authorization_port=port)` 接收实现
+`async decide(AuthorizationRequest) -> AuthorizationDecision` 的宿主端口。SDK 注入可信身份、
+根/当前会话、冻结的 `goal_ref`、委派、操作目标与参数摘要，模型不能覆盖身份字段。
+`AuthorizationDecision.allow(constraints={}, revision="", expires_at=None)`、
+`needs_approval(request_ref)`、`deny(reason)` 分别允许、要求人工审批、拒绝。
+异常、无效返回或最多 5 秒超时均返回可重试的 `authorization_required`。
+`HostSettings.authorization_timeout_seconds` 可缩短此等待，不能超过 5 秒。
+
+输入受理、创建子会话、委派受理及建 Mission 前均检查授权；排队输入执行前重新检查冻结授权。
+带有效期的 allow 可缓存；`session.revoke_authorization(grant_ref)` 持久撤销，父子会话立即共享。
+撤销后未执行的工作返回 `authorization_revoked`。默认 `AutoModeAuthorization` 沿用 `auto_mode`：
+自动模式允许，人工模式发 `needs_response` 卡片，由可信宿主调用
+`session.respond(request_id, "approve", version)`；同一参数、目标与版本的批准重复返回原回执。
+批准之后以原命令身份重试，不能用旧批准替换参数。同步控制命令的授权回调在独立线程事件循环
+执行；端口应只根据请求决定，不应直接访问会话 SQLite，也不应依赖宿主事件循环绑定的对象。
+续办仍只有 `ContinuationPolicy` 一个策略决定点，不再额外调用 AuthorizationPort。
+
+```python
+goal = session.put_goal(
+    {"goal_id": "report", "objective": "交付报告",
+     "completion_criteria": ["审阅员核验报告来源"], "stop_conditions": ["宿主要求停止"],
+     "budget": {"max_model_calls": 20}, "grant_ref": "grant-report", "policy_revision": "1"},
+    command_id="goal-create", expected_version=0,
+)
+# 规格更新使用当前 expected_version，生成下一版本；旧任务与结果继续归属旧版本。
+session.cancel("goal", "report", command_id="stop-report", expected_version=1, reason="用户停止")
+```
+
+Goal 只对可信宿主公开，模型没有登记/完成 Goal 的命令。每根会话只有一个未收口 Goal；
+`put_goal` 校验正整数预算并保存规格历史，终态不可修改。预算与停止条件是宿主登记的目标边界，
+授权/续办端口可以据此决策；SDK 不为任意预算字段创建第二套计数，模型上限仍由
+`SessionPolicy`、`HostSettings` 与既有保守用量账本执行。
+`finish_goal(goal_id, outcome, command_id=..., expected_version=..., basis=...)` 只检查结构事实：
+委派全终态、结果已应用或被明确排除、无待答请求、无未知效果；`succeeded` 要求非空依据，
+不替审阅员判断内容质量。未知效果使 Goal 保持 `waiting` 并暴露原因。
+`exclude_result(event_id, reason, command_id=...)` 由可信宿主明确排除结果；排除会释放该结果
+未执行的续办责任，混合批次仍处理未排除项，已在途回合保留事实。
+
+`cancel(target_kind, target_id, *, command_id, expected_version=None, reason="")` 支持
+`goal`、`delegation`、`session_tree`，只允许本树范围；模型可调用同名受限命令。
+回执 `cancel_requested` 表示屏障已持久，不表示外部效果已撤回。屏障之后不建新 Mission、
+不消费受影响的队列输入、不再排入相关结果续办。建 Mission 响应丢失时按原幂等键只读对账；
+不能确定时保留 `unknown`，不通过再次创建来探测。
+屏障前已交接的任务/语音保持 `handed_off / completed / unknown` 的真实事实；
+已提交的语音仅标 `cancel_requested`，播放完仍为 `played`。取消后的结果仍可审计，
+`result_received.after_cancel=True`，不会重启被取消范围的续办。
+有未消费结果或未知效果时 Goal 仍待结构收口，处理/排除后可收敛，或显式 `finish_goal`。
+`interrupt()` 只停止当前回答，不取消任何 Mission 或子会话。
+
+`close(force=False)` 在有未终态委派、未消费且未排除的结果、queued/running 输入、
+pending/queued 续办时拒绝并返回 `active_work`。`force=True` 仅释放资源，业务责任与账本保留，
+重新打开继续恢复；Host 关闭同样是资源停机。`archive(command_id=...)` 还要求无未收口 Goal，
+保留数据并禁止重新打开；子会话归档不会使父会话恢复失败。
+
+`session.capabilities()` 与 `host.status()` 暴露持久单调递增的 `owner_generation`。
+第二进程打开同一根目录在公开入口报 `SessionError("owner_conflict")`，其公开错误含当前代次。
+丢失锁的旧 owner 拒绝新工作及后续提交，并发出在线 `owner_lost` 事件，不向失去所有权的账本
+追加伪造持久事件。
+
+`session.recovery_report()` 返回 `store_version`、`owner_generation`、`resumed_refs`、
+`waiting_approval_refs`、`held_refs`、`unknown_effect_refs`、`rejected_refs` 与 `reasons`。
+报告只读取会话账本和任务快照，涵盖队列恢复、续办暂缓、待审批与失去绑定的已提交语音，
+不会请求模型或把恢复等同于任务成功。
+
+会话效果预备接口 `session._effects` 使用公开的 `EffectLedger`：执行前持久 claim，执行后 lookup
+权威回执，绑定 `operation_key + params_hash` 与目标身份。同 key 异参数拒绝，未知只对账不盲重放；
+宿主动作等级上限与授权约束同时生效。当前没有把动作工具开放给主会话，工具接入属于后续任务 F。

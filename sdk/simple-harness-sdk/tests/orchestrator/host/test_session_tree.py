@@ -267,11 +267,7 @@ def test_capabilities_are_local_and_errors_do_not_disclose_details(tmp_path, mon
         "delegations_in_flight_per_session": 1,
         "policy": parent.policy.public(),
     }
-    assert set(caps["unsupported"]) == {
-        "goals",
-        "authorization_port",
-        "steer_running_mission",
-    }
+    assert set(caps["unsupported"]) == {"steer_running_mission"}
     assert len(ERROR_CODES) == 18
     for code in (*ERROR_CODES, "busy", "permission_denied"):
         error = SessionError(code, "private provider response secret")

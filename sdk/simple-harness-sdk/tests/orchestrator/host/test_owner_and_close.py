@@ -112,3 +112,230 @@ def test_old_host_refuses_new_work_and_emits_owner_lost(tmp_path):
         assert len(events) == 1
     finally:
         newer.release()
+
+
+def test_real_session_lost_owner_refuses_before_committing_input(tmp_path):
+    from agent_orchestrator.host.offline import FixtureWordCounter, ScriptedProvider
+
+    calls = []
+
+    def must_not_call(request):
+        calls.append(request)
+        raise AssertionError("lost owner must not request a model")
+
+    async def run():
+        host = await OrchestrationHost.open(
+            tmp_path,
+            principal=Principal("owner-user", "User"),
+            provider=ScriptedProvider(chat=must_not_call),
+            counter=FixtureWordCounter(),
+            require_acceptance=False,
+        )
+        newer = InstanceLock(tmp_path)
+        try:
+            session = await host.open_session("owner-session")
+            generation = session.capabilities()["owner_generation"]
+            assert generation == host.status()["owner_generation"] == 1
+            before = session._store.get("meta", "sequence")
+            stream = session.events(after=before)
+            next_event = asyncio.create_task(anext(stream))
+            await asyncio.sleep(0)
+            host.lock.release()
+            assert newer.acquire() and newer.owner_generation == 2
+            with pytest.raises(SessionError, match="owner_conflict"):
+                await session.send("Do not accept this", key="lost", wait=False)
+            assert session._store.rows("turns") == []
+            assert session.queued_inputs() == []
+            assert session._store.get("meta", "sequence") == before
+            event = await asyncio.wait_for(next_event, timeout=1)
+            assert event["kind"] == "owner_lost" and event["durable"] is False
+            await stream.aclose()
+            assert calls == []
+        finally:
+            await host.close()
+            newer.release()
+
+    asyncio.run(run())
+
+
+def c1_session(tmp_path):
+    from test_session import FakeHost
+
+    host = FakeHost(tmp_path)
+    return host, Session(host, session_id="main")
+
+
+def test_c1_close_refuses_live_delegation_without_cancelling_it(tmp_path):
+    from test_session import SPEC
+
+    async def run():
+        host, session = c1_session(tmp_path)
+        task = session._delegations.delegate("turn", "call", SPEC)
+        with pytest.raises(SessionError, match="active_work"):
+            await session.close()
+        assert not session._closed
+        assert session.task(task["delegation_id"])["status"] == "ACTIVE"
+        assert host.cancelled == []
+        await session.close(force=True)
+        assert session._closed and host.cancelled == []
+        assert next(iter(host.made.values()))["status"] == "ACTIVE"
+
+    asyncio.run(run())
+
+
+def test_c1_unconsumed_result_blocks_close_until_trusted_exclusion(tmp_path):
+    from test_session import SPEC
+
+    async def run():
+        host, session = c1_session(tmp_path)
+        task = session._delegations.delegate("turn", "call", SPEC)
+        host.finish(task["mission_id"])
+        session._inbox.catch_up()
+        [notice] = session.inbox()
+        session.ack(notice["event_id"])
+        with pytest.raises(SessionError, match="active_work"):
+            await session.close()
+        assert not session._closed and session.inbox()[0]["applied_turn_id"] is None
+        session.exclude_result(notice["event_id"], "可信宿主不采用此结果", command_id="exclude")
+        await session.close()
+        assert session._closed and host.cancelled == []
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize(
+    "namespace,state",
+    [
+        ("queued_inputs", "queued"),
+        ("queued_inputs", "running"),
+        ("continuation_results", "pending"),
+        ("continuation_results", "queued"),
+    ],
+)
+def test_c1_queued_and_running_responsibility_refuses_close(tmp_path, namespace, state):
+    async def run():
+        _, session = c1_session(tmp_path)
+        row = {"input_id": "input", "event_id": "event", "kind": "directive", "state": state}
+        with session._store.transaction():
+            session._store.put(namespace, "row", row)
+        with pytest.raises(SessionError, match="active_work"):
+            await session.close()
+        assert not session._closed
+        await session.close(force=True)
+        assert session._store.get(namespace, "row")["state"] == state
+
+    asyncio.run(run())
+
+
+def test_c1_force_close_leaves_running_input_recoverable(tmp_path):
+    from test_session_async import GatedChat, eventually
+
+    async def run():
+        host, session = c1_session(tmp_path)
+        chat = session._chat = GatedChat(session)
+        accepted = await session.send("已受理输入", key="input", wait=False)
+        await asyncio.wait_for(chat.entered.wait(), 2)
+        with pytest.raises(SessionError, match="active_work"):
+            await session.close()
+        await session.close(force=True)
+        assert session._input_task.done()
+        assert session.queued_inputs()[0]["state"] == "running"
+        reopened = Session(host, session_id="main")
+        reopened._chat = GatedChat(reopened)
+        reopened._chat.release.set()
+        await reopened.recover()
+        await eventually(lambda: reopened.history())
+        assert reopened.queued_inputs()[0]["input_id"] == accepted["input_id"]
+        assert reopened.queued_inputs()[0]["state"] == "done"
+        await reopened.close()
+
+    asyncio.run(run())
+
+
+def test_c1_archive_refuses_unfinished_goal_and_preserves_data_after_finish(tmp_path):
+    async def run():
+        host, session = c1_session(tmp_path)
+        session.put_goal(
+            {
+                "goal_id": "g",
+                "objective": "待验收目标",
+                "completion_criteria": ["由宿主审阅"],
+                "budget": {"turns": 2},
+            },
+            command_id="goal",
+            expected_version=0,
+        )
+        with pytest.raises(SessionError, match="active_work"):
+            session.archive(command_id="archive")
+        assert not session._store.get("meta", "archived")
+        session.finish_goal("g", "failed", command_id="finish", expected_version=1)
+        receipt = session.archive(command_id="archive")
+        assert receipt["archived"] is True
+        assert session.archive(command_id="archive") == receipt
+        assert session._store.get("goals", "g")["state"] == "failed"
+        assert session._store.path.is_file()
+        with pytest.raises(SessionError, match="not_found_or_forbidden"):
+            Session(host, session_id="main")
+        await session.close()
+
+    asyncio.run(run())
+
+
+def test_c1_real_host_archive_reopen_is_forbidden(tmp_path):
+    from test_host_sessions import running_host
+
+    async def run():
+        host = await running_host(tmp_path, ["已完成会话回复"])
+        try:
+            session = await host.open_session("archivable")
+            receipt = await session.send("请简短回复", key="one")
+            assert receipt["state"] == "committed"
+            archived = session.archive(command_id="archive")
+            assert archived["archived"]
+            assert session.history()[0]["text"] == "已完成会话回复"
+            with pytest.raises(SessionError, match="not_found_or_forbidden"):
+                await host.open_session("archivable")
+            await session.close()
+            with pytest.raises(SessionError, match="not_found_or_forbidden"):
+                await host.open_session("archivable")
+        finally:
+            await host.close()
+
+    asyncio.run(run())
+
+
+def test_second_process_public_open_reports_current_owner_generation(tmp_path):
+    import json
+
+    script = """
+import asyncio, json, sys
+from agent_orchestrator.host import OrchestrationHost, Principal
+from agent_orchestrator.host.session_ledger import SessionError
+async def run():
+    try:
+        await OrchestrationHost.open(sys.argv[1], principal=Principal('owner-user', 'User'))
+    except SessionError as error:
+        print(json.dumps(error.public()))
+    else:
+        raise AssertionError('second process acquired owned root')
+asyncio.run(run())
+"""
+    owner = InstanceLock(tmp_path)
+    assert owner.acquire()
+    try:
+        child = subprocess.run(
+            [sys.executable, "-c", script, str(tmp_path)],
+            text=True,
+            capture_output=True,
+            check=True,
+            timeout=15,
+        )
+        assert json.loads(child.stdout) == {
+            "code": "owner_conflict",
+            "retryable": False,
+            "safe_message": "owner_conflict",
+            "owner_generation": owner.owner_generation,
+        }
+        assert owner.held and owner.owner_generation == 1
+    finally:
+        owner.release()
