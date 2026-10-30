@@ -164,3 +164,23 @@ AST 边界审核通过：session_chat.py 仅 SESSION_INSTRUCTIONS 与 _registere
 提交链：`76146bf79` 红测试 → `8adc419d6` 实现 → `8209a37f7` 守旧前缀修复 → `8f5cc4f94` 普通播报/重连修复 → `1e01f599d` 预算事件修复 → 最后仅记录提交。未推送、未合并、未修改共享 main；保留工作树供审核。
 
 VERDICT: SHIPPED — 任务书 D 指定源码车道与 327 项定向验证（仅本地源码交付，未发版） — 2026-10-31 — 1e01f599d
+
+## D2 补修
+
+日期：2026-10-31。依据发包任务书 D2（完整读取 §0～4），在原工作树、原分支继续；开工 HEAD `4fa97dc7e`。第 2 节实际有 10 条，全部纳入本次补修，不仅前九条。
+
+### 开工与先红
+
+先在指定 SDK 目录执行 `pwd`、核对分支与 HEAD。初始仅生成清单有未提交改动（审核人重生成的构建产物），已存本地 ignored 证据 `sol-D2/initial-auditor-manifest.json`，不提交。审核记录报告的 369 项基线与前次 327 项通过作为已审基线，不把这些当成本轮新测结果。
+
+将两份审核探针改为正式自动化断言，并加入用量上界、结构化来源、hold/deny/disabled 仍播报、子 directive 不等父与终态历史免轮询、用户重置连续额度、异步错误不堆内存、directive 委派后崩溃恢复。
+
+先红命令（SDK 目录）：`uv run --frozen python -m pytest tests/orchestrator/host/test_continuation.py -k d2 -q -p no:cacheprovider --tb=short` → **13 failed / 30 deselected，12.45 秒**。原始输出 `.local-test-evidence/2026-10-31/sol-D2/red.txt`。
+
+### 路径选择与边界
+
+采用 §2.5 建议：有任何未完成文字回合或排队输入，统一持久排队，按序恢复；删除 `_send` 的 `turn_pending` 拒绝分支，不再保留拒绝与补跑两套行为。播报草稿只终结为未提交，永不作为用户指令重放。
+
+删除每条续办创建 Agent 的覆盖，复用主 Agent 历史，权限只在 `_bind` 收窄。Agent 的冻结工具全集仍按角色创建；本回合网关绑定才按来源取只读子集，避免首次输入恰为续办时把主 Agent 永久冻成只读。
+
+任务书放宽到明确涉及的会话文件（含 `session_ledger.py`、语音结构化来源与会话绑定处）；命令表、池编号、工具说明、任务/工具/连接器层不动。通用技能与仓库要求的车道外模板/架构文件仍不新增，过程统一追加本节；按用户授权继续，不重复询问。

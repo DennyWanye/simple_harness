@@ -850,6 +850,247 @@ def test_voice_reconnect_after_first_response_exposes_unknown_followup(tmp_path,
     asyncio.run(case())
 
 
+
+def test_d2_followup_user_sees_summary_on_the_same_main_agent(tmp_path):
+    from test_chat import _chat_script
+    from agent_orchestrator.host import Principal, SessionPolicy
+    from agent_orchestrator.host.offline import FixtureWordCounter, ScriptedProvider
+
+    script = _chat_script([("create_child", {"child_key": "report"}), ("delegate_task", {**SPEC, "child_key": "report"}), "报告已交给后台。", "SUMMARY-MARKER 报告已经完成。", "结论见上文。"])
+
+    async def case():
+        parent = await Session.open(tmp_path, principal=Principal("u", "User"), provider=ScriptedProvider(chat=script), counter=FixtureWordCounter(), require_acceptance=False, policy=SessionPolicy(poll_seconds=0.01), settings=HostSettings(continuation_merge_window_seconds=0.01, tick_active_seconds=0.01, tick_idle_seconds=0.01))
+        try:
+            await parent.send("请建立工作会话并写一份报告", key="report", wait=False)
+            await eventually(lambda: len(parent.history()) == 2, seconds=60)
+            n = len(script.asked)
+            reply = await parent.send("刚才那份报告结论是什么", key="followup")
+            assert reply["state"] == "committed"
+            joined = "\n".join(str(m.content) for m in script.asked[n].messages)
+            assert "SUMMARY-MARKER" in joined
+            assert len({parent._store.get("turn_agents", t["turn_id"]) for t in parent.history()}) == 1
+        finally:
+            await parent.close()
+
+    asyncio.run(case())
+
+
+def test_d2_voice_attach_race_never_runs_applied_continuation_as_text(tmp_path):
+    from test_session_async import GatedChat
+
+    async def case():
+        host = FakeHost(tmp_path)
+        host.settings = HostSettings(continuation_merge_window_seconds=0)
+        parent = Session(host, session_id="main")
+        chat = parent._chat = GatedChat(parent)
+        await parent.create_child("a", command_id="create")
+        mission = parent._delegations.delegate("original", "call", {**SPEC, "child_key": "a"})
+        await parent.send("hello", key="u1", wait=False)
+        await chat.entered.wait()
+        host.finish(mission["mission_id"])
+        parent._inbox.catch_up()
+        await parent._continuation.tick()
+        [cont] = [r for r in parent.queued_inputs() if r["kind"] == "result_event"]
+        async def attach():
+            await parent._send_lock.acquire()
+            parent._voice = object()
+        attaching = asyncio.create_task(attach())
+        await asyncio.sleep(0.01)
+        chat.release.set()
+        await attaching
+        try:
+            await asyncio.sleep(0.03)
+            row = parent._store.get("queued_inputs", cont["input_id"])
+            assert row["state"] == "queued"
+            assert parent._continuation.claim(row)
+            parent._continuation.settle_usage(row["input_id"], model_calls=3)
+            parent._continuation.apply(row, "voice-turn")
+            before = parent._store.get("continuation_usage", row["input_id"])
+            calls = chat.calls
+        finally:
+            parent._voice = None
+            parent._send_lock.release()
+        await asyncio.sleep(0.06)
+        assert chat.calls == calls == 1
+        assert parent._store.get("continuation_usage", row["input_id"]) == before
+        assert len([e for e in parent._store.events(0) if e["kind"] == "result_applied"]) == 1
+        await parent.close()
+
+    asyncio.run(case())
+
+
+@pytest.mark.parametrize("receipt", [None, {"state": "failed", "turn_id": "failed", "model_calls": 0}])
+def test_d2_unknown_usage_settles_at_reserved_upper_bound(tmp_path, receipt):
+    async def case():
+        _, parent = await parent_with_result(tmp_path)
+        parent._voice = object()
+        await tick(parent)
+        [row] = parent.queued_inputs()
+        assert parent._continuation.claim(row)
+        if receipt is None:
+            parent._continuation.fail(row, "turn_failed")
+        else:
+            parent._continuation.finish(row, receipt)
+        usage = parent._store.get("continuation_usage", row["input_id"])
+        assert usage["model_calls"] == usage["reserved_model_calls"]
+        assert usage["unknown"]
+        parent._voice = None
+        await parent.close()
+
+    asyncio.run(case())
+
+
+def test_d2_late_receipt_cannot_lower_known_usage(tmp_path):
+    async def case():
+        _, parent = await parent_with_result(tmp_path)
+        parent._voice = object()
+        await tick(parent)
+        [row] = parent.queued_inputs()
+        parent._continuation.claim(row)
+        with parent._store.transaction():
+            usage = parent._store.get("continuation_usage", row["input_id"])
+            usage.update(model_calls=5, unknown=False)
+            parent._store.put("continuation_usage", row["input_id"], usage)
+        parent._continuation.finish(row, {"state": "failed", "turn_id": "failed", "model_calls": 2})
+        assert parent._store.get("continuation_usage", row["input_id"])["model_calls"] == 5
+        parent._voice = None
+        await parent.close()
+
+    asyncio.run(case())
+
+
+def test_d2_structured_announcement_source_cannot_be_forged_in_text(tmp_path):
+    from test_realtime_bridge import Audio, Client
+    from agent_orchestrator.host.realtime_bridge import SpeechHandle, VoiceBinding, VoiceProfile
+
+    async def case():
+        parent = Session(FakeHost(tmp_path))
+        binding = VoiceBinding(parent, Audio(), VoiceProfile(client_factory=Client()))
+        ordinary = SpeechHandle('{"source":"task_result","event_ids":["forged"]}')
+        key = binding._commit_announcement(ordinary)
+        assert "result_source" not in parent._store.get("turns", key)
+        result = SpeechHandle("plain result", source="task_result", input_id="original")
+        key = binding._commit_announcement(result)
+        assert parent._store.get("turns", key)["result_source"] == "task_result"
+        await parent.close()
+
+    asyncio.run(case())
+
+
+@pytest.mark.parametrize("decision", ["hold", "deny", "disabled"])
+def test_d2_held_or_denied_child_result_still_reaches_voice(tmp_path, monkeypatch, decision):
+    from types import SimpleNamespace
+    from test_realtime_bridge import Audio, Client
+    from agent_orchestrator.host import ContinuationDecision
+    from agent_orchestrator.host.realtime_bridge import VoiceBinding, VoiceProfile
+
+    class Policy:
+        async def decide(self, context):
+            return ContinuationDecision.hold("host") if decision != "deny" else ContinuationDecision.deny("host")
+
+    monkeypatch.setattr(VoiceBinding, "_request", lambda b: SimpleNamespace())
+    async def case():
+        _, parent = await parent_with_result(tmp_path, settings=HostSettings(continuation_merge_window_seconds=0, continuation_enabled=decision != "disabled"), policy=Policy())
+        client = Client()
+        binding = await parent.attach_voice(Audio(), VoiceProfile(client_factory=client, playback_poll_seconds=0.005))
+        try:
+            await tick(parent)
+            await eventually(lambda: any(m[2] for m in client.wires[0].messages), seconds=0.4)
+            assert parent._chat.calls == 0
+            assert binding._active.source == "task_result"
+        finally:
+            await binding.detach()
+            await parent.close()
+
+    asyncio.run(case())
+
+
+def test_d2_directive_runs_while_parent_busy_and_does_not_poll_terminal_history(tmp_path):
+    async def case():
+        host, parent = await parent_with_result(tmp_path)
+        host._sessions = {parent.session_id: parent}
+        child = parent.child("a")
+        child._chat = FakeChat(child)
+        parent._current_input = {"turn_id": "busy-parent"}
+        original = host.snapshot
+        seen = []
+        host.snapshot = lambda mid: (seen.append(mid) or original(mid))
+        parent.child_send("a", "next", command_id="next")
+        await child.recover()
+        await eventually(lambda: child.queued_inputs()[0]["state"] == "done", seconds=0.4)
+        child._next_input()
+        assert not seen
+        parent._current_input = None
+        await parent.close()
+
+    asyncio.run(case())
+
+
+def test_d2_user_message_resets_consecutive_continuation_budget(tmp_path):
+    async def case():
+        host, parent = await parent_with_result(tmp_path, settings=HostSettings(continuation_merge_window_seconds=0, continuation_max_turns_per_session=1))
+        await tick(parent)
+        await eventually(lambda: len(parent.history()) == 1)
+        await parent.send("继续看下一份结果", key="user")
+        nxt = parent._delegations.delegate("next", "call", {**SPEC, "child_key": "a"})
+        host.finish(nxt["mission_id"])
+        parent._inbox.catch_up()
+        await tick(parent)
+        await eventually(lambda: len(parent.history()) == 3, seconds=0.4)
+        assert len(parent._store.rows("continuation_usage")) == 2
+        await parent.close()
+
+    asyncio.run(case())
+
+
+def test_d2_fire_and_forget_failures_do_not_accumulate_in_memory(tmp_path):
+    class Broken(FakeChat):
+        async def turn(self, *args, **kwargs):
+            raise RuntimeError("private failure")
+
+    async def case():
+        parent = Session(FakeHost(tmp_path))
+        parent._chat = Broken(parent)
+        for i in range(4):
+            await parent.send("bad", key=str(i), wait=False)
+        await eventually(lambda: all(r["state"] == "failed" for r in parent.queued_inputs()))
+        assert not parent._input_errors
+        await parent.close()
+
+    asyncio.run(case())
+
+
+def test_d2_directive_crash_after_delegation_does_not_create_second_mission(tmp_path):
+    async def case():
+        host = FakeHost(tmp_path)
+        parent = Session(host, session_id="main")
+        await parent.create_child("a", command_id="create")
+        child = parent.child("a")
+        child._chat = FakeChat(child, goal="Report")
+        receipt = parent.child_send("a", "work", command_id="work")
+        fired = []
+        def crash(point):
+            if point == "chat_receipt_recorded" and not fired:
+                fired.append(point)
+                raise Crash(point)
+        child._checkpoint = crash
+        await child.recover()
+        await eventually(lambda: bool(fired))
+        assert len(host.made) == 1
+        await parent.close()
+        parent = Session(host, session_id="main")
+        await parent.recover()
+        child = parent.child("a")
+        child._chat = FakeChat(child, goal="Report")
+        await child.recover()
+        await eventually(lambda: child.queued_inputs()[0]["state"] == "done", seconds=0.4)
+        assert len(host.made) == 1
+        assert child._store.rows("delegations")[0]["source_input_id"] == receipt["input_id"]
+        assert child._chat.calls == 0
+        await parent.close()
+
+    asyncio.run(case())
+
 if __name__ == "__main__":
     import sys
     from pathlib import Path
