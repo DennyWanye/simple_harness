@@ -256,7 +256,7 @@ async def run(root, principal, model, tools, render, last_seen=0):
 
 会话只用新池 `…-chat-v3-c2-<配置哈希>`，执行库在 `sessions/<session_id>/chat/`。
 旧 `chat()` 的 v1 编号、提示词、工具名单与行为保留。`SessionPolicy` 默认每回合 16 次模型调用、
-32 次工具调用、180 秒；配置与工具名在会话建立时冻结，改配置请使用新会话号。
+32 次工具调用、180 秒；会话账本只冻结版本与策略；每个 Agent 的允许工具名在创建时冻结，改策略请使用新会话号。
 
 模型可见 `delegate_task`、`task_status`、`task_cancel`，以及原生执行层已有的
 `session_history_read/search` 和宿主只读 `DomainTool`。委派属于 SDK 控制命令，不能注册成
@@ -647,6 +647,7 @@ tool = DomainTool(
     },
     invoke=device_status,                      # 普通函数（线程里跑）或 async def（事件循环上跑）
     timeout_seconds=30,
+    roles=("task", "main", "child"),          # 允许范围，只缩不放
 )
 host = await OrchestrationHost.open(root, principal=..., model=..., tools=[tool])
 ```
@@ -678,6 +679,48 @@ host = await OrchestrationHost.open(root, principal=..., model=..., tools=[tool]
 事件按 `seq` 排序，`events(mission_id, after_seq=上次的 through_seq)` 续读；同一调用的事件共用 `call_key`，
 可以拿它去重；同一调用号有多条结束事件时（极少见：记完结果后、交回模型前进程崩溃，重启对账又补一条），以 `seq` 最大的那条为准。`on_write` 只是"有新写入"的提醒，内容从事件续读。可运行的例子（用公开模块 `agent_orchestrator.host.offline` 的脚本模型，不联网）见
 `examples/orchestration-host/tools_readonly.py`（同步工具）与 `tools_async.py`（异步工具：抛错一次、超时一次、再成功）。
+
+## 工具层
+
+`ToolCatalog` 把 SDK 内置、技能、应用只读工具及预留的动作来源收进一张版本化目录。
+目录条目包含 `name`、`description`、`schema`、`source`、`roles`、`always_exposed`；
+`catalog_version` 按全部条目的名字、schema、角色与来源计算，不传入池编号。
+公开入口是 `agent_orchestrator.host.ToolCatalog` / `CatalogEntry`。
+
+`DomainTool.roles` 默认 `("task", "main", "child")`，可以声明任意子集（也可以为空）。
+`child` 还必须同时声明 `main` 才生效；任务工具继续取任务、步骤角色、部署的既有交集。
+主会话和子会话默认有工作区读/列、两个历史回读工具及对应角色的应用只读工具。
+工作区读/列作用于本会话的 `chat-<会话号>` 工作区；不会得到工作区写或 `run_tests`。
+知识列/读仅供任务使用；主/子会话尚无知识作用域，暂不暴露这两个工具。
+
+`HostSettings.tool_search=True` 默认启用按需说明：模型先调用
+`tool_search({"query": "设备", "limit": 8})` 搜名字或说明，再调用
+`tool_schema({"names": ["device_status"]})` 加载完整说明，随后正常调用工具。
+返回对象分别用 `tools` / `schemas` 承载条目，并附 `catalog_version`。
+搜索和 schema 读取始终与当前角色、冻结允许名单取交集；搜索不到名单外工具，schema 越界读取
+抛出异常并走原有失败回执。控制命令和两个历史回读始终下发，其余说明按需加载。
+始终暴露集合由宿主读取目录的 `always_exposed` 生成，经配置传到执行层；新控制命令自动加入，
+不依赖固定名字名单，也不在 schema 里夹带开关。
+加载集合写入本回合 checkpoint，恢复同回合会复用，下一回合清空。
+直接调用允许名单内尚未加载的工具照常经过原授权执行。
+设 `tool_search=False` 会下发全部允许说明。显式收窄工具名单时，需要保留两个元工具以便搜索，
+或关闭按需说明；允许但未加载的工具仍可直接调用，说明过滤不扩大或缩小执行许可。
+
+`sandbox_run` 在启动隔离检查通过后默认供任务使用。参数是 `argv`（至少一个字符串）、
+`stdin`（最多 64 KiB UTF-8）、`timeout_seconds`（1–120，默认 60）及工作区相对 `cwd`。
+命令复用 Seatbelt / bubblewrap 执行器，无网络、受资源限制，超时清理进程树，
+修改只保留在一次性工作区副本。stdout / stderr 各最多 64 KiB，截断标出 `truncated`。
+结果含 `exit_code`、`stdout`、`stderr`、`duration_ms`、`killed_by_timeout`，
+以及 `status=exited/timeout/unknown`；`unknown` 的退出码为空，不能算成功。
+`HostSettings.main_session_sandbox_run=True` 才给主/子会话；沙箱检查失败时所有角色均不出现此工具。
+
+当前范围不包含动作工具、宿主运行中热注册或会话知识作用域。语音桥只提供委派、任务查询/取消
+与主会话可见的应用只读工具，不提供子会话命令、ToolSearch 或其他内置工具。
+
+聊天池、任务池沿用原编号。身份 schema 2 只哈希内置工具名，不哈希说明或参数 schema；
+内置名字改变会拒开旧池。此版本不兼容身份 schema 1 的旧数据根，开发期需新建数据根。
+在 schema 2 数据根中，改说明或重启后新增应用工具可重开同号 Session；账本只冻结版本和策略。
+已有 Agent 的允许名单保持不变，新会话/新 Agent 使用新名单；`capabilities()` 返回当前 `catalog_version`。
 
 ## 4b. 注册应用自己的连接器（有副作用的操作）
 

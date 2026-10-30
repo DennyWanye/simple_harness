@@ -1522,3 +1522,52 @@ def test_task_result_context_echo_is_never_user_input_and_never_a_second_respons
             await binding.detach()
 
     asyncio.run(run())
+
+
+def test_voice_catalog_excludes_unsupported_commands_and_non_main_tools(tmp_path):
+    from agent_orchestrator.host import DomainTool
+    from agent_orchestrator.runtime.tool_catalog import catalog_for
+
+    async def run():
+        host, session = make_session(tmp_path)
+        schema = {
+            "type": "object",
+            "description": "读设备",
+            "properties": {},
+            "additionalProperties": False,
+        }
+        host.tools = {
+            name: DomainTool(name, schema, lambda a, c: {}, roles=roles)
+            for name, roles in [
+                ("main_status", ("main",)),
+                ("task_status_read", ("task",)),
+                ("orphan_status", ("child",)),
+            ]
+        }
+        host.tool_catalog = catalog_for(host.tools)
+        client = Client()
+        binding = await session.attach_voice(Audio(), VoiceProfile(client_factory=client))
+        try:
+            assert set(binding._catalogue) == {
+                "delegate_task",
+                "task_status",
+                "task_cancel",
+                "main_status",
+            }
+            await client.wires[0].emit("TranscriptCompleted", turn_id="u-new", text="开子会话")
+            await asyncio.sleep(0.02)
+            await client.wires[0].emit("ResponseStarted", response_id="r-new")
+            await asyncio.sleep(0.02)
+            call = SimpleNamespace(
+                name="create_child",
+                arguments_json='{"child_key":"x"}',
+                call_id="child-call",
+                response_id="r-new",
+            )
+            output = json.loads(await binding.dispatch(call))
+            assert output["error"]["code"] == "permission_denied"
+            assert not session.children()
+        finally:
+            await binding.detach()
+
+    asyncio.run(run())

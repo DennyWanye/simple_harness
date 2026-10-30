@@ -10,6 +10,7 @@ promotion or rollback (removed 2026-10-02)."""
 
 from __future__ import annotations
 
+import ast
 import inspect
 import json
 import re
@@ -104,13 +105,11 @@ def test_no_decision_point_reads_a_whitelisted_value_from_the_configuration():
     policy — structurally, no whitelisted item is read from ``self._config`` any more."""
 
     # 编排器类由 event_handler.py 与 orchestrator_domains/ 下的领域文件组成
-    source = "".join(
-        f.read_text(encoding="utf-8")
-        for f in (
-            Path(event_handler.__file__),
-            *Path(orchestrator_domains.__file__).parent.glob("*.py"),
-        )
+    source_files = (
+        Path(event_handler.__file__),
+        *Path(orchestrator_domains.__file__).parent.glob("*.py"),
     )
+    source = "".join(f.read_text(encoding="utf-8") for f in source_files)
     pattern = re.compile(
         r"self\._config\.(candidates_per_task|exploration_slots|aging_window_seconds)\b"
     )
@@ -118,10 +117,32 @@ def test_no_decision_point_reads_a_whitelisted_value_from_the_configuration():
     assert "self._model_router.route(" not in source  # routing goes through the Mission's router
     for constant in ("PLANNER.prompt_version", "CRITIC.prompt_version"):
         assert constant not in source
-    # Every prompt selection goes through the Mission-bound template.
-    template_role = "role = self._template(role_for_task(task), mission.id)"
-    assert source.count(template_role) == 1
-    assert source.count("role_for_task(") == source.count(template_role)
+    # 准入与实际执行都选模板，不能用固定调用次数代替逐处检查任务绑定。
+    calls = [
+        node
+        for path in source_files
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8")))
+        if isinstance(node, ast.Call)
+    ]
+    role_calls = {
+        id(node)
+        for node in calls
+        if isinstance(node.func, ast.Name) and node.func.id == "role_for_task"
+    }
+    bound_calls = [
+        node
+        for node in calls
+        if isinstance(node.func, ast.Attribute)
+        and node.func.attr == "_template"
+        and isinstance(node.func.value, ast.Name)
+        and node.func.value.id == "self"
+        and len(node.args) >= 2
+        and id(node.args[0]) in role_calls
+    ]
+    assert role_calls
+    assert role_calls == {id(node.args[0]) for node in bound_calls}
+    mission_id = ast.dump(ast.parse("mission.id", mode="eval").body)
+    assert all(ast.dump(node.args[1]) == mission_id for node in bound_calls)
     # The shared domain selector must still receive this Mission's frozen policy.
     selector = inspect.getsource(Orchestrator._template)
     assert "return template_for_domain(" in selector

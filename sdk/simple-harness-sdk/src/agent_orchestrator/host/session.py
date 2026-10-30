@@ -78,7 +78,6 @@ class Session:
                 configuration = {
                     "version": CONFIG_VERSION,
                     "policy": self.policy.public(),
-                    "tools": list(host.tools),
                 }
                 if frozen is not None and frozen.get("version") != CONFIG_VERSION:
                     raise SessionError(
@@ -86,9 +85,7 @@ class Session:
                         f"session store version {frozen.get('version')} needs a new data root",
                     )
                 if frozen is not None and frozen != configuration:
-                    raise SessionError(
-                        "session_config_frozen", "use the original policy and tool catalogue"
-                    )
+                    raise SessionError("session_config_frozen", "use the original policy")
                 self._store.put("meta", "configuration", configuration)
                 # 子会话只能经它的父打开；根会话号也不能借来打开别人的子会话。
                 stored_parent = self._store.get("meta", "parent")
@@ -553,6 +550,9 @@ class Session:
         """能力发现：不调模型，不读任务库。"""
 
         return {
+            "catalog_version": getattr(
+                getattr(self._host, "tool_catalog", None), "catalog_version", None
+            ),
             "protocol_version": PROTOCOL_VERSION,
             "session_config_version": CONFIG_VERSION,
             "role": "child" if self.parent is not None else "root",

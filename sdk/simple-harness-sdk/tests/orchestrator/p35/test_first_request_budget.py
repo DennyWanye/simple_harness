@@ -3,6 +3,7 @@
 """Decisive oracle for FIRST Critic input/output capacity."""
 
 import pytest
+
 from agent_orchestrator.runtime.first_request_budget import (
     INPUT_CAP_PROTOCOL,
     FirstRequestBudget,
@@ -25,7 +26,7 @@ def frozen_context(*, max_input_tokens=32_768, max_total_tokens=None):
         "tool_result_preview_chars": 1024,
         "render_slack_tokens": 64,
     }
-    return {"schema": 1, "policy": policy, "fingerprint": "context-v1"}
+    return {"schema": 2, "policy": policy, "fingerprint": "context-v2"}
 
 
 def test_first_critic_floor_uses_frozen_effective_input_cap_and_actual_output_ceiling():
@@ -47,7 +48,7 @@ def test_first_critic_floor_uses_frozen_effective_input_cap_and_actual_output_ce
         "profile_id": "critic-astra",
         "model": "astra",
         "max_input_tokens": 32_768,
-        "context_fingerprint": "context-v1",
+        "context_fingerprint": "context-v2",
         "estimator_fingerprint": "provider-estimator-v2",
     }
     assert budget.provider_input_cap.to_json() == payload

@@ -82,9 +82,14 @@ def test_planner_package_lists_registered_tools_and_proposable_actions(tmp_path)
     asyncio.run(asyncio.wait_for(case(), timeout=300))
     assert seen, "规划器没有被问到"
     capabilities = seen[0]["executor_capabilities"]
-    assert capabilities["tools"] == [
-        {"name": "photo_search", "description": "按关键词搜相册，返回匹配的照片路径"}
-    ]
+    listed = {item["name"]: item for item in capabilities["tools"]}
+    assert listed["photo_search"] == {
+        "name": "photo_search",
+        "description": "按关键词搜相册，返回匹配的照片路径",
+    }
+    assert {"tool_search", "tool_schema"} <= set(listed)
+    assert set(listed) <= {"photo_search", "tool_search", "tool_schema", "sandbox_run"}
+    assert [item["name"] for item in capabilities["tools"]] == sorted(listed)
     [action] = capabilities["actions"]
     assert action["connector"] == "photos" and action["operation"] == "move"
     assert action["in_mission_scope"] is True and action["level"] == "L2"

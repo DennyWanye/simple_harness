@@ -754,6 +754,21 @@ class ToolActivationReceipt:
         }
 
 
+@dataclass(frozen=True, slots=True)
+class ToolExposurePolicy:
+    """宿主给执行层的"说明可见性"策略：哪些说明始终下发、哪些工具是按需加载的入口。
+
+    只影响模型看见哪些说明，不影响哪些工具能调。一个回合的工具里若没有全部加载入口
+    （比如审阅员、调用方显式收窄过的名单），就不过滤、全量下发：看不见又加载不了等于没有工具。
+    """
+
+    always_exposed: frozenset[str]
+    loaders: frozenset[str]
+
+    def applies_to(self, tool_names: frozenset[str] | set[str]) -> bool:
+        return bool(self.loaders) and self.loaders <= set(tool_names)
+
+
 @runtime_checkable
 class RunToolExposurePort(Protocol):
     """Runtime seam for durable, per-Run visibility evolution."""
@@ -762,7 +777,7 @@ class RunToolExposurePort(Protocol):
 
     def provider_specs(self, run_id: RunId) -> tuple[ProviderToolSpec, ...]: ...
 
-    def execution_policy(self, run_id: RunId, provider_name: str) -> ToolExecutionPolicy: ...
+    def execution_policy(self, run_id: RunId, provider_name: str) -> ToolExecutionPolicy | None: ...
 
     def observe_tool_result(
         self, run_id: RunId, tool_name: str, result: Mapping[str, object]

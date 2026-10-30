@@ -173,15 +173,63 @@ class ChatService:
         return profile_id
 
     def _configuration(self, config: Any) -> Any:
-        return config
+        from ..runtime.control_commands import ControlCommand
+        from ..runtime.sandbox_run import sandbox_run_tool
+        from ..runtime.tool_catalog import META_SCHEMAS, catalog_for, exposure_policy, invoke_meta
 
-    def _native_plane(self, profile_id: str, tokens: int, counter: Any) -> Any:
-        return self._host.native.assembly(
-            profile_id, tokens=tokens, counter=counter, owner_mode="STANDALONE_CHAT"
+        role = "child" if getattr(getattr(self, "session", None), "parent", None) else "main"
+        self._tool_role = role
+        tools = {
+            name: tool
+            for name, tool in self._host._runtime_tools.items()
+            if name not in META_SCHEMAS and role in tool.roles and "main" in tool.roles
+        }
+        if "sandbox_run" in tools:
+            tools["sandbox_run"] = replace(
+                sandbox_run_tool(self._host.executor, config.workspaces_root),
+                roles=tools["sandbox_run"].roles,
+            )
+        commands = dict(config.control_commands)
+
+        def meta_command(name):
+            def invoke(arguments, run_id, call_id):
+                binding = self._assembled.gateway.binding_for(run_id)
+                if binding is None:
+                    raise ChatRequestError("not_found_or_forbidden", "no workspace binding")
+                try:
+                    return invoke_meta(
+                        self._tool_catalog, role, binding.allowed_tools, name, arguments
+                    )
+                except ValueError as error:
+                    raise ChatRequestError("not_found_or_forbidden", str(error)) from error
+
+            return invoke
+
+        for name, schema in META_SCHEMAS.items():
+            commands[name] = ControlCommand(schema, meta_command(name))
+        self._tool_catalog = catalog_for(
+            tools, commands={name: command.schema for name, command in commands.items()}
+        )
+        return replace(
+            config,
+            domain_tools=tools,
+            control_commands=commands,
+            tool_exposure_policy=exposure_policy(self._tool_catalog)
+            if self._host.settings.tool_search
+            else None,
         )
 
+    def _native_plane(self, profile_id: str, tokens: int, counter: Any) -> Any:
+        from ..deployment.native_pools import DeploymentToolAuthorization
+
+        native = self._host.native.assembly(
+            profile_id, tokens=tokens, counter=counter, owner_mode="STANDALONE_CHAT"
+        )
+        return replace(native, authorization=DeploymentToolAuthorization(self._registered_tools()))
+
     def _registered_tools(self) -> tuple[str, ...]:
-        return tuple(self._host.tools)
+        role = getattr(self, "_tool_role", "main")
+        return tuple(entry.name for entry in self._tool_catalog.visible(role))
 
     def _budget_subject(self, agent: Any, input_id: str) -> str:
         return f"{self.reservation_prefix}{agent.agent_id}:{input_id}"
@@ -399,7 +447,10 @@ class ChatService:
             reset = True
             self._replaced[session_id] = reason
             logger.warning(
-                "chat session %s: agent given up (%s), generation %d", session_id, reason, generation
+                "chat session %s: agent given up (%s), generation %d",
+                session_id,
+                reason,
+                generation,
             )
         creation_key = self._creation_key(session_id, generation)
         agent_id = agent_id_for(OWNER_SCOPE, creation_key)
@@ -478,7 +529,9 @@ class ChatService:
         if runtime.uow.read_provider_budget(RunId(binding.run_id)).has_unknown_charge:
             # 开着的回合也一样：宿主中途关掉后那次在途调用被结成"不明"，回合停在原地再也走不动，
             # 执行层也不会再让它调模型。
-            return "unknown_charge_in_open_turn" if turn is not None else "unknown_charge_after_cancel"
+            return (
+                "unknown_charge_in_open_turn" if turn is not None else "unknown_charge_after_cancel"
+            )
         return None
 
     def _bind(self, pool: Any, agent: Any, session_id: str, allowed: tuple[str, ...]) -> None:

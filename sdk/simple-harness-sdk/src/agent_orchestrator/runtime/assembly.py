@@ -27,6 +27,7 @@ from simple_harness.agents.context.budget import ContextPolicy
 from simple_harness.agents.context.tokenizer import TokenizerPort, UpperBoundTokenizer
 from simple_harness.agents.ports import AgentRuntimePorts
 from simple_harness.agents.runtime import AgentRuntime
+from simple_harness.tools.runtime_catalog import ToolExposurePolicy
 from simple_harness.contracts import canonical_json
 from simple_harness.execution.provider_admission import LocalProviderAdmission, ProviderHandoffFence
 from simple_harness.runtime.consumer_adapter import ConsumerRuntimePolicies
@@ -115,6 +116,9 @@ class OrchestratorConfig:
     )
     domain_tools: Mapping[str, DomainTool] = field(
         default_factory=dict, kw_only=True, repr=False, compare=False
+    )
+    tool_exposure_policy: ToolExposurePolicy | None = field(
+        default=None, kw_only=True, repr=False, compare=False
     )
     control_commands: Mapping[str, ControlCommand] = field(
         default_factory=dict, kw_only=True, repr=False, compare=False
@@ -344,7 +348,7 @@ def _read_context_identity(database: Path) -> dict[str, Any] | None:
         return None
     try:
         value = json.loads(path.read_text(encoding="utf-8"))
-        if not isinstance(value, dict) or value.get("schema") != 1:
+        if not isinstance(value, dict) or value.get("schema") != 2:
             raise ValueError("unsupported context identity schema")
         body = {key: item for key, item in value.items() if key != "fingerprint"}
         if value.get("fingerprint") != sha256(canonical_json(body).encode("utf-8")).hexdigest():
@@ -539,6 +543,7 @@ def assemble_orchestrator_runtime(
             authorization=native.authorization,
             database_path=str(database),
             tool_executor=gateway,
+            tool_exposure_policy=config.tool_exposure_policy,
             tool_names=(*TOOL_NAMES, *config.domain_tools, *config.control_commands),
             tool_schemas={
                 **read_tool_schemas(large=profile.context_policy is not None),

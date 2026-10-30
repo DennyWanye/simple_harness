@@ -22,6 +22,7 @@
 
 from ..governance.permissions import Principal
 from ..runtime.domain_tools import DomainTool, ToolCallContext
+from ..runtime.tool_catalog import CatalogEntry, ToolCatalog
 from .chat import ChatRequestError
 from .host import (
     HostRequestError,
@@ -47,6 +48,8 @@ __all__ = (
     "CONTEXT_INPUT_CHOICES",
     "NO_COUNTER_REASON",
     "ChatRequestError",
+    "CatalogEntry",
+    "ToolCatalog",
     "HostRequestError",
     "DomainTool",
     "HostSettings",

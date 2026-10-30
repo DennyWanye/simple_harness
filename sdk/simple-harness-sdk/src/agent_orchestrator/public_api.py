@@ -65,6 +65,8 @@ PUBLIC_MODULES: tuple[str, ...] = (
     "agent_orchestrator.runtime.openai_upper_bound_meter",
     "agent_orchestrator.runtime.planning_operations",
     "agent_orchestrator.runtime.sandbox",
+    "agent_orchestrator.runtime.sandbox_run",
+    "agent_orchestrator.runtime.tool_catalog",
     "agent_orchestrator.storage.htn_store",
     "agent_orchestrator.storage.planning_decision_store",
     "agent_orchestrator.storage.planning_human_store",

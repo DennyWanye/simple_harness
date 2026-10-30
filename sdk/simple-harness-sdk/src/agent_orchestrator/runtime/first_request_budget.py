@@ -124,7 +124,7 @@ def frozen_provider_input_cap(
 
     if runtime_context is None:
         return FirstRequestBudgetUnknown("runtime_context_missing")
-    if runtime_context.get("schema") != 1:
+    if runtime_context.get("schema") != 2:
         return FirstRequestBudgetUnknown("runtime_context_schema_unknown")
     fingerprint = runtime_context.get("fingerprint")
     policy_json = runtime_context.get("policy")

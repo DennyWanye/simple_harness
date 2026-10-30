@@ -1074,6 +1074,12 @@ def _preflight_tool_batch(
         return policies, rejected
     for ordinal, call in enumerate(calls):
         policy = tool_exposure.execution_policy(run_id, call.name)
+        if policy is None:
+            if authority_required:
+                raise RuntimeError(
+                    "Provider Tool execution requires a private catalog execution policy"
+                )
+            continue
         policies[ordinal] = policy
         arguments = thaw_json(cast(FrozenJsonValue, call.arguments))
         if not isinstance(arguments, dict):

@@ -371,6 +371,7 @@ SNAPSHOT_FIELDS: dict[str, str] = {
     "planning_backend": "capability: backend identity; no runtime object serialization",
     # SDK 自己的控制命令（委派、子会话等）：它们的说明文字属于聊天池身份，不是任务行为参数
     "control_commands": "excluded: SDK-owned control commands handed to the chat pools",
+    "tool_exposure_policy": "excluded: tool descriptions exposure, not execution authorization",
     # 宿主的进程内共享模型并发门：运行时对象，不进任何持久身份
     "shared_provider_admission": "excluded: the host's process-local shared model gate",
     **{
