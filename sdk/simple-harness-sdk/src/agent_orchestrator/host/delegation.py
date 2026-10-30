@@ -142,6 +142,9 @@ class Delegations:
                     "delegation_id": f"delegation-{digest(key)[:32]}",
                     "session_id": self.session.session_id,
                     "turn_id": turn_id,
+                    "source_input_id": (self.session._current_input or {}).get("source_input_id")
+                    if (self.session._current_input or {}).get("turn_id") == turn_id
+                    else None,
                     "call_id": call_id,
                     "slot": slot,
                     "principal_id": self.host.principal.principal_id,
@@ -301,6 +304,25 @@ class Delegations:
     def status(self, row: Mapping[str, Any]) -> str:
         detail = self.host.snapshot(str(row["mission_id"]))
         return str(detail["snapshot"]["mission"]["status"])
+
+    def has_in_flight(self) -> bool:
+        results = {notice["delegation_id"] for notice in self.store.rows("inbox")}
+        for row in self.store.rows("delegations"):
+            if (
+                row.get("error")
+                or row["delegation_id"] in results
+                or row.get("terminal_status") in TERMINAL
+            ):
+                continue
+            if row["mission_id"] is None:
+                return True
+            status = self.status(row)
+            if status not in TERMINAL:
+                return True
+            with self.store.transaction():
+                row["terminal_status"] = status
+                self.store.put("delegations", row["key"], row)
+        return False
 
     def _creation_absent(self, row: Mapping[str, Any]) -> bool:
         orchestrator = getattr(self.host, "orchestrator", None)

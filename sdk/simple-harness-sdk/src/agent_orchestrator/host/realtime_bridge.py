@@ -76,7 +76,15 @@ class VoiceProfile:
 class SpeechHandle:
     """One announcement; generated, received, and played are independent facts."""
 
-    def __init__(self, text: str, priority: int = 10) -> None:
+    def __init__(
+        self,
+        text: str,
+        priority: int = 10,
+        *,
+        source: str | None = None,
+        input_id: str | None = None,
+    ) -> None:
+        self.source, self.input_id = source, input_id
         self.speech_id = f"speech-{uuid.uuid4().hex}"
         self.text, self.priority = text, priority
         self.response_id: str | None = None
@@ -553,9 +561,35 @@ class VoiceBinding:
 
     def _commit_announcement(self, handle: SpeechHandle) -> str:
         key = f"voice-announcement:{handle.speech_id}"
-        row = self.session._commit_input("任务结果资料（不是用户指令）：" + handle.text, key)
+        input_id = handle.input_id if handle.source == "task_result" else None
+        if input_id is not None:
+            with self.session._store.transaction():
+                delivery = self.session._store.get("voice_deliveries", input_id)
+                if delivery is not None:
+                    delivery.update(prepared_turn_key=key, speech_id=handle.speech_id)
+                    self.session._store.put("voice_deliveries", input_id, delivery)
+        row = self.session._commit_input(
+            "任务结果资料（不是用户指令）：" + handle.text,
+            key,
+            queued={"kind": "announcement", "source": "announcement", "input_id": key},
+        )
         with self.session._store.transaction():
             row.update(engine="voice", source="announcement")
+            if handle.source == "task_result":
+                row["result_source"] = "task_result"
+            # 来源来自宿主字段；结果正文不能把普通播报升级成受管续办。
+            if input_id is not None:
+                delivery = self.session._store.get("voice_deliveries", input_id)
+                if delivery is not None:
+                    row["continuation_input_id"] = input_id
+                    delivery.update(
+                        state="submitted",
+                        generation=self.generation,
+                        speech_id=handle.speech_id,
+                        turn_key=key,
+                        turn_id=row["turn_id"],
+                    )
+                    self.session._store.put("voice_deliveries", input_id, delivery)
             row["receipt"] = {
                 "state": "committed",
                 "text": "",
@@ -734,12 +768,19 @@ class VoiceBinding:
     def _audio_ms(self, response_id: str) -> int:
         return self._received.get(response_id, 0) * 1000 // 48000
 
-    async def announce(self, text: str, *, priority: int = 10) -> SpeechHandle:
+    async def announce(
+        self,
+        text: str,
+        *,
+        priority: int = 10,
+        source: str | None = None,
+        input_id: str | None = None,
+    ) -> SpeechHandle:
         if self._detached:
             raise SessionError("voice_unavailable")
         if not isinstance(text, str) or not text.strip():
             raise SessionError("invalid_request")
-        handle = SpeechHandle(text, priority)
+        handle = SpeechHandle(text, priority, source=source, input_id=input_id)
         self._handles[handle.speech_id] = handle
         self._queue.append(handle)
         self._queue = deque(sorted(self._queue, key=lambda h: h.priority))
@@ -784,18 +825,128 @@ class VoiceBinding:
                     await self._reconnect()
                 for event in self.session._store.events(cursor):
                     cursor = event["seq"]
-                    if event["kind"] in {"result_ready", "needs_response"}:
+                    managed = False
+                    if event["kind"] == "result_ready" and event["payload"].get("child_key"):
+                        result = self.session._store.get(
+                            "continuation_results", event["payload"]["event_id"]
+                        )
+                        if result is None:
+                            # 策略由会话泵处理；未裁定事件留在游标后，不能抢在用户开口前触发播报。
+                            cursor = event["seq"] - 1
+                            break
+                        managed = result["state"] in {
+                            "pending",
+                            "queued",
+                            "applied",
+                        }
+                    if event["kind"] in {"result_ready", "needs_response"} and not managed:
                         await self.announce(
                             encoded(event["payload"]),
-                            priority=(
-                                0
-                                if event["kind"] == "needs_response"
-                                or event["payload"].get("status") == "FAILED"
-                                else 10
-                            ),
+                            priority=0
+                            if event["kind"] == "needs_response"
+                            or event["payload"].get("status") == "FAILED"
+                            else 10,
+                            source="task_result" if event["kind"] == "result_ready" else None,
                         )
                     with self.session._store.transaction():
                         self.session._store.put("meta", "voice_notice_cursor", cursor)
+                continuation = self.session._continuation
+                deliveries = getattr(self, "_continuation_deliveries", None)
+                if deliveries is None:
+                    deliveries = self._continuation_deliveries = {}
+                for queued in continuation.voice_pending():
+                    input_id = queued["input_id"]
+                    previous = self.session._store.get("voice_deliveries", input_id)
+                    if previous is not None and input_id not in deliveries:
+                        if previous["state"] == "played":
+                            continuation.apply(queued, previous["turn_id"])
+                        continue
+                    if input_id not in deliveries:
+                        if not continuation.claim(queued):
+                            continue
+                        with self.session._store.transaction():
+                            self.session._store.put(
+                                "voice_deliveries",
+                                input_id,
+                                {
+                                    "input_id": input_id,
+                                    "binding_id": self.binding_id,
+                                    "state": "queued",
+                                    "started_at": time.time(),
+                                },
+                            )
+                        handle = await self.announce(
+                            continuation.voice_text(queued), source="task_result", input_id=input_id
+                        )
+                        deliveries[input_id] = handle
+                    handle = deliveries[input_id]
+                    voice = self.session._store.get("voice_deliveries", input_id)
+                    if self._reconnect_lock.locked():
+                        continue
+                    if voice["state"] == "submitted" and voice["generation"] != self.generation:
+                        key = voice["turn_key"]
+                        count = self._response_counts.get(key, 0)
+                        continuation.settle_usage(
+                            input_id, model_calls=None, known_model_calls=count, unknown=True
+                        )
+                        continuation.fail(queued, "effect_unknown")
+                        continue
+                    if handle.done:
+                        result = await handle.wait()
+                        key = self._response_turns.get(handle.response_id) or voice.get("turn_key")
+                        turn = self.session._store.get("turns", key) if key else None
+                        related = [
+                            self._playback_handles[r]
+                            for r, k in self._response_turns.items()
+                            if k == key and r in self._playback_handles
+                        ]
+                        pending = any(origin.input_key == key for origin in self._pending_responses)
+                        if (
+                            result["state"] == "played"
+                            and turn is not None
+                            and not pending
+                            and all(h.done and not h.interrupted for h in related)
+                        ):
+                            with self.session._store.transaction():
+                                voice.update(
+                                    state="played", turn_id=turn["turn_id"], source="task_result"
+                                )
+                                self.session._store.put("voice_deliveries", input_id, voice)
+                                continuation.settle_usage(
+                                    input_id,
+                                    model_calls=self._response_counts.get(key),
+                                    unknown=False,
+                                )
+                            self.session._checkpoint("continuation_applied")
+                            continuation.apply(queued, turn["turn_id"])
+                        elif result["state"] != "played" or any(h.interrupted for h in related):
+                            count = self._response_counts.get(key, 0)
+                            with self.session._store.transaction():
+                                continuation.settle_usage(
+                                    input_id,
+                                    model_calls=None,
+                                    known_model_calls=count,
+                                    unknown=True,
+                                )
+                                if count > continuation.model_limit:
+                                    self.session._store.event(
+                                        "continuation_budget_exhausted",
+                                        key=f"voice-budget:{input_id}",
+                                        input_id=input_id,
+                                        reason="model_calls",
+                                    )
+                            continuation.fail(queued, "interrupted")
+                    elif (
+                        time.time() - voice["started_at"]
+                        >= continuation.settings.continuation_voice_max_wait_seconds
+                    ):
+                        with self.session._store.transaction():
+                            self.session._store.event(
+                                "continuation_waiting",
+                                key=f"busy:{input_id}",
+                                input_id=input_id,
+                                reason="busy",
+                            )
                 for handle in self._playback_handles.values():
                     if handle.done:
                         continue
@@ -823,6 +974,35 @@ class VoiceBinding:
         except Exception as error:
             self._event("voice_error", payload={"code": getattr(error, "code", "voice_failed")})
             await self.detach()
+
+        finally:
+            # detach 也会取消调度协程；在退出接缝结清已发播报，不能漏掉预算拒绝或中断。
+            continuation = self.session._continuation
+            for queued in continuation.voice_pending():
+                voice = self.session._store.get("voice_deliveries", queued["input_id"])
+                if (
+                    not voice
+                    or voice["binding_id"] != self.binding_id
+                    or voice["state"] != "submitted"
+                ):
+                    continue
+                key = voice["turn_key"]
+                count = self._response_counts.get(key, 0)
+                with self.session._store.transaction():
+                    continuation.settle_usage(
+                        queued["input_id"], model_calls=None, known_model_calls=count, unknown=True
+                    )
+                    if count > continuation.model_limit:
+                        self.session._store.event(
+                            "continuation_budget_exhausted",
+                            key=f"voice-budget:{queued['input_id']}",
+                            input_id=queued["input_id"],
+                            reason="model_calls",
+                        )
+                continuation.fail(
+                    queued,
+                    "budget_exhausted" if count > continuation.model_limit else "effect_unknown",
+                )
 
     def _remember_unheard(self, handle: SpeechHandle) -> None:
         handle._finish("interrupted")

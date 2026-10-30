@@ -30,6 +30,7 @@ PUBLIC_MODULES: tuple[str, ...] = (
     "agent_orchestrator.graph.view_contracts",
     "agent_orchestrator.host",
     "agent_orchestrator.host.chat",
+    "agent_orchestrator.host.continuation",
     "agent_orchestrator.host.embedding",
     "agent_orchestrator.host.host",
     "agent_orchestrator.host.instance_lock",

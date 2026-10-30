@@ -269,7 +269,6 @@ def test_capabilities_are_local_and_errors_do_not_disclose_details(tmp_path, mon
     }
     assert set(caps["unsupported"]) == {
         "goals",
-        "continuation_policy",
         "authorization_port",
         "steer_running_mission",
     }

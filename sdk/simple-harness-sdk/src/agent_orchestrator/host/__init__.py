@@ -24,6 +24,7 @@ from ..governance.permissions import Principal
 from ..runtime.domain_tools import DomainTool, ToolCallContext
 from ..runtime.tool_catalog import CatalogEntry, ToolCatalog
 from .chat import ChatRequestError
+from .continuation import ContinuationContext, ContinuationDecision, ContinuationPolicy
 from .host import (
     HostRequestError,
     HostUnavailable,
@@ -44,6 +45,9 @@ from .settings import (
 
 __all__ = (
     "ERROR_CODES",
+    "ContinuationContext",
+    "ContinuationDecision",
+    "ContinuationPolicy",
     "AudioIO",
     "CONTEXT_INPUT_CHOICES",
     "NO_COUNTER_REASON",
