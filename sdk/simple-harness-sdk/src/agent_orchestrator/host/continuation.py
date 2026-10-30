@@ -138,7 +138,13 @@ class Continuation:
                     event_id=event_id,
                     pending_event_ids=tuple(n["event_id"] for n in notices),
                     used_turns=self.consecutive_turns(),
-                    used_model_calls=sum(u["model_calls"] for u in usage),
+                    # 在途（reserved）的按预扣上限计：可以多算，不能少算
+                    used_model_calls=sum(
+                        max(u["model_calls"], u["reserved_model_calls"])
+                        if u["state"] == "reserved"
+                        else u["model_calls"]
+                        for u in usage
+                    ),
                 )
                 if not self.settings.continuation_enabled:
                     decision = ContinuationDecision.hold("disabled")

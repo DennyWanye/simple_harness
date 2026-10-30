@@ -262,7 +262,12 @@ def test_real_host_summary_narrows_tools_and_search_without_authorizing_result(t
                 for m in request.messages
                 if str(m.role) == "tool"
             ]
-            assert any('"tools":[]' in str(m).replace(" ", "") for m in tool_messages)
+            # 搜 delegate_task 搜不到：没命中时只列出收窄名单里的只读工具，委派类命令一个都不在
+            compact = [str(m).replace(" ", "") for m in tool_messages]
+            searches = [m for m in compact if '"matched":' in m]
+            assert searches and all('"matched":false' in m for m in searches)
+            forbidden = ("delegate_task", "create_child", "child_send", "task_cancel")
+            assert not any(f'"name":"{name}"' in m for m in searches for name in forbidden)
             [usage] = parent._store.rows("continuation_usage")
             assert usage["model_calls"] == receipt["model_calls"] == 6
             # 后续用户回合仍然能使用它原先的工具允许名单。
@@ -534,7 +539,7 @@ def test_voice_delivery_reopen_recovers_unsent_and_exposes_unknown(tmp_path, del
     asyncio.run(case())
 
 
-def test_voice_continuation_uses_existing_admission_with_narrower_budget(tmp_path, monkeypatch):
+def test_voice_continuation_uses_existing_admission_with_session_budget(tmp_path, monkeypatch):
     from types import SimpleNamespace
 
     from test_realtime_bridge import Audio, Client

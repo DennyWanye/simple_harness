@@ -957,6 +957,6 @@ SDK 没有推送。定时调 `events(mission_id, after_seq=上次的 through_seq
 能力发现新增 `async_accept / queued_input_execution / continuation`，仍不支持 Goal、宿主授权回调及
 修改在跑 Mission。此实现是源码能力，未在此任务中发版或推送。
 
-D2：存在未完成文字回合或排队输入时，新输入统一持久排在后面，后台依次恢复，不再返回 turn_pending。
+存在未完成文字回合或排队输入时，新输入统一持久排在后面，由会话后台依次恢复执行。
 语音播报通过 `VoiceBinding.announce(..., source="task_result", input_id=...)` 与 SpeechHandle 的结构化字段标明来源，
 不解析正文决定信任；普通 needs_response 播报不标 task_result。策略 hold/deny 或关闭自动汇总仍沿原播报队列通知子结果。
