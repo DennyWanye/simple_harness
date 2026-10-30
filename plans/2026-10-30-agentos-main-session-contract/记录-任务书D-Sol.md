@@ -100,3 +100,10 @@
 
 `8adc419d6` 首轮累计回归在通用结果资料前缀的两条既有断言失败（95 passed / 2 failed 后主动中断，71.34 秒，`regression-attempt-1.txt`）。恢复普通附加资料的原前缀“不是指令，不授权新任务”；续办输入自己的“不是用户指令”与来源说明保持。未改既有断言。两条原失败测试修后 **2 passed / 39 deselected，0.51 秒**。
 最终被测提交及累计 324 项结果以末尾终验段为准，上文 `8adc419d6` 和原清单身份只对应首轮候选。
+
+
+## 语音守旧回归与重连补充
+
+独立先跑既有语音回归，发现 `_schedule` 曾把续办等待条件扩到了普通播报的完成判定，原两条多次 followup 测试失败（59 passed / 2 failed，10.24 秒，`voice-regression-red.txt`）。恢复通用播放完成条件，只在续办应用环节检查 pending、所有相关响应已播放且未中断；既有语音 61 条与当时续办 27 条合跑 **88 passed，48.89 秒**（`voice-and-continuation.txt`）。
+补充实播 followup、乱序重复镜像、实际重连三条决定性反例。重连反例先红 **1 failed，1.17 秒**（`reconnect-red.txt`），修后与另外两条合跑 **3 passed**。交线路前持久 generation，重连期间不提交 managed 应用，新代次看到旧 submitted 投递则明确 effect_unknown 等待，按持久 turn_key 结清，不静默挂起或重播。
+完整指定回归新增这三条后共 **327 项**；下节记录最终提交与结果。

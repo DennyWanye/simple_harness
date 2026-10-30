@@ -727,6 +727,126 @@ def test_earlier_sync_recovery_consumes_result_before_continuation_admission(tmp
     asyncio.run(case())
 
 
+def test_voice_followup_is_not_applied_before_its_actual_audio_is_played(tmp_path, monkeypatch):
+    import json
+    from types import SimpleNamespace
+
+    from test_realtime_bridge import Audio, Client
+
+    from agent_orchestrator.host.realtime_bridge import VoiceBinding, VoiceProfile
+
+    monkeypatch.setattr(VoiceBinding, "_request", lambda b: SimpleNamespace())
+
+    async def case():
+        _, parent = await parent_with_result(tmp_path)
+        audio, client = Audio(), Client()
+        binding = await parent.attach_voice(
+            audio, VoiceProfile(client_factory=client, playback_poll_seconds=0.005)
+        )
+        wire = client.wires[0]
+        try:
+            await tick(parent)
+            await eventually(lambda: bool(binding._pending_responses))
+            await wire.emit("ResponseStarted", response_id="summary-one")
+            output = await wire.dispatcher.dispatch(
+                SimpleNamespace(
+                    response_id="summary-one",
+                    call_id="query",
+                    name="task_status",
+                    arguments_json=json.dumps({}),
+                )
+            )
+            assert "tasks" in output
+            await wire.emit("ResponseFinished", response_id="summary-one", status="completed")
+            assert parent.inbox()[0]["applied_turn_id"] is None
+            await wire.emit("ResponseStarted", response_id="summary-two")
+            await wire.emit("OutputAudio", response_id="summary-two", data=b"\x00" * 4800)
+            await wire.emit("OutputAudioCompleted", response_id="summary-two")
+            await wire.emit("ResponseFinished", response_id="summary-two", status="completed")
+            assert parent.inbox()[0]["applied_turn_id"] is None
+            audio.position = 100
+            await eventually(lambda: bool(parent.inbox()[0]["applied_turn_id"]))
+            assert parent._store.rows("continuation_usage")[0]["model_calls"] == 2
+            assert parent._chat.calls == 0
+        finally:
+            await binding.detach()
+            await parent.close()
+
+    asyncio.run(case())
+
+
+def test_out_of_order_repeated_mirrors_freeze_one_sorted_event_set(tmp_path):
+    from agent_orchestrator.host.session_ledger import digest
+
+    async def case():
+        host, parent = await parent_with_result(tmp_path)
+        await parent.create_child("b", command_id="b")
+        second = parent._delegations.delegate("second", "call", {**SPEC, "child_key": "b"})
+        host.finish(second["mission_id"])
+        parent._children = dict(reversed(list(parent._children.items())))
+        parent._inbox.catch_up()
+        await tick(parent)
+        await eventually(lambda: parent.queued_inputs()[0]["state"] == "done")
+        [queued] = parent.queued_inputs()
+        ids = sorted(n["event_id"] for n in parent.inbox())
+        assert queued["payload"] == ids
+        assert queued["input_id"] == "cont-" + digest([parent.session_id, ids])
+        parent._children = dict(reversed(list(parent._children.items())))
+        for _ in range(3):
+            parent._inbox.catch_up()
+            await tick(parent)
+        assert len(parent.queued_inputs()) == parent._chat.calls == 1
+        await parent.close()
+
+    asyncio.run(case())
+
+
+def test_voice_reconnect_after_first_response_exposes_unknown_followup(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    from test_realtime_bridge import Audio, Client
+
+    from agent_orchestrator.host.realtime_bridge import VoiceBinding, VoiceProfile
+
+    monkeypatch.setattr(VoiceBinding, "_request", lambda b: SimpleNamespace())
+
+    async def case():
+        _, parent = await parent_with_result(tmp_path)
+        client = Client()
+        binding = await parent.attach_voice(
+            Audio(),
+            VoiceProfile(client_factory=client, playback_poll_seconds=0.005, reconnect_backoff=0),
+        )
+        wire = client.wires[0]
+        try:
+            await tick(parent)
+            await eventually(lambda: bool(binding._pending_responses))
+            await wire.emit("ResponseStarted", response_id="first")
+            await wire.dispatcher.dispatch(
+                SimpleNamespace(
+                    response_id="first", call_id="query", name="task_status", arguments_json="{}"
+                )
+            )
+            await wire.emit("ResponseFinished", response_id="first", status="completed")
+            await eventually(
+                lambda: binding._continuation_deliveries[parent.queued_inputs()[0]["input_id"]].done
+            )
+            await binding._reconnect()
+            await eventually(
+                lambda: any(
+                    e["kind"] == "continuation_waiting" and e.get("reason") == "effect_unknown"
+                    for e in parent._store.events(0)
+                ),
+                seconds=0.5,
+            )
+            assert parent.inbox()[0]["applied_turn_id"] is None and parent._chat.calls == 0
+        finally:
+            await binding.detach()
+            await parent.close()
+
+    asyncio.run(case())
+
+
 if __name__ == "__main__":
     import sys
     from pathlib import Path

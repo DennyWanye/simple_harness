@@ -595,6 +595,7 @@ class VoiceBinding:
                     row.update(continuation_input_id=input_id, response_count_baseline=baseline)
                     delivery.update(
                         state="submitted",
+                        generation=self.generation,
                         speech_id=handle.speech_id,
                         turn_key=key,
                         turn_id=row["turn_id"],
@@ -872,9 +873,24 @@ class VoiceBinding:
                         deliveries[input_id] = handle
                     handle = deliveries[input_id]
                     voice = self.session._store.get("voice_deliveries", input_id)
+                    if self._reconnect_lock.locked():
+                        continue
+                    if voice["state"] == "submitted" and voice["generation"] != self.generation:
+                        key = voice["turn_key"]
+                        count = max(
+                            0,
+                            self._response_counts.get(key, 0)
+                            - voice.get("response_count_baseline", 0),
+                        )
+                        with self.session._store.transaction():
+                            usage = self.session._store.get("continuation_usage", input_id)
+                            usage.update(state="settled", model_calls=count, unknown=True)
+                            self.session._store.put("continuation_usage", input_id, usage)
+                        continuation.fail(queued, "effect_unknown")
+                        continue
                     if handle.done:
                         result = await handle.wait()
-                        key = self._response_turns.get(handle.response_id)
+                        key = self._response_turns.get(handle.response_id) or voice.get("turn_key")
                         turn = self.session._store.get("turns", key) if key else None
                         related = [
                             self._playback_handles[r]
@@ -886,7 +902,7 @@ class VoiceBinding:
                             result["state"] == "played"
                             and turn is not None
                             and not pending
-                            and all(h.done for h in related)
+                            and all(h.done and not h.interrupted for h in related)
                         ):
                             with self.session._store.transaction():
                                 voice.update(
@@ -905,7 +921,7 @@ class VoiceBinding:
                                 self.session._store.put("continuation_usage", input_id, usage)
                             self.session._checkpoint("continuation_applied")
                             continuation.apply(queued, turn["turn_id"])
-                        elif result["state"] != "played":
+                        elif result["state"] != "played" or any(h.interrupted for h in related):
                             count = max(
                                 0,
                                 self._response_counts.get(key, 0)
@@ -945,13 +961,7 @@ class VoiceBinding:
                             - self._played_bases.get(handle.response_id, 0),
                         ),
                     )
-                    if (
-                        handle.generated
-                        and handle.played_audio_ms >= handle.received_audio_ms
-                        and not self._responding
-                        and not self._awaiting_response
-                        and not self._pending_responses
-                    ):
+                    if handle.generated and handle.played_audio_ms >= handle.received_audio_ms:
                         handle._finish("played")
                         self._event(
                             "speech_played",
