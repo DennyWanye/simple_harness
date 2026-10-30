@@ -90,8 +90,6 @@ def test_main_has_reads_and_role_tools_but_no_task_writes(tmp_path):
             assert {
                 "workspace_read_file",
                 "workspace_list",
-                "knowledge_list",
-                "knowledge_read",
                 "session_history_read",
                 "session_history_search",
                 "tool_search",
@@ -278,82 +276,212 @@ def test_real_child_roles_never_expand_parent_declarations(tmp_path):
     asyncio.run(case())
 
 
-def test_known_session_catalog_freeze_constraint_is_reproducible(tmp_path):
-    from types import SimpleNamespace
+def test_session_reopens_with_new_tools_but_policy_is_still_frozen(tmp_path):
+    from agent_orchestrator.host import Session, SessionError, SessionPolicy
 
-    from agent_orchestrator.host import Session, SessionError
+    async def case():
+        options = dict(
+            principal=Principal("u", "用户"), counter=FixtureWordCounter(), require_acceptance=False
+        )
+        tool = _device_tool([])
+        original = await Session.open(
+            tmp_path,
+            provider=ScriptedProvider(chat=_chat_script(["first"])),
+            tools=[tool],
+            **options,
+        )
+        first = await original.send("你好", key="first")
+        version = original.capabilities()["catalog_version"]
+        assert version == original._host.tool_catalog.catalog_version
+        await original.close()
+        extra = replace(tool, name="extra_status")
+        reopened = await Session.open(
+            tmp_path,
+            provider=ScriptedProvider(chat=_chat_script(["again"])),
+            tools=[tool, extra],
+            **options,
+        )
+        try:
+            assert reopened.session_id == original.session_id
+            assert reopened.capabilities()["catalog_version"] != version
+            again = await reopened.send("继续", key="again")
+            assert again["state"] == "committed" and again["agent_id"] == first["agent_id"]
+            assert set(reopened._store.get("meta", "configuration")) == {"version", "policy"}
+        finally:
+            await reopened.close()
+        with pytest.raises(SessionError, match="session_config_frozen"):
+            await Session.open(
+                tmp_path,
+                provider=ScriptedProvider(chat=_chat_script(["unused"])),
+                tools=[tool, extra],
+                policy=SessionPolicy(max_model_calls=3),
+                **options,
+            )
 
-    host = SimpleNamespace(
-        root=tmp_path,
-        tenant_id="local",
-        principal=Principal("u", "用户"),
-        tools={"old_status": _device_tool([])},
-    )
-    original = Session(host)
-    original._store.connection.close()
-    host.tools["new_status"] = _device_tool([])
-    with pytest.raises(SessionError, match="session_config_frozen"):
-        Session(host)
+    asyncio.run(case())
 
 
-def test_known_builtin_schema_identity_constraint_is_reproducible(tmp_path, monkeypatch):
+def test_builtin_description_does_not_change_persisted_identity_or_agent(tmp_path, monkeypatch):
     import json
     import sqlite3
-
     from agent_orchestrator.runtime.assembly import OrchestratorConfig, _check_intent_contexts
-    from agent_orchestrator.runtime.model_router import RuntimeProfile
     from agent_orchestrator.runtime.tool_gateway import read_tool_schemas
-    from simple_harness.agents.context.budget import ContextPolicy
 
-    options = dict(
-        profile_id="deepseek-native-600k-v1",
-        provider=ScriptedProvider(),
-        model="agent-model",
-        context_policy=ContextPolicy(),
-        tokenizer=FixtureWordCounter(),
-    )
-    first = RuntimeProfile(**options)
-    schema = read_tool_schemas(large=True)
-    schema["workspace_read_file"]["description"] += "（身份约束测试）"
-    monkeypatch.setattr(
-        "agent_orchestrator.runtime.model_router.read_tool_schemas", lambda **kw: schema
-    )
-    changed = RuntimeProfile(**options)
-    assert first.profile_id == changed.profile_id
-    config = OrchestratorConfig(evidence_root=tmp_path)
-    with sqlite3.connect(config.orchestrator_db) as connection:
-        connection.execute("CREATE TABLE dispatch_intents(config_json TEXT)")
-        connection.execute(
-            "INSERT INTO dispatch_intents VALUES (?)",
-            (
-                json.dumps(
-                    {
-                        "runtime_profile_id": first.profile_id,
-                        "runtime_context": first.context_snapshot(),
-                    }
-                ),
-            ),
-        )
-    with pytest.raises(ValueError, match="context identity differs"):
-        _check_intent_contexts(config, changed)
-
-
-def test_known_chat_knowledge_scope_constraint_is_reproducible(tmp_path):
     async def case():
-        script = _chat_script([("knowledge_list", {}), "知识作用域不可用"])
-        host = await _open(tmp_path, chat=script)
+        first = await _open(tmp_path, chat=_chat_script(["first"]))
+        profile = first.chat_service._pool().profile
+        result = await first.chat(
+            {"session_id": "stable", "text": "你好", "idempotency_key": "one"}
+        )
+        await first.close()
+        intent_root = tmp_path / "intent"
+        intent_root.mkdir()
+        config = OrchestratorConfig(evidence_root=intent_root)
+        with sqlite3.connect(config.orchestrator_db) as connection:
+            connection.execute("CREATE TABLE dispatch_intents(config_json TEXT)")
+            connection.execute(
+                "INSERT INTO dispatch_intents VALUES (?)",
+                (
+                    json.dumps(
+                        {
+                            "runtime_profile_id": profile.profile_id,
+                            "runtime_context": profile.context_snapshot(),
+                        }
+                    ),
+                ),
+            )
+        schemas = read_tool_schemas(large=True)
+        schemas["workspace_read_file"]["description"] += "（说明升级）"
+        monkeypatch.setattr(
+            "agent_orchestrator.runtime.model_router.read_tool_schemas", lambda **kw: schemas
+        )
+        reopened = await _open(tmp_path, chat=_chat_script(["continued"]))
         try:
-            reply = await host.chat(
-                {"session_id": "knowledge", "text": "列知识", "idempotency_key": "knowledge"}
+            changed = reopened.chat_service._pool().profile
+            assert changed.profile_id == profile.profile_id
+            assert changed.context_snapshot() == profile.context_snapshot()
+            assert changed.context_snapshot()["schema"] == 2
+            assert "tool_names_hash" in changed.context_snapshot()
+            assert "tool_schema_hash" not in changed.context_snapshot()
+            _check_intent_contexts(config, changed)
+            again = await reopened.chat(
+                {"session_id": "stable", "text": "继续", "idempotency_key": "two"}
             )
-            assert reply["tool_calls"][0]["outcome"] != "succeeded"
-            assert any(
-                "unavailable" in str(m.content)
-                for r in script.asked
-                for m in r.messages
-                if str(m.role) == "tool"
+            assert again["state"] == "committed" and again["agent_id"] == result["agent_id"]
+        finally:
+            await reopened.close()
+
+    asyncio.run(case())
+
+
+def test_added_builtin_name_changes_identity_and_refuses_same_data_root(tmp_path, monkeypatch):
+    from agent_orchestrator.runtime.tool_gateway import read_tool_schemas
+
+    async def case():
+        first = await _open(tmp_path, chat=_chat_script(["first"]))
+        snapshot = first.chat_service._pool().profile.context_snapshot()
+        await first.close()
+        schemas = read_tool_schemas(large=True)
+        schemas["extra_builtin"] = {"type": "object", "properties": {}}
+        monkeypatch.setattr(
+            "agent_orchestrator.runtime.model_router.read_tool_schemas", lambda **kw: schemas
+        )
+        from agent_orchestrator.runtime.model_router import RuntimeProfile
+        from simple_harness.agents.context.budget import ContextPolicy
+
+        changed = RuntimeProfile(
+            "deepseek-native-600k-chat-v1",
+            ScriptedProvider(),
+            "agent-model",
+            context_policy=ContextPolicy(
+                max_input_tokens=614400,
+                output_reserve=131072,
+                max_tool_result_tokens=16384,
+                render_slack_tokens=0,
+            ),
+            tokenizer=FixtureWordCounter(),
+        )
+        assert changed.context_snapshot()["tool_names_hash"] != snapshot["tool_names_hash"]
+        with pytest.raises(Exception, match="context identity"):
+            await _open(tmp_path, chat=_chat_script(["unused"]))
+
+    asyncio.run(case())
+
+
+def test_chat_hides_knowledge_but_tasks_keep_it(tmp_path):
+    async def case():
+        host = await _open(tmp_path, chat=_chat_script(["done"]))
+        try:
+            assert not {"knowledge_list", "knowledge_read"} & set(
+                host.chat_service._registered_tools()
             )
+            assert {"knowledge_list", "knowledge_read"} <= set(host.policy.allowed_tools)
         finally:
             await host.close()
+
+    asyncio.run(case())
+
+
+def test_search_cannot_find_catalog_tool_outside_frozen_allowlist(tmp_path):
+    async def case():
+        script = _chat_script([("tool_search", {"query": "device_status"}), "done"])
+        host = await _open(tmp_path, chat=script, tools=[_device_tool([])])
+        try:
+            assert host.tool_catalog.search("main", "device_status")
+            reply = await host.chat(
+                {
+                    "session_id": "scope",
+                    "text": "找设备工具",
+                    "idempotency_key": "scope",
+                    "tools": ["tool_search", "tool_schema"],
+                }
+            )
+            assert reply["state"] == "committed"
+            import json
+
+            values = [
+                json.loads(m.content) for m in script.asked[-1].messages if str(m.role) == "tool"
+            ]
+            assert values
+            assert all("device_status" not in str(value) for value in values)
+        finally:
+            await host.close()
+
+    asyncio.run(case())
+
+
+def test_arbitrary_new_control_command_is_always_exposed(tmp_path, monkeypatch):
+    from agent_orchestrator.host.session_chat import COMMAND_SCHEMAS
+    from agent_orchestrator.host import Session
+
+    monkeypatch.setitem(
+        COMMAND_SCHEMAS,
+        "fresh_control",
+        {
+            "type": "object",
+            "description": "本轮新加的控制命令",
+            "properties": {},
+            "additionalProperties": False,
+        },
+    )
+
+    async def case():
+        script = _chat_script(["done"])
+        session = await Session.open(
+            tmp_path,
+            principal=Principal("u", "用户"),
+            counter=FixtureWordCounter(),
+            provider=ScriptedProvider(chat=script),
+            tools=[_device_tool([])],
+            require_acceptance=False,
+        )
+        try:
+            receipt = await session.send("你好", key="fresh")
+            assert receipt["state"] == "committed"
+            names = {spec.name for spec in script.asked[0].tools}
+            assert "fresh_control" in names
+            assert "device_status" not in names
+        finally:
+            await session.close()
 
     asyncio.run(case())

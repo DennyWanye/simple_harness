@@ -25,7 +25,7 @@ def frozen_context(*, max_input_tokens=32_768, max_total_tokens=None):
         "tool_result_preview_chars": 1024,
         "render_slack_tokens": 64,
     }
-    return {"schema": 1, "policy": policy, "fingerprint": "context-v1"}
+    return {"schema": 2, "policy": policy, "fingerprint": "context-v2"}
 
 
 def test_first_critic_floor_uses_frozen_effective_input_cap_and_actual_output_ceiling():

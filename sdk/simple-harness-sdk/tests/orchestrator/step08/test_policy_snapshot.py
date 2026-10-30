@@ -48,6 +48,7 @@ def test_s8_07_every_configuration_field_is_classified(tmp_path):
         "tool_call_tenant_id",
         "tool_call_principal_id",
         "control_commands",
+        "always_exposed_tools",
         "shared_provider_admission",
     }
 

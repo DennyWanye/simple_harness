@@ -6,6 +6,8 @@ from __future__ import annotations
 import asyncio
 import json
 
+import pytest
+
 from agent_orchestrator.host import DomainTool, HostSettings, OrchestrationHost, Principal
 from agent_orchestrator.host.offline import FixtureWordCounter, ScriptedProvider
 from simple_harness.agents.execution import TurnToolExposure
@@ -13,6 +15,9 @@ from simple_harness.contracts import RunId, thaw_json
 from simple_harness.providers import ProviderToolSpec
 
 RUN = RunId("exposure-test")
+ALWAYS_EXPOSED = frozenset(
+    {"tool_search", "tool_schema", "task_status", "session_history_read", "session_history_search"}
+)
 
 
 def _spec(name, description="test", **extra):
@@ -39,23 +44,24 @@ def _names(exposure):
 
 
 def test_loaded_schemas_survive_serialized_checkpoint_and_reset_next_turn():
-    exposure = TurnToolExposure(_specs(), turn_id="turn-1")
+    exposure = TurnToolExposure(_specs(), turn_id="turn-1", always_exposed=ALWAYS_EXPOSED)
     exposure.restore(RUN, None)
     assert "device_status" not in _names(exposure)
     exposure.observe_tool_result(RUN, "tool_schema", {"schemas": [{"name": "device_status"}]})
     checkpoint = json.loads(json.dumps(exposure.checkpoint(RUN)))
-    reopened = TurnToolExposure(_specs(), turn_id="turn-1")
+    reopened = TurnToolExposure(_specs(), turn_id="turn-1", always_exposed=ALWAYS_EXPOSED)
     reopened.restore(RUN, checkpoint)
     assert "device_status" in _names(reopened)
-    later = TurnToolExposure(_specs(), turn_id="turn-2")
+    later = TurnToolExposure(_specs(), turn_id="turn-2", always_exposed=ALWAYS_EXPOSED)
     later.restore(RUN, checkpoint)
     assert "device_status" not in _names(later)
 
 
 def test_unloaded_allowed_tools_keep_execution_policy_and_bad_schema_cannot_load():
-    exposure = TurnToolExposure(_specs(), turn_id="turn-1")
+    exposure = TurnToolExposure(_specs(), turn_id="turn-1", always_exposed=ALWAYS_EXPOSED)
     exposure.restore(RUN, None)
-    assert exposure.execution_policy(RUN, "device_status").capability_id
+    assert exposure.execution_policy(RUN, "device_status") is None
+    assert exposure.execution_policy(RUN, "not_allowed") is None
     exposure.observe_tool_result(RUN, "tool_schema", {"error": "not_found_or_forbidden"})
     exposure.observe_tool_result(RUN, "device_status", {"schemas": [{"name": "device_status"}]})
     exposure.observe_tool_result(RUN, "tool_schema", {"schemas": [{"name": "forbidden"}]})
@@ -159,7 +165,7 @@ def test_tool_search_false_sends_every_allowed_schema(tmp_path):
             reply = await host.chat({"session_id": "s", "text": "hello", "idempotency_key": "i"})
             assert reply["state"] == "committed", reply
             names = {t.name for t in script.requests[0].tools}
-            assert {"device_status", "workspace_read_file", "knowledge_list"} <= names
+            assert {"device_status", "workspace_read_file"} <= names
         finally:
             await host.close()
 
@@ -211,9 +217,8 @@ def test_inflight_turn_reopens_from_sqlite_with_same_loaded_tools(tmp_path):
     from simple_harness.runtime.consumer_adapter import ConsumerRuntimePolicies
     from simple_harness.tools import ToolResult
 
-    names = ("tool_search", "tool_schema", "device_status")
+    names = ("tool_search", "tool_schema", "device_status", "other_status")
     schemas = {name: thaw_json(_spec(name).parameters) for name in names}
-    schemas["tool_search"]["title"] = "tool-search:lazy"
     schemas["tool_schema"] = {
         "type": "object",
         "properties": {"names": {"type": "array", "items": {"type": "string"}}},
@@ -261,6 +266,7 @@ def test_inflight_turn_reopens_from_sqlite_with_same_loaded_tools(tmp_path):
             tool_executor=Executor(),
             tool_names=names,
             tool_schemas=schemas,
+            always_exposed_tools=frozenset({"tool_search", "tool_schema"}),
             model=MODEL,
             owner_id="exposure-owner",
             policies=policy,
@@ -283,6 +289,9 @@ def test_inflight_turn_reopens_from_sqlite_with_same_loaded_tools(tmp_path):
             checkpoint = thaw_json(runtime.uow.read_react_checkpoint(agent.run_id).checkpoint)
             assert checkpoint["tool_exposure_state"]["loaded_names"] == ["device_status"]
             assert agent.turn_state(receipt.turn_id) is AgentTurnState.RUNNING
+            before_names = tuple(tool.name for tool in interrupted.requests[-1].tools)
+            assert set(before_names) == {"tool_search", "tool_schema", "device_status"}
+            assert "other_status" not in before_names
         recovered = CountedProvider([("device_status", {}), "battery read"])
         async with build_agent_runtime(ports(recovered, NotStarted())) as runtime:
             agent = await runtime.open(agent_id)
@@ -291,15 +300,17 @@ def test_inflight_turn_reopens_from_sqlite_with_same_loaded_tools(tmp_path):
             result = await agent.wait_turn(receipt.turn_id, timeout=5)
             assert result.state is AgentTurnState.COMMITTED
             assert result.public_output.content == "battery read"
-            assert all(
-                "device_status" in {tool.name for tool in r.tools} for r in recovered.requests
-            )
+            assert recovered.requests
+            for request in recovered.requests:
+                after_names = tuple(tool.name for tool in request.tools)
+                assert after_names == before_names
+                assert "other_status" not in after_names
             assert agent.turn_snapshot(receipt.turn_id).seq == 1
 
     asyncio.run(case())
 
 
-def test_frozen_allowlist_without_meta_tools_keeps_its_schemas_visible(tmp_path):
+def test_frozen_allowlist_without_meta_tools_still_executes_unloaded_tool(tmp_path):
     async def case():
         seen = []
         script = _chat([("device_status", {}), "42"])
@@ -315,7 +326,7 @@ def test_frozen_allowlist_without_meta_tools_keeps_its_schemas_visible(tmp_path)
             )
             assert reply["state"] == "committed", reply
             assert seen == [{}]
-            assert {tool.name for tool in script.requests[0].tools} == {"device_status"}
+            assert "device_status" not in {tool.name for tool in script.requests[0].tools}
             assert all(
                 "tool_search" not in {tool.name for tool in r.tools} for r in script.requests
             )
@@ -323,3 +334,55 @@ def test_frozen_allowlist_without_meta_tools_keeps_its_schemas_visible(tmp_path)
             await host.close()
 
     asyncio.run(case())
+
+
+def test_explicit_always_exposed_set_supports_arbitrary_command_names():
+    specs = (*_specs(), _spec("application_cancel"))
+    exposure = TurnToolExposure(
+        specs,
+        turn_id="turn-1",
+        always_exposed=frozenset({"application_cancel", "tool_search", "tool_schema"}),
+    )
+    exposure.restore(RUN, None)
+    assert _names(exposure) == {"application_cancel", "tool_search", "tool_schema"}
+
+
+def test_none_execution_policy_keeps_existing_tool_route_behavior():
+    from simple_harness.contracts import CallId
+    from simple_harness.execution.context_authority import ContextRouteState
+    from simple_harness.providers import ProviderToolCall
+    from simple_harness.runtime.drivers.react_loop import _preflight_tool_batch
+
+    class Exposure:
+        def execution_policy(self, run_id, name):
+            return None
+
+    policies, rejections = _preflight_tool_batch(
+        (ProviderToolCall(CallId("call"), "device_status", {}),),
+        run_id=RUN,
+        tool_exposure=Exposure(),
+        route_state=ContextRouteState.UNROUTED,
+        authority_required=False,
+    )
+    assert policies == {}
+    assert rejections == {}
+
+
+def test_none_execution_policy_cannot_bypass_required_context_authority():
+    from simple_harness.contracts import CallId
+    from simple_harness.execution.context_authority import ContextRouteState
+    from simple_harness.providers import ProviderToolCall
+    from simple_harness.runtime.drivers.react_loop import _preflight_tool_batch
+
+    class Exposure:
+        def execution_policy(self, run_id, name):
+            return None
+
+    with pytest.raises(RuntimeError, match="requires a private catalog execution policy"):
+        _preflight_tool_batch(
+            (ProviderToolCall(CallId("call"), "device_status", {}),),
+            run_id=RUN,
+            tool_exposure=Exposure(),
+            route_state=ContextRouteState.UNROUTED,
+            authority_required=True,
+        )
