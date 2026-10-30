@@ -16,7 +16,7 @@
 - [x] 持久受理、串行队列、子 directive 唯一委派。
 - [x] 默认自动汇总、合并窗口、策略拒绝/暂缓、预算与恢复。
 - [x] 语音播报来源与实际应用分离，不并行文字回合。
-- [ ] 定向回归、格式检查、独立审阅、绿色提交与提交态核验。
+- [x] 定向回归、格式检查、独立审阅、绿色提交与提交态核验。
 
 ## 预先冻结的验收映射
 
@@ -113,3 +113,54 @@
 
 `8f5cc4f94` 的完整指定回归 **327 passed，282.06 秒**（`regression-before-budget-event.txt`）。最后核对发现文字每轮调用额度用尽时执行层报告 `error_code=react_max_turns_exceeded`，次数限制与等待已经生效，但缺专用 `continuation_budget_exhausted` 事件。新增断言先红 **1 failed，3.53 秒**（`model-budget-event-red.txt`）；补读取执行层真实错误字段，在失败同事务发专用预算事件并保留可见等待原因，不改变执行上限、调度或授权。
 最终源提交后按完全相同的 327 项分三组并行复验（29 / 32 / 266），仍然仅任务书指定八个文件，不跑仓库全量。
+
+
+## 最终终验与 DoD
+
+最终被测源码提交：`1e01f599d`；分支 `sol/D-continuation`，工作树 `/Users/taiwan/PROJECTS/SimplaHarness/simple_harness-sol-D`，基线 `b5cf293f9`。
+预算补漏修后专用真宿主反例 **1 passed / 29 deselected，3.77 秒**；独立 reviewer 只读复核该小 diff，确认不改变执行上限、调度或授权，无新增 P0/P1。
+
+所有以下命令均在 `sdk/simple-harness-sdk`，从已提交的同一源码 HEAD 执行；真宿主前清单已重生成，三个测试进程只共享源码、使用各自隔离数据根：
+
+```sh
+uv run --frozen python -m pytest tests/orchestrator/host/test_session.py -q -p no:cacheprovider --tb=short
+uv run --frozen python -m pytest tests/orchestrator/host/test_session_replay.py -q -p no:cacheprovider --tb=short
+uv run --frozen python -m pytest tests/orchestrator/host/test_session_async.py tests/orchestrator/host/test_continuation.py tests/orchestrator/host/test_session_tree.py tests/orchestrator/host/test_host_sessions.py tests/orchestrator/host/test_realtime_bridge.py tests/test_public_api.py -q -p no:cacheprovider --tb=short
+```
+
+| 组 | 通过数 | 用时 | 原始输出与 SHA-256 |
+|---|---:|---:|---|
+| session | 29 | 80.7 秒 | `.local-test-evidence/2026-10-31/sol-D/final-session.txt`；`a9c1aa2519bccce331a1ab1ef2b5c379602b920b86ad925358b4f6a3517719d4` |
+| replay | 32 | 103.14 秒 | `.local-test-evidence/2026-10-31/sol-D/final-replay.txt`；`2405efbfd80c889ba11e2a407886e235689c0d6475c773a9cea111944313b930` |
+| remaining | 266 | 109.58 秒 | `.local-test-evidence/2026-10-31/sol-D/final-remaining.txt`；`8ced710140d3b97f6d6a935750f8058b3003d9e30a4746edc3202646e50fbfc6` |
+
+**合计 327 passed / 0 failed / 0 skipped，三组退出码全部 0。** 八文件用例清单：新增异步 11、续办 30、原父子树 41、原会话 29、原重放 32、原宿主会话 15、原语音 61、公开 API 108。没有扩大到仓库全量。
+
+13 个改动 Python 文件的 `uv run --frozen ruff check <这些文件>` 与 `uv run --frozen ruff format --check <这些文件>` 全绿（All checks passed / 13 files already formatted）。文件全集为上述两份新测试、现有 test_session_tree.py、10 份源码；可用本分支相对基线的 `.py` 文件列表复跑。
+
+AST 边界审核通过：session_chat.py 仅 SESSION_INSTRUCTIONS 与 _registered_tools 改变；realtime_bridge.py 仅 _commit_announcement 与 _schedule 改变。COMMAND_SCHEMAS、池编号、工具说明、任务层、工具层与连接器未改。
+
+### 验收兑现
+
+| 条款 | 决定性自动化证据 | 结果 |
+|---|---|---|
+| I3 / 4.1 | 独立 SQLite 连接读取受理事实、真宿主持有 provider 时受理返回、重开不要求重新提交 | PASS |
+| I4 | 主及两个子各自进入阻塞回合；同会话异步与同步混用保持顺序 | PASS |
+| 4.2 | directive 等在途 Mission 终态、唯一 source_input_id、重复命令不再创建 Mission | PASS |
+| I6 | 结果正文写批准/删除/再建任务；真宿主工具调用与目录搜索均受限；后续用户仍可正常委派；语音草稿重启不作为用户指令 | PASS |
+| I11 | 合并窗口与跨重启窗口、同子第二次结果、乱序重复镜像稳定排序摘要、用户已消费整批/部分集合不重复应用 | PASS |
+| I12 | 持锁语音走播报、ASR 回显隔离、实播后才应用、工具 followup 实播、重连不丢/不假报应用 | PASS |
+| 预算 | 轮次跨重启、文字每轮调用上限及专用事件、语音既有 admission 上限收窄、空闲/拒绝/用尽不新增调用 | PASS |
+| 崩溃 | 三个真实进程退出点 + 三个账本边界 + announcement 准备窗口 + 更早同步输入恢复 | PASS |
+| 策略 | 默认 enqueue，hold/deny 原因，异常降级与真实 5 秒截止时间 | PASS |
+| 完整消费者路径 | 自然用户输入经公开 Session.send(wait=False) → create_child → delegate_task → 真 Mission COMPLETED → 父自动汇总，无内部补驱动 | PASS |
+
+测试模型为任务书指定 ScriptedProvider，语音使用 Audio/Client 替身；不把这些结果表述为远端模型或手机实机验收。原始证据只在 ignored 本地目录，未提交、上传。汇总索引 `.local-test-evidence/2026-10-31/sol-D/final-summary.json`。
+
+最终清单：852 项源码逐个 SHA-256 与当前源码匹配；生成身份 `299d184df52ecad0dd24bee4b1c5fc4f963a943944004f3608b3507f51a0599a`，清单 SHA-256 `5046108c72352b39bffa25f9deab834b535dca1863ec2a13339fc6f06b0afb1e`。保存本地原件后恢复生成文件，不提交清单；此构建清单仍是 NOT_RUN，不宣称部署或发版通过。
+
+完成判定依据本记录的冻结条款、测试和 DoD，无机器 receipt。源码交付完成；没有未关闭 P0/P1。任务书 E、发版、真实远端模型/手机复验以及车道外架构文档同步未做，后者依用户明确车道限制交合并审核人处理。
+
+提交链：`76146bf79` 红测试 → `8adc419d6` 实现 → `8209a37f7` 守旧前缀修复 → `8f5cc4f94` 普通播报/重连修复 → `1e01f599d` 预算事件修复 → 最后仅记录提交。未推送、未合并、未修改共享 main；保留工作树供审核。
+
+VERDICT: SHIPPED — 任务书 D 指定源码车道与 327 项定向验证（仅本地源码交付，未发版） — 2026-10-31 — 1e01f599d
