@@ -190,3 +190,60 @@ uv run --frozen python - < ../../.local-test-evidence/2026-10-31/sol-E/e2/dispat
 提交`a78e4082a`在源码清单0830c25e…下，完整19指定文件加直接受影响的test_session_finish.py：**550 passed in 503.35s，exit 0**（acceptance.log/xml）。指定八文件已全部转绿，未再保留E轮35项冲突。
 
 同步独立审查又锁定一个close交界：根已关闭但正在等待泵取消清理、子尚未关闭时，子授权返回可能被误记failed/session_closed。新增queued/running两种Event夹持测试，先红2项，修后2项绿：收到本树session_closed只放手、保留原排队行，不写业务失败，重开同input_id只执行一次。该补丁后将重新生成清单，并行按相同完整范围复验（没有缩减文件或场景）。
+
+### E2 最终提交态复验
+
+被测源码HEAD：`6df6d9ae0`（父提交`a78e4082a`）。独立复核确认：最后关闭补丁仅将本地session_closed作为停止执行、保留责任处理；CancelledError仍独立抛出，授权拒绝/撤销、取消、版本、预算和普通异常仍走原失败路径，没有笼统吞错。
+
+源码修改后重新生成855项清单：deployment_id `60b657eda1a72c21846bfe9f548676a50359ac3f9368340bda7206f23ac1f902`。再把相同完整范围分成四个独立pytest进程并行执行，均使用：
+
+```sh
+uv run --frozen --extra realtime python -m pytest <分组内文件> -q -p no:cacheprovider --junitxml=../../.local-test-evidence/2026-10-31/sol-E/e2/<组名>.xml
+```
+
+下表除显式路径外，文件均位于`tests/orchestrator/host/`；日志为`e2/<组名>.log`。
+
+| 组名 | 文件 | 通过 | 耗时 |
+|---|---|---:|---:|
+| final_a | test_authorization_port.py、test_cancel_scope.py、test_goals.py、test_owner_and_close.py、test_session_async.py、test_host_sessions.py | 158 | 71.75s |
+| final_b | test_session_tree.py、test_continuation.py、test_session.py、test_host_connectors.py、test_host_recovery.py、test_chat.py、tests/test_public_api.py、tests/orchestrator/step08/test_policy_snapshot.py | 258 | 181.51s |
+| final_c | test_session_replay.py、test_realtime_bridge.py、test_chat_cancel_recovery.py | 98 | 138.10s |
+| final_d | test_tool_catalog.py、test_orchestration_host.py、test_session_finish.py | 38 | 164.28s |
+
+**合计552 passed /0 failed /0 errors，四组均exit 0。** JUnit按`classname+name`去重核验552个独立case，原550个case一个未少，只增加queued/running两个根关闭窗口case，没有缩减验证范围。
+
+- E2明确指定19个文件：**536项全绿**。
+- 必要调用方test_session_finish.py：**16项全绿**。
+- E原指定八文件：**290项全绿**（41+47+29+32+15+11+4+111）。原35项失败已经全部消除，未批量修改其close清理语义。
+- 四新增合同测试文件：**132项全绿**（授权58、取消24、Goal27、owner/关闭23）。
+
+三项变异在最终源码上重新运行，仍全部MUT_KILLED：running屏障、派发前撤销核验、child_send受理deny。变异只发生于独立进程内，源码SHA-256前后不变，最终日志为running-mutation-final.log、dispatch-mutation-final.log。
+
+22个其余改动Python文件`ruff check`与`ruff format --check`全绿，`git diff --check`全绿。网关两处获准修改区域的format检查（600-615、771-775）均exit 0。**网关整文件静态检查仍不是全绿**：基线和最终同为18条lint诊断、整文件format均exit 1；诊断code+message计数逐项相同，没有新增。严格遵守E2§2.1仅两处调用口车道，未为消除既有E402/E501/F811去改周边导入/重复方法/工具说明。故功能和全部测试已完成，但§2b“所有改动文件整文件Ruff全绿”尚有这一处存量限制，不能冒称该门通过。
+
+最终本地证据SHA-256（均在ignored目录、不提交原件）：
+
+| 文件 | SHA-256 |
+|---|---|
+| final_a.log | `6914af34f35c48bee0f86b4d37a03c8feb64386df977edd0f6b01e9a81b45993` |
+| final_a.xml | `80a7cae2a11951b49b2b4748f113654e3e33a18d018201357f019ebbbeeeba49` |
+| final_b.log | `3f39d1f96ad040c4b89f7b3655ddc10aa189d09cd23a31e22ff3eaf1deb28462` |
+| final_b.xml | `b25a66c4df12080acf800873378142cf707e45f8ee33629c249ae1b5428cf87f` |
+| final_c.log | `cbd17030e18ebd7004a4afb0d792009ad11427e60cd01fc2c18616cf44b9d66c` |
+| final_c.xml | `d542e5d7b225005b4f53b28a66682813071b6c46a18dea820129d22a176ccdcf` |
+| final_d.log | `211248009f893bd875f3c1b9ee3f20c6d6b73c42a40b3524106a820ae8f8cbac` |
+| final_d.xml | `1710a24ba3d674b92e22dc30e34fd0946bd31464e7a4c4e46be41342f75cd813` |
+| manifest-final.json | `39ca1c14721ec8c298717548be416901b1d363f796c0817f6f52d5c292ac78e8` |
+| final-ruff.log | `163347d5c4af094ed2cab2921fb46538276aa020d2f1dcd72dd069bc0b947f07` |
+| gateway-final-ruff.json | `136d08380c422b477b4b38725c9fa9509ab035172a271c99fb65f4dd687b307b` |
+| gateway-final-ranges-format.log | `ac3f1cb44b42509ccb759c9721bcf533b69e17bca1a13a7939f914cc4cf3e7d9` |
+| running-mutation-final.log | `3f88c746885e4f5ad1ab5848c7d8a4297a896624054ea598d589972402a3fe37` |
+| dispatch-mutation-final.log | `6efd6677dc5b5d55f188379b41d8babede477f3ba82977a746d2e2fafee2f290` |
+| root-close-race-red.log | `e6605e8d01b47ad3a3bffbfb01775b6eaa6df1c6766b8107cf2896ef31f6180d` |
+| root-close-race-green.log | `e310cdd63a8c70c913b47759eb9ee7c1db83be874db234095ac21000c3912e0d` |
+
+E2提交：`a78e4082a`（异步/close/屏障补修）、`6df6d9ae0`（根关闭窗口），最终记录另提交。生成清单已保留本地副本并还原工作树，未提交。未推送、未合并；没有增加命令、改池编号、改任务层或连接器协议。取消模块拆分按任务书延期，本轮不做。
+
+自我批评：授权异步化必须连同来源/Goal冻结以及关闭窗口一起验证；仅给函数加await不足以保持持久责任。新增Event夹持和定向变异提供决定性证据，最终完整复验采用独立分组减少等待，没有牺牲case范围。既有整文件静态检查问题与窄车道约束冲突，已明确记录而未静默抑制诊断。
+
+VERDICT: BLOCKED — E2功能及552项测试全部通过；仅tool_gateway.py存量整文件Ruff/format未绿，未越两处修改车道 — 2026-10-31 — 6df6d9ae0
