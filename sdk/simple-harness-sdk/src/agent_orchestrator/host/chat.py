@@ -31,6 +31,7 @@ from simple_harness.agents.context.budget import ContextPolicy
 from simple_harness.agents.contracts import AgentTurnState
 from simple_harness.agents.runtime import agent_id_for
 from simple_harness.contracts import thaw_json
+from simple_harness.contracts.identity import RunId
 
 from ..contracts import Budget
 from ..deployment.native_pools import NATIVE_OUTPUT_TOKENS, calibrated, native_profile_id
@@ -60,7 +61,7 @@ NUDGE_TEXT = "请先用工具查，再根据查到的结果回答。"
 _POLL_SECONDS = 0.05
 _POLL_MAX_SECONDS = 0.5
 _CANCEL_GRACE_SECONDS = 30.0
-_MAX_GENERATIONS = 1000  # 一个会话最多放弃多少个 Agent（每次宿主在回合中途被关才会多一个）
+_MAX_GENERATIONS = 1000  # 一个会话最多放弃多少个 Agent（中途关宿主、停止在途回答各会多一个）
 
 
 class ChatRequestError(RuntimeError):
@@ -106,6 +107,7 @@ class ChatService:
         self._open_turns: dict[str, tuple[Any, str]] = {}
         self._session_locks: dict[str, asyncio.Lock] = {}
         self._runs: dict[str, str] = {}  # 运行号 → 会话号（输出流标作用域用）
+        self._replaced: dict[str, str] = {}  # 会话号 → 这一句为什么换了执行者（没换就没有）
 
     # ---- 生命周期 ----------------------------------------------------------------------------
 
@@ -310,8 +312,9 @@ class ChatService:
             "turn_id": result.turn_id,
             "agent_id": agent.agent_id,
             "state": str(result.state),
-            # 这一句换了新 Agent（上一个卡在结果不明的模型调用上）：之前的对话它看不到了
+            # 这一句换了新 Agent：之前的对话它看不到了；原因给宿主诊断用
             "history_reset": history_reset,
+            "executor_replaced_reason": self._replaced.get(session_id) if history_reset else None,
             "text": output.content
             if output is not None and isinstance(output.content, str)
             else "",
@@ -382,14 +385,19 @@ class ChatService:
         runtime = self._pool().runtime
         generation, binding = self._session_generation(runtime, session_id)
         reset = False
-        if binding is not None and await self._given_up(runtime, binding):
-            # 上次宿主关掉时这个 Agent 有一次模型调用在线路上、结果丢了：内核如实记"结果不明"，
-            # 这一回合永远等不到答案（重放会再计费一次，不做）。和任务池一样放弃这个执行者，
-            # 这个会话换一个新 Agent 接着聊；之前的对话历史随旧 Agent 留在执行库里。
+        self._replaced.pop(session_id, None)
+        reason = None if binding is None else await self._given_up(runtime, binding)
+        if reason is not None:
+            # 这个执行者不能再接着用（关了、卡在结果不明的调用上、或账上留着一笔不明费用）。
+            # 和任务池一样放弃它，会话换一个新 Agent 接着聊；旧 Agent 和它的账原样留在执行库里，
+            # 不清零、不重放。之前的对话历史随旧 Agent 留下，新 Agent 看不到（回执 history_reset）。
             generation += 1
             binding = None
             reset = True
-            logger.warning("chat session %s: agent given up, generation %d", session_id, generation)
+            self._replaced[session_id] = reason
+            logger.warning(
+                "chat session %s: agent given up (%s), generation %d", session_id, reason, generation
+            )
         creation_key = self._creation_key(session_id, generation)
         agent_id = agent_id_for(OWNER_SCOPE, creation_key)
         if binding is not None:
@@ -448,17 +456,27 @@ class ChatService:
         return generation, binding
 
     @staticmethod
-    async def _given_up(runtime: Any, binding: Any) -> bool:
-        """这个 Agent 还能不能接着用：已关闭，或开着的回合卡在结果不明的模型调用上，就不能。"""
+    async def _given_up(runtime: Any, binding: Any) -> str | None:
+        """这个 Agent 为什么不能再接着用；还能用就返回 None。
+
+        三种情况：已关闭；开着的回合卡在结果不明的模型调用上；账上有一笔不明费用。
+        第三种来自用户在请求已交给线路时点"停止回答"：那次调用按"可以多算不可以少算"记成不明，
+        而执行层只要预算里有不明费用，下一次输入在调模型前就按超预算终止。继续复用它，
+        这个会话就永远不能再聊（2026-10-30 真机缺陷）。所以换代，旧账留在旧执行者上。"""
 
         if binding.lifecycle != "open":
-            return True
+            return "executor_closed"
         turn = runtime.uow.read_open_agent_turn(binding.run_id)
-        if turn is None:
-            return False
-        agent = await runtime.open(binding.agent_id)
-        snapshot = agent.turn_snapshot(turn.turn_id)
-        return bool(snapshot.blocked) and (snapshot.blocker or {}).get("kind") == "provider"
+        if turn is not None:
+            agent = await runtime.open(binding.agent_id)
+            snapshot = agent.turn_snapshot(turn.turn_id)
+            if bool(snapshot.blocked) and (snapshot.blocker or {}).get("kind") == "provider":
+                return "provider_result_unknown"
+        if runtime.uow.read_provider_budget(RunId(binding.run_id)).has_unknown_charge:
+            # 开着的回合也一样：宿主中途关掉后那次在途调用被结成"不明"，回合停在原地再也走不动，
+            # 执行层也不会再让它调模型。
+            return "unknown_charge_in_open_turn" if turn is not None else "unknown_charge_after_cancel"
+        return None
 
     def _bind(self, pool: Any, agent: Any, session_id: str, allowed: tuple[str, ...]) -> None:
         workspace_id = f"chat-{session_id}"

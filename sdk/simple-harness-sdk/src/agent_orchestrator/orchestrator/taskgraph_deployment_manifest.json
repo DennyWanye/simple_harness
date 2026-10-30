@@ -1,6 +1,11 @@
 {
-  "acceptance_evidence": null,
-  "deployment_id": "535f01a3b7a1b72aa6648c0b1e374e2cb44738083ba65634e42fada293007dfd",
+  "acceptance_evidence": {
+    "gate_run_at": "2026-10-30T17:46:20+00:00",
+    "gate_sha256": "5aa1b22b799ad05b139499546ca2650472786189ba41f6bbb1d225814dc86cf7",
+    "gate_status": "PASS",
+    "source_files_sha256": "91731d0778f471b1e6ea3c98d6ed4772b5e2c2080262c6974f8926a465f12929"
+  },
+  "deployment_id": "af919b3948a060b9dfaa20484cd475f26ea85302a2267e1ab4c21aa5634de253",
   "schema": "taskgraph-htn-wiring-derivation-v1",
   "source_files": {
     "agent_orchestrator/__init__.py": "eb50152258b356bc7866e55823fc45c7209cb6150efe205dd03c40c33beedbc2",
@@ -162,7 +167,7 @@
     "agent_orchestrator/graph/terminal.py": "267a54cdef4567712c3ee9992396d67d5cc50d900f285ed4626240ceeec8196e",
     "agent_orchestrator/graph/view_contracts.py": "105cee92bc3ecaa21c6db44e8a32ac086199d98037540fa13d781b724560830f",
     "agent_orchestrator/host/__init__.py": "971d33de9c61c91c32f292fa33285d7dc89a4a72d3a960e613fbe0d2a8365b3f",
-    "agent_orchestrator/host/chat.py": "3777c6306e6dcc05a299e034a198c56d5544717e34fbd39b4871b3b097f68d4e",
+    "agent_orchestrator/host/chat.py": "b45e2bd53abd269d243220ee38988719cc40649033efe44640b1b739734c4950",
     "agent_orchestrator/host/delegation.py": "81971434cbe24688545a6671e7df2477ee3934a42ff6f97a0945bba6a0c24ad6",
     "agent_orchestrator/host/embedding.py": "ac37172e30842aec43c0af0ac81a4a7b35094fadda0c5fcae8f8efddcef22d48",
     "agent_orchestrator/host/host.py": "c903db19eef808c26cbba0c425554a815a1a420ee90068ecce5a04bb3700ff70",
@@ -549,7 +554,7 @@
     "agent_orchestrator/verification/scoped_acceptance.py": "02db198cfd02453f3f088bee948e6c8e57f164b304d075067ab4bbdcc6cc9d74",
     "agent_orchestrator/verification/scoped_composition.py": "faad4ea026a4ba07946e70c86145db477dad42c9091d066f27f37548d4c76780",
     "agent_orchestrator/verification/verifier_router.py": "a6ec5744f3c30d383a01ee3d724186c8cd56593091c7ac58e8b4bc9f49a068bd",
-    "agent_orchestrator/version.py": "e4e1f451222fcc31a0c5e9a5ecc56f2e3e281831626ad463283197db40866e0a",
+    "agent_orchestrator/version.py": "733cf0496caa726473864cadf97e5da8d90a6c1d5327e28ae76c2186f76471ab",
     "simple_harness/__init__.py": "2f24cb8a8aa15852ef84f0f51c89f1dd9a98284d970e2f3f05508927daf52c11",
     "simple_harness/agents/__init__.py": "aefea08f7f250426246cc94e677630de2926a82c68b64c659ddd3abb775c3686",
     "simple_harness/agents/arp/__init__.py": "9f68be0f87b2fa155f7980bbc9be19dacc008b2f3ec1268b1f36f1ade42d21cf",
@@ -818,7 +823,7 @@
     "simple_harness/tools/runtime_catalog.py": "66622237882dafc52ee6df6d2e8058337a874afe1a98d0cd8a17b48c34f59010",
     "simple_harness/tools/schema.py": "01e2283c8213a9b1cfd3550cfa2c9aa72e41f5903b2a02fe3b8200adaa3b45a3",
     "simple_harness/tools/sidecar.py": "78a7335957d45fc1f202b68829c7cba5c1e9bb98e77b559634b8fba09dacf90d",
-    "simple_harness/version.py": "664b10922aa27172b50c85eb42d7ae9b4758f7d7c16fd263822975ff2d9bb264",
+    "simple_harness/version.py": "e330c1e4b7713272b08bc568b81ecf0a5bab1f55a0a588197cf8d2e883cc07ad",
     "simple_harness/workflow/__init__.py": "2705ed448307b1cb05369b8ffa4a46ca70019e1b722665a711b594b30d520003",
     "simple_harness/workflow/checkpoint.py": "00612d57d0bda0146f9a38d59d3e0278decb6e2c91f7f096bfc56d6ab2d85c96",
     "simple_harness/workflow/compiler.py": "a5557881c05bf5869509f15b818a23058f65378fd080a299d28522d6ae9366b6",
@@ -853,7 +858,7 @@
     "simple_harness/workflows/personal_v1/ports.py": "1e5ec7df071b3ab19729f0768811fcc5544fd6a89421b4b34f7f5dde28ead1de",
     "simple_harness/workflows/personal_v1/selection.py": "c65c5e41abebfacc359bff6fe79f39b3cd87f0ff2739e2b398215ccd9dde033f"
   },
-  "taskgraph_acceptance": "NOT_RUN",
+  "taskgraph_acceptance": "VALIDATED",
   "upstream": {
     "business_replay": "CONSISTENT",
     "business_replay_receipt_sha256": "ba06c71d6123c2726041d11fe385cfec01cb57bef29ff9b22f6d9551cda05887",

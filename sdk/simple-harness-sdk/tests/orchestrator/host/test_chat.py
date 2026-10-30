@@ -223,13 +223,13 @@ def test_chat_pool_is_separate_from_mission_pools(tmp_path):
     _run(case())
 
 
-def test_cancel_takes_effect_before_the_next_model_call(tmp_path):
-    """内核只在两次模型调用之间看取消意图：正在线路上的那次调用跑完（并计费），之后不再调模型。
-    这里扣住第一次调用（它回一个工具调用）；取消后放行，工具跑完、第二次调用不再发，回合按失败收场。"""
+def test_cancel_interrupts_the_in_flight_model_call_and_the_session_continues(tmp_path):
+    """取消会打断线路上的那次模型调用：它的费用记"不明"（可以多算不可以少算，不清零、不重放），
+    回合按失败收场、不再调模型；这个会话的下一句换一代执行者接着聊（旧执行者留着不明账）。"""
 
     async def case():
         seen: list[dict[str, Any]] = []
-        provider = ScriptedProvider(chat=_chat_script([("device_status", {}), "不该到这里"]))
+        provider = ScriptedProvider(chat=_chat_script(["之后还能聊。"]))
         provider.held.add("chat")
         host = await OrchestrationHost.open(
             tmp_path / "host",
@@ -246,14 +246,17 @@ def test_cancel_takes_effect_before_the_next_model_call(tmp_path):
             )
             await asyncio.wait_for(provider.entered.wait(), timeout=30)
             cancelled = await host.chat_cancel({"session_id": "s6"})
-            assert cancelled["cancelled"] is True and cancelled["state"] == "pending"
-            provider.release.set()
+            assert cancelled["cancelled"] is True and cancelled["state"] == "cancelled"
             reply = await asyncio.wait_for(turn, timeout=60)
             assert reply["state"] == "failed" and reply["error"], reply
-            assert reply["model_calls"] == 1 and reply["usage"]["unknown"] is False
+            assert reply["usage"]["unknown"] is True and seen == []
             # 没有在跑的回合时：如实说没有
             idle = await host.chat_cancel({"session_id": "s6"})
             assert idle["cancelled"] is False and idle["reason"] == "no_open_turn"
+            provider.held.clear()
+            again = await host.chat({"session_id": "s6", "text": "你好", "idempotency_key": "s6-2"})
+            assert again["state"] == "committed" and again["history_reset"] is True
+            assert again["executor_replaced_reason"] == "unknown_charge_after_cancel"
         finally:
             await host.close()
 
@@ -362,8 +365,9 @@ def test_closing_the_host_mid_turn_settles_and_the_session_survives(tmp_path):
             )
             assert reply["state"] == "committed" and reply["text"] == "重开后的答案", reply
             assert reply["model_calls"] == 1
-            # 上一个 Agent 卡在结果不明的模型调用上，被放弃；这句换了新 Agent，如实标出
+            # 上一个 Agent 的在途调用被结成"不明费用"、回合停在原地，被放弃；这句换了新 Agent，如实标出
             assert reply["history_reset"] is True
+            assert reply["executor_replaced_reason"] == "unknown_charge_in_open_turn"
             third = await asyncio.wait_for(
                 host2.chat({"session_id": "s", "text": "再问一次", "idempotency_key": "k3"}), 90
             )

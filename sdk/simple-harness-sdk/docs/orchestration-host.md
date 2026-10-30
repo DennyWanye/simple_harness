@@ -118,7 +118,8 @@ reply = await host.chat({
 # reply = {"text", "state": "committed"|"failed", "error", "turn_id", "agent_id", "session_id",
 #          "tool_calls": [{"tool", "call_id", "outcome"}], "model_calls", "model",
 #          "usage": {"input_tokens", "output_tokens", "unknown"}, "nudged", "tool_not_used",
-#          "history_reset"（见下）, "total_ms", "first_output_ms"（给了 on_delta 才有，见 §2c）}
+#          "history_reset"（见下）, "executor_replaced_reason"（换了执行者才有值，见下）,
+#          "total_ms", "first_output_ms"（给了 on_delta 才有，见 §2c）}
 await host.chat_cancel({"session_id": "chat-1"})   # 取消这个会话正在跑的回合
 host.chat_history("chat-1", limit=50)              # 台账 chat-turns.jsonl 里这个会话的回合
 ```
@@ -130,7 +131,8 @@ host.chat_history("chat-1", limit=50)              # 台账 chat-turns.jsonl 里
 | 上限 | `HostSettings.chat_max_model_calls`（默认 8）、`chat_max_tool_calls`（默认 8）、`chat_turn_seconds`（默认 180）；到了上限这一回合按失败返回 |
 | 预算 | 每回合先在全局月账上预留"模型调用上限 ×（窗口 + 输出上限）"，结束按模型报告的真实用量结清；报告缺失的调用按预留上限结清；月配额不够直接拒（`budget_exhausted`），不调模型 |
 | 记录 | SDK 执行库里有完整的模型调用与工具记录；宿主另记 `chat-turns.jsonl` |
-| 宿主中途关掉 | 在途回合的预留按上限结清（启动时也会把遗留的结清）；那次模型调用结果丢了的 Agent 不能再用（内核如实记"结果不明"，不重放），这个会话换一个新 Agent 接着聊，那一句回执 `history_reset=true`，之前的对话它看不到 |
+| 宿主中途关掉 | 在途回合的预留按上限结清（启动时也会把遗留的结清）；那次模型调用结果丢了的 Agent 不能再用（内核如实记"结果不明"，不重放），这个会话换一个新 Agent 接着聊，那一句回执 `history_reset=true`、`executor_replaced_reason="provider_result_unknown"`，之前的对话它看不到 |
+| 用户停止回答 | `chat_cancel` / `session.interrupt()` 只停当前回合。请求已交给线路才停的，那次调用的费用记"不明"（可以多算不可以少算，不清零、不重放）；执行层不允许带不明费用的执行者再调模型，所以这个会话的下一句换一个新 Agent 接着聊，回执 `history_reset=true`、`executor_replaced_reason="unknown_charge_after_cancel"`。旧 Agent 和它的账原样留在执行库里。同一句旧 key 重试返回原来的失败回执，不再发线路。在途的后台任务不受影响 |
 | 用量 | 线路报 0/0 或没报的调用记"未知"，按预留上限结清（可以多算不可以少算） |
 | 不做 | 聊天里不做审阅——要把关的事走任务；应用自己保存界面上的对话 |
 
