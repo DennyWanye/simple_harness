@@ -1,3 +1,12 @@
+最后更新：2026-10-31 凌晨（任务书 A 合并到 main：主会话统筹子会话第一块；未发版）。
+合并提交 `3126aafaa`（分支 `sol/A-session-tree`，gpt-6.1-sol 实现，审核补修一处）。**当前源码链路**：`Session` 新增父子关系（深度 1，子会话号 `<父>_c_<键>`，关系行在父账本、`meta.parent` 在子账本，子会话只能经父打开）、
+命令幂等回执（`commands` 命名空间：同号同参返原回执、异参 `idempotency_conflict`）、`create_child / children / child / child_send / queued_inputs / command_receipt / capabilities`；
+`delegate_task` 加 `child_key` 后委派行写在子账本，子账本的"一个在途"即每工作会话一个在途，父回合槽位冻结目标（`delegation_routes` / `delegation_destinations`）；子结果镜像进父 inbox（同 `event_id`，`source=child_result`），父下一句照旧附成资料，只有人在父处 `ack`；
+`child_send` 只登记排队输入（`queued_inputs`，事件 `input_accepted`），**消费在任务书 D**，D 合并前不发版。模型可见命令加 `create_child / child_send / child_status`，命令号按"回合 + 命令种类 + 调用槽位"派生（换执行者重放不重复登记）。
+会话配置版本 2→3（旧库报 `incompatible_store_version`，不迁移）；聊天池编号 `chat-v2-c1-`→`chat-v3-c2-`（唯一池身份变更，旧会话起不来，开发期口径）；`SessionError` 加 `retryable / safe_message / public()` 与合同错误码表 `ERROR_CODES`。
+验证：新测试文件对基线源码 40 条全红；合并后四个会话测试文件 117 通过 + public-api 105 通过（共 222）（见下方审核记录）；两处变异（命令异参冲突、委派目标换子）均被捕获；两个 opus 子代理分别按规范与任务书审阅，阻断级一条（换代后命令号不稳）已补修。部署清单已重生成（NOT_RUN，发版门未跑）。
+边界：未发版、未真实模型联测；Goal、自动续办、授权回调、统一并发门、工具层在后续任务书 B～F。计划与审核记录见 [plans/2026-10-30-agentos-main-session-contract/](../plans/2026-10-30-agentos-main-session-contract/)（《计划-长期主会话统筹子会话-含F1修复-2026-10-30.md》《审核记录-任务书A-2026-10-31.md》）。下文保留先前状态作为历史记录。
+
 最后更新：2026-10-30 14:12:46 +08:00（SDK opt.222 本地发版及 Host 钉版完成）。
 AIPhone P1 同键重放修复经 Opus 独立只读审阅 PASS（2bdc91e4b）后发布；SDK `dd09537dc`，
 Host `003ba129e`，正式安装 `0.13.0.dev20260925+opt.222`，部署清单 VALIDATED，848 项来源与包含清单的 849 项源码／wheel／安装一致。

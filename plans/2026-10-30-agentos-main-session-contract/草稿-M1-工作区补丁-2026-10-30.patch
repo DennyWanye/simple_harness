@@ -1,0 +1,988 @@
+diff --git a/sdk/simple-harness-sdk/src/agent_orchestrator/host/delegation.py b/sdk/simple-harness-sdk/src/agent_orchestrator/host/delegation.py
+index e19dd5a7b..0d13224a9 100644
+--- a/sdk/simple-harness-sdk/src/agent_orchestrator/host/delegation.py
++++ b/sdk/simple-harness-sdk/src/agent_orchestrator/host/delegation.py
+@@ -16,7 +16,7 @@ TERMINAL = frozenset({"COMPLETED", "FAILED", "CANCELLED"})
+ 
+ 
+ def normalize_spec(body: Mapping[str, Any]) -> dict[str, Any]:
+-    if set(body) - {"goal", "success_criteria", "sources", "reason"}:
++    if set(body) - {"goal", "success_criteria", "sources", "reason", "child_key"}:
+         raise SessionError("invalid_arguments", "identity and policy are supplied by the SDK")
+     goal, criteria, sources = (
+         body.get("goal"),
+@@ -85,7 +85,25 @@ class Delegations:
+         arguments: Mapping[str, Any],
+         *,
+         attempt_id: str = "direct",
++        goal_ref: Mapping[str, Any] | None = None,
+     ) -> dict[str, Any]:
++        child_key = arguments.get("child_key")
++        if child_key is not None:
++            # 委派到工作会话：行写在子账本，回合仍是父的；子账本的"一个在途"就是每工作会话一个。
++            if not isinstance(child_key, str):
++                raise SessionError("invalid_argument", "child_key must be text")
++            child = self.session.child(child_key)
++            goal = self.session._goals.current()
++            return child._delegations.delegate(
++                turn_id,
++                call_id,
++                {k: v for k, v in arguments.items() if k != "child_key"},
++                attempt_id=attempt_id,
++                goal_ref=None if goal is None else self.session._goals.ref(goal),
++            )
++        if goal_ref is None and self.session.parent is None:
++            goal = self.session._goals.current()
++            goal_ref = None if goal is None else self.session._goals.ref(goal)
+         spec = normalize_spec(arguments)
+         fingerprint = digest(spec)
+         binding_key = digest([turn_id, attempt_id, call_id])
+@@ -128,6 +146,8 @@ class Delegations:
+                     "request": request,
+                     "sources": spec["sources"],
+                     "reason": arguments.get("reason", ""),
++                    "goal_ref": None if goal_ref is None else dict(goal_ref),
++                    "child_key": None if self.session.parent is None else self.session.parent["child_key"],
+                     "mission_id": None,
+                     "cancel_requested": False,
+                 }
+@@ -174,7 +194,7 @@ class Delegations:
+         bindings = {
+             r["slot"]: r for r in self.store.rows("delegation_calls") if r["turn_id"] == turn_id
+         }
+-        return [
++        own = [
+             {
+                 **row["receipt"],
+                 "slot": row["slot"],
+@@ -184,6 +204,9 @@ class Delegations:
+             for row in self.store.rows("delegations")
+             if row["turn_id"] == turn_id and row.get("receipt")
+         ]
++        for child in self.session._children.values():
++            own.extend(child._delegations.receipts(turn_id))
++        return own
+ 
+     def _create(self, row: dict[str, Any]) -> dict[str, Any]:
+         if row.get("error"):
+@@ -227,6 +250,8 @@ class Delegations:
+                 "delegation_id": row["delegation_id"],
+                 "mission_id": row["mission_id"],
+                 "created": True,
++                "goal_ref": row.get("goal_ref"),
++                "child_key": row.get("child_key"),
+             }
+             self.store.put("delegations", row["key"], row)
+             self.store.event(
+diff --git a/sdk/simple-harness-sdk/src/agent_orchestrator/host/inbox.py b/sdk/simple-harness-sdk/src/agent_orchestrator/host/inbox.py
+index bfbe8c3a2..778694d85 100644
+--- a/sdk/simple-harness-sdk/src/agent_orchestrator/host/inbox.py
++++ b/sdk/simple-harness-sdk/src/agent_orchestrator/host/inbox.py
+@@ -108,6 +108,37 @@ class SessionInbox:
+                     break
+             if str(mission["status"]) not in TERMINAL:
+                 self._requests(mid, snapshot)
++        self._mirror_children()
++
++    def _mirror_children(self) -> None:
++        """子会话的终态通知镜像进父 inbox：同一个 event_id，带 child_key。
++        父下一次输入把它当资料附上；人只在父这里点已收到。"""
++
++        for key, child in self.session._children.items():
++            child._inbox.catch_up()
++            for notice in child.inbox():
++                if self.store.get("inbox", notice["event_id"]) is not None:
++                    continue
++                mirrored = {
++                    **notice,
++                    "child_key": key,
++                    "child_session_id": child.session_id,
++                    "source": "child_result",
++                    "instruction": False,
++                    "acked": False,
++                    "applied_turn_id": None,
++                }
++                with self.store.transaction():
++                    self.store.put("inbox", notice["event_id"], mirrored)
++                    self.store.event(
++                        "result_ready",
++                        key=f"result:{notice['event_id']}",
++                        mission_id=notice["mission_id"],
++                        delegation_id=notice["delegation_id"],
++                        child_key=key,
++                        payload=mirrored,
++                    )
++                self.session._checkpoint("inbox_written")
+ 
+     def _requests(self, mid: str, snapshot: Mapping[str, Any]) -> None:
+         candidates = [("planning", r) for r in snapshot["snapshot"].get("planning_questions", [])]
+diff --git a/sdk/simple-harness-sdk/src/agent_orchestrator/host/session.py b/sdk/simple-harness-sdk/src/agent_orchestrator/host/session.py
+index 51262b27a..f03c11e7d 100644
+--- a/sdk/simple-harness-sdk/src/agent_orchestrator/host/session.py
++++ b/sdk/simple-harness-sdk/src/agent_orchestrator/host/session.py
+@@ -17,6 +17,7 @@ from .host import OrchestrationHost
+ from .inbox import SessionInbox, request_version
+ from .session_chat import RESERVED_TOOLS, SessionChatService
+ from .session_ledger import SessionError, SessionLedger, digest, encoded
++from .session_tree import CONFIG_VERSION, PROTOCOL_VERSION, Children, Commands, Goals
+ 
+ 
+ @dataclass(frozen=True)
+@@ -49,6 +50,7 @@ class Session:
+         session_id: str = "default",
+         policy: SessionPolicy | None = None,
+         own_host: bool = False,
++        parent: tuple[str, str] | None = None,
+     ) -> None:
+         if not isinstance(session_id, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", session_id):
+             raise SessionError("invalid_request", "session_id must be a safe identifier")
+@@ -62,15 +64,32 @@ class Session:
+         with self._store.transaction():
+             frozen = self._store.get("meta", "configuration")
+             configuration = {
+-                "version": 2,
++                "version": CONFIG_VERSION,
+                 "policy": self.policy.public(),
+                 "tools": list(host.tools),
+             }
++            if frozen is not None and frozen.get("version") != CONFIG_VERSION:
++                raise SessionError(
++                    "incompatible_store_version",
++                    f"session store version {frozen.get('version')} needs a new data root",
++                )
+             if frozen is not None and frozen != configuration:
+                 raise SessionError(
+                     "session_config_frozen", "use the original policy and tool catalogue"
+                 )
+             self._store.put("meta", "configuration", configuration)
++            # 子会话只能经它的父打开；根会话号也不能借来打开别人的子会话。
++            stored_parent = self._store.get("meta", "parent")
++            given = None if parent is None else {"parent_session_id": parent[0], "child_key": parent[1]}
++            if stored_parent is None and given is not None:
++                self._store.put("meta", "parent", given)
++            elif stored_parent != given:
++                raise SessionError(
++                    "permission_denied", "child sessions are opened through their parent"
++                )
++        self.parent = given
++        self._children: dict[str, Session] = {}
++        self._commands, self._tree, self._goals = Commands(self), Children(self), Goals(self)
+         self._delegations, self._inbox = Delegations(self), SessionInbox(self)
+         self._closed = False
+         self._close_task: asyncio.Task[None] | None = None
+@@ -108,6 +127,7 @@ class Session:
+             await session._chat.open()
+             if not session._chat.available:
+                 raise SessionError("chat_unavailable", session._chat.reason or "")
++            await session.recover()
+             session._delegations.recover()
+             session._inbox.catch_up()
+             host.start_driver()
+@@ -317,11 +337,21 @@ class Session:
+             await asyncio.sleep(self.policy.poll_seconds)
+ 
+     def tasks(self) -> list[dict[str, Any]]:
+-        return [self.task(row["delegation_id"]) for row in self._store.rows("delegations")]
++        own = [self._task_view(row) for row in self._store.rows("delegations")]
++        for key, child in self._children.items():
++            own.extend({**task, "child_key": key} for task in child.tasks())
++        return own
+ 
+     def task(self, task_id: str) -> dict[str, Any]:
+-        row = self._delegations.find(task_id)
++        owner, row = self._find_task(task_id)
++        view = owner._task_view(row)
++        if owner is not self:
++            view["child_key"] = owner.parent["child_key"]
++        return view
++
++    def _task_view(self, row: Mapping[str, Any]) -> dict[str, Any]:
+         result = {k: row[k] for k in ("delegation_id", "mission_id", "turn_id", "cancel_requested")}
++        result["goal_ref"] = row.get("goal_ref")
+         if row.get("mission_id"):
+             result["snapshot"] = self._host.snapshot(row["mission_id"])
+             result["status"] = result["snapshot"]["snapshot"]["mission"]["status"]
+@@ -329,9 +359,168 @@ class Session:
+             result["status"] = "REJECTED" if row.get("error") else "CREATING"
+         return result
+ 
+-    def cancel_task(self, task_id: str) -> dict[str, Any]:
++    def _find_task(self, task_id: str) -> tuple[Session, dict[str, Any]]:
++        for owner in (self, *self._children.values()):
++            for row in owner._store.rows("delegations"):
++                if task_id in {row["delegation_id"], row.get("mission_id")}:
++                    return owner, row
++        raise SessionError("permission_denied", "task is not associated with this session")
++
++    def cancel_task(self, task_id: str, *, command_id: str | None = None) -> dict[str, Any]:
++        self._check_open()
++        owner, _ = self._find_task(task_id)
++        if command_id is None:
++            return owner._delegations.cancel(task_id)
++        return self._commands.run(
++            command_id,
++            "cancel_task",
++            {"task_id": task_id},
++            lambda: {**owner._delegations.cancel(task_id), "status": "accepted"},
++        )
++
++    # ---- 父子会话、Goal、能力发现（AgentOS 合同 M1） ------------------------------------
++
++    async def recover(self) -> None:
++        """重开后按父账本把子会话重新打开；子会话自己的账本与任务照旧恢复。"""
++
++        for row in self._tree.rows():
++            if row["child_key"] not in self._children:
++                await self._open_child(row["child_key"], row["child_session_id"])
++
++    async def _open_child(self, child_key: str, child_id: str) -> Session:
++        if isinstance(self._host, OrchestrationHost):
++            from .sessions import open_session
++
++            child = await open_session(
++                self._host, child_id, policy=self.policy, parent=(self.session_id, child_key)
++            )
++        else:
++            child = Session(
++                self._host, session_id=child_id, policy=self.policy,
++                parent=(self.session_id, child_key),
++            )
++        self._children[child_key] = child
++        return child
++
++    async def create_child(
++        self, child_key: str, *, command_id: str, purpose: str = ""
++    ) -> dict[str, Any]:
++        """开一个工作会话。关系先持久在父账本，再打开子会话；中途失败重调即恢复。"""
++
++        self._check_open()
++        receipt = self._tree.register(child_key, command_id, purpose)
++        if receipt["child_key"] not in self._children:
++            await self._open_child(receipt["child_key"], receipt["child_session_id"])
++        return receipt
++
++    def children(self) -> list[dict[str, Any]]:
++        return [
++            {
++                "child_key": row["child_key"],
++                "child_session_id": row["child_session_id"],
++                "purpose": row.get("purpose", ""),
++                "goal_ref": row.get("goal_ref"),
++                "open": row["child_key"] in self._children,
++            }
++            for row in self._tree.rows()
++        ]
++
++    def child(self, child_key: str) -> Session:
++        row = self._tree.find(child_key)
++        child = self._children.get(row["child_key"])
++        if child is None:
++            raise SessionError("not_found_or_forbidden", "child session is not open; recover first")
++        return child
++
++    def child_send(self, child_key: str, text: str, *, command_id: str) -> dict[str, Any]:
++        """给工作会话排一条追加输入（next_turn）。只登记，不改在跑的任务。"""
++
+         self._check_open()
+-        return self._delegations.cancel(task_id)
++        child = self.child(child_key)
++        if not isinstance(text, str) or not text.strip() or len(text) > 12000:
++            raise SessionError("invalid_argument", "text must be bounded nonempty text")
++
++        def apply() -> dict[str, Any]:
++            input_id = f"input-{digest([child.session_id, command_id])[:32]}"
++            row = {
++                "input_id": input_id,
++                "text": text,
++                "kind": "directive",
++                "directive": "next_turn",
++                "state": "queued",
++                "command_id": command_id,
++                "source_session_id": self.session_id,
++                "created_at": time.time(),
++            }
++            child._store.put("queued_inputs", input_id, row)
++            child._store.event(
++                "input_accepted",
++                key=f"queued:{input_id}",
++                input_id=input_id,
++                payload={"kind": "directive", "directive": "next_turn", "state": "queued"},
++            )
++            return {"status": "accepted", "input_id": input_id, "child_key": child_key}
++
++        return child._commands.run(command_id, "child_send", {"text": text}, apply)
++
++    def queued_inputs(self) -> list[dict[str, Any]]:
++        return self._store.rows("queued_inputs")
++
++    def put_goal(
++        self, spec: Mapping[str, Any], *, command_id: str, expected_version: int
++    ) -> dict[str, Any]:
++        self._check_open()
++        return self._goals.put(spec, command_id=command_id, expected_version=expected_version)
++
++    def finish_goal(
++        self,
++        goal_id: str,
++        outcome: str,
++        *,
++        command_id: str,
++        expected_version: int,
++        basis: str = "",
++    ) -> dict[str, Any]:
++        self._check_open()
++        return self._goals.finish(
++            goal_id, outcome, command_id=command_id, expected_version=expected_version, basis=basis
++        )
++
++    def goal(self, goal_id: str) -> dict[str, Any]:
++        return self._goals.get(goal_id)
++
++    def goals(self) -> list[dict[str, Any]]:
++        return self._store.rows("goals")
++
++    def command_receipt(self, command_id: str) -> dict[str, Any]:
++        row = self._store.get("commands", str(command_id))
++        if row is None:
++            raise SessionError("not_found_or_forbidden", "no such command in this session")
++        return row["receipt"]
++
++    def capabilities(self) -> dict[str, Any]:
++        """能力发现：不调模型，不读任务库。"""
++
++        return {
++            "protocol_version": PROTOCOL_VERSION,
++            "session_config_version": CONFIG_VERSION,
++            "role": "child" if self.parent is not None else "root",
++            "capabilities": [
++                "command_receipts",
++                "child_sessions",
++                "delegation_to_child",
++                "child_result_mirroring",
++                "queued_child_inputs",
++                "goals",
++            ],
++            "limits": {
++                "max_depth": 1,
++                "delegations_in_flight_per_session": 1,
++                "open_goals_per_root": 1,
++                "policy": self.policy.public(),
++            },
++            "unsupported": ["continuation_policy", "authorization_port", "steer_running_mission"],
++        }
+ 
+     def respond(
+         self, request_id: str, decision: str, version: int, **fields: Any
+@@ -515,6 +704,8 @@ class Session:
+         await asyncio.shield(task)
+ 
+     async def _close(self) -> None:
++        for child in tuple(self._children.values()):
++            await child.close()
+         try:
+             try:
+                 if self._voice is not None:
+diff --git a/sdk/simple-harness-sdk/src/agent_orchestrator/host/session_ledger.py b/sdk/simple-harness-sdk/src/agent_orchestrator/host/session_ledger.py
+index 071d62d26..da571974c 100644
+--- a/sdk/simple-harness-sdk/src/agent_orchestrator/host/session_ledger.py
++++ b/sdk/simple-harness-sdk/src/agent_orchestrator/host/session_ledger.py
+@@ -11,10 +11,43 @@ from pathlib import Path
+ from typing import Any
+ 
+ 
++#: 合同里稳定暴露的错误码（AgentOS 合同 5.4）。其余码是本 SDK 原有的，保持不变。
++ERROR_CODES = (
++    "not_found_or_forbidden",
++    "invalid_argument",
++    "idempotency_conflict",
++    "stale_version",
++    "session_busy",
++    "capacity_exceeded",
++    "budget_exhausted",
++    "authorization_required",
++    "authorization_revoked",
++    "request_expired",
++    "cancelled",
++    "active_work",
++    "unsupported_capability",
++    "incompatible_store_version",
++    "owner_conflict",
++    "cursor_expired",
++    "effect_unknown",
++    "provider_unavailable",
++)
++
++#: 同身份重试可能成功的码；其余码换 command_id 重试也不会变成功。
++RETRYABLE_CODES = frozenset({"session_busy", "busy", "capacity_exceeded", "provider_unavailable"})
++
++
+ class SessionError(RuntimeError):
+-    def __init__(self, code: str, message: str = "") -> None:
++    """一个被拒绝的会话请求：``code`` 稳定；``safe_message`` 不含密钥与别人的内容。"""
++
++    def __init__(self, code: str, message: str = "", *, retryable: bool | None = None) -> None:
+         super().__init__(f"{code}: {message}")
+         self.code = code
++        self.safe_message = message or code
++        self.retryable = (code in RETRYABLE_CODES) if retryable is None else retryable
++
++    def public(self) -> dict[str, Any]:
++        return {"code": self.code, "retryable": self.retryable, "safe_message": self.safe_message}
+ 
+ 
+ def encoded(value: Any) -> str:
+@@ -113,4 +146,4 @@ class SessionLedger:
+         ]
+ 
+ 
+-__all__ = ("SessionError", "SessionLedger")
++__all__ = ("ERROR_CODES", "SessionError", "SessionLedger")
+diff --git a/sdk/simple-harness-sdk/src/agent_orchestrator/host/sessions.py b/sdk/simple-harness-sdk/src/agent_orchestrator/host/sessions.py
+index 5df03c815..e5a3e734d 100644
+--- a/sdk/simple-harness-sdk/src/agent_orchestrator/host/sessions.py
++++ b/sdk/simple-harness-sdk/src/agent_orchestrator/host/sessions.py
+@@ -18,6 +18,7 @@ async def open_session(
+     *,
+     principal: Any = None,
+     policy: SessionPolicy | None = None,
++    parent: tuple[str, str] | None = None,
+ ) -> Session:
+     """Reuse Host identity, execution store, driver, and output event stream."""
+     async with host._session_open_lock:
+@@ -34,7 +35,7 @@ async def open_session(
+             if policy is not None and policy != existing.policy:
+                 raise SessionError("session_config_frozen")
+             return existing
+-        session = Session(host, session_id=session_id, policy=policy)
++        session = Session(host, session_id=session_id, policy=policy, parent=parent)
+         try:
+             await session._chat.open()
+             if not session._chat.available:
+@@ -44,11 +45,17 @@ async def open_session(
+             host.start_driver()
+             session._pump_task = asyncio.create_task(session._pump(), name=f"session-{session_id}")
+             host._sessions[session_id] = session
+-            return session
+         except BaseException:
+             await session._chat.close()
+             session._closed = True
+             raise
++    # 子会话各自再拿一次锁打开，所以要在锁外恢复；失败就把刚登记的会话关掉。
++    try:
++        await session.recover()
++    except BaseException:
++        await session.close()
++        raise
++    return session
+ 
+ 
+ __all__ = ("open_session",)
+diff --git a/sdk/simple-harness-sdk/src/agent_orchestrator/host/session_tree.py b/sdk/simple-harness-sdk/src/agent_orchestrator/host/session_tree.py
+new file mode 100644
+index 000000000..9893ff628
+--- /dev/null
++++ b/sdk/simple-harness-sdk/src/agent_orchestrator/host/session_tree.py
+@@ -0,0 +1,320 @@
++# SPDX-License-Identifier: Apache-2.0
++"""主会话统筹工作会话：命令幂等回执、父子关系、Goal。全部是会话账本里的持久事实。
++
++这里只管秩序：谁是谁的子会话、哪条命令已经受理过、Goal 现在是第几版、收口前结构事实
++齐不齐。要不要开工作会话、委派什么、结果好不好，都不在这里判。
++"""
++
++from __future__ import annotations
++
++import re
++import time
++from collections.abc import Callable, Mapping
++from typing import Any
++
++from .session_ledger import SessionError, digest
++
++CONFIG_VERSION = 3
++PROTOCOL_VERSION = 2
++MAX_DEPTH = 1
++
++GOAL_STATES = ("active", "waiting", "cancel_requested", "succeeded", "failed", "cancelled")
++TERMINAL_GOAL = frozenset({"succeeded", "failed", "cancelled"})
++GOAL_OUTCOMES = frozenset({"succeeded", "failed", "cancelled"})
++TERMINAL_TASK = frozenset({"COMPLETED", "FAILED", "CANCELLED", "REJECTED"})
++
++_KEY = re.compile(r"[A-Za-z0-9_-]{1,64}")
++
++
++def child_session_id(parent_id: str, child_key: str) -> str:
++    return f"{parent_id}_c_{child_key}"
++
++
++def _bounded_text(value: Any, name: str, *, limit: int = 12000, required: bool = True) -> str:
++    if value is None and not required:
++        return ""
++    if not isinstance(value, str) or (required and not value.strip()) or len(value) > limit:
++        raise SessionError("invalid_argument", f"{name} must be bounded text")
++    return value.strip()
++
++
++def _text_list(value: Any, name: str, *, minimum: int) -> list[str]:
++    if not isinstance(value, list) or len(value) < minimum or len(value) > 32:
++        raise SessionError("invalid_argument", f"{name} must list {minimum} to 32 items")
++    return [_bounded_text(item, name) for item in value]
++
++
++class Commands:
++    """写命令的幂等：同 ID 同参数返原回执；同 ID 异参数冲突；预校验失败不留痕。"""
++
++    def __init__(self, session: Any) -> None:
++        self.session, self.store = session, session._store
++
++    def run(
++        self,
++        command_id: Any,
++        kind: str,
++        body: Any,
++        apply: Callable[[], dict[str, Any]],
++    ) -> dict[str, Any]:
++        if not isinstance(command_id, str) or not command_id.strip() or len(command_id) > 256:
++            raise SessionError("invalid_argument", "command_id must be bounded nonempty text")
++        request_hash = digest([kind, body])
++        with self.store.transaction():
++            existing = self.store.get("commands", command_id)
++            if existing is not None:
++                if existing["request_hash"] != request_hash:
++                    raise SessionError(
++                        "idempotency_conflict", "command_id was used with different arguments"
++                    )
++                return existing["receipt"]
++            result = apply()
++            receipt = {
++                "command_id": command_id,
++                "request_hash": request_hash,
++                "status": result.pop("status", "completed"),
++                "session_id": self.session.session_id,
++                "event_seq": int(self.store.get("meta", "sequence")),
++                **result,
++            }
++            self.store.put(
++                "commands",
++                command_id,
++                {"kind": kind, "request_hash": request_hash, "receipt": receipt},
++            )
++            return receipt
++
++
++class Children:
++    """父子关系存在父账本；子账本只记它的父是谁。深度固定为 1。"""
++
++    def __init__(self, session: Any) -> None:
++        self.session, self.store = session, session._store
++
++    def rows(self) -> list[dict[str, Any]]:
++        return self.store.rows("children")
++
++    def find(self, child_key: str) -> dict[str, Any]:
++        row = self.store.get("children", str(child_key))
++        if row is None:
++            raise SessionError("not_found_or_forbidden", "no such child session")
++        return row
++
++    def register(self, child_key: Any, command_id: str, purpose: Any) -> dict[str, Any]:
++        session = self.session
++        if session.parent is not None:
++            raise SessionError(
++                "invalid_request", f"child sessions cannot create children (max depth {MAX_DEPTH})"
++            )
++        if not isinstance(child_key, str) or not _KEY.fullmatch(child_key):
++            raise SessionError("invalid_argument", "child_key must be a safe identifier")
++        purpose = _bounded_text(purpose, "purpose", limit=2000, required=False)
++        child_id = child_session_id(session.session_id, child_key)
++        if len(child_id) > 128:
++            raise SessionError("invalid_argument", "child session id would exceed 128 characters")
++
++        def apply() -> dict[str, Any]:
++            existing = self.store.get("children", child_key)
++            if existing is not None:
++                return {
++                    "child_session_id": existing["child_session_id"],
++                    "child_key": child_key,
++                    "created": False,
++                }
++            goal = session._goals.current()
++            row = {
++                "child_key": child_key,
++                "child_session_id": child_id,
++                "purpose": purpose,
++                "goal_ref": None if goal is None else session._goals.ref(goal),
++                "command_id": command_id,
++                "created_at": time.time(),
++            }
++            self.store.put("children", child_key, row)
++            self.store.event(
++                "child_created",
++                key=f"child:{child_key}",
++                child_key=child_key,
++                child_session_id=child_id,
++                payload={"purpose": purpose, "goal_ref": row["goal_ref"]},
++            )
++            return {"child_session_id": child_id, "child_key": child_key, "created": True}
++
++        return session._commands.run(
++            command_id, "create_child", {"child_key": child_key, "purpose": purpose}, apply
++        )
++
++
++class Goals:
++    """Goal 是宿主登记的有界目标。每个根会话同时只许一个未收口的 Goal。"""
++
++    def __init__(self, session: Any) -> None:
++        self.session, self.store = session, session._store
++
++    @staticmethod
++    def ref(goal: Mapping[str, Any]) -> dict[str, Any]:
++        return {"goal_id": goal["goal_id"], "goal_version": int(goal["goal_version"])}
++
++    def get(self, goal_id: str) -> dict[str, Any]:
++        row = self.store.get("goals", str(goal_id))
++        if row is None:
++            raise SessionError("not_found_or_forbidden", "no such goal")
++        return row
++
++    def current(self) -> dict[str, Any] | None:
++        for row in self.store.rows("goals"):
++            if row["status"] not in TERMINAL_GOAL:
++                return row
++        return None
++
++    def _normalize(self, spec: Any, command_id: str) -> dict[str, Any]:
++        if not isinstance(spec, Mapping):
++            raise SessionError("invalid_argument", "goal spec must be an object")
++        allowed = {
++            "goal_id",
++            "objective",
++            "completion_criteria",
++            "stop_conditions",
++            "budget",
++            "grant_ref",
++            "policy_revision",
++        }
++        if set(spec) - allowed:
++            raise SessionError("invalid_argument", "unknown goal spec fields")
++        budget = spec.get("budget") or {}
++        if not isinstance(budget, Mapping) or any(
++            isinstance(v, bool) or not isinstance(v, int) or v < 1 for v in budget.values()
++        ):
++            raise SessionError("invalid_argument", "budget values must be positive integers")
++        goal_id = spec.get("goal_id")
++        if goal_id is None:
++            goal_id = f"goal-{digest([self.session.session_id, command_id])[:32]}"
++        return {
++            "goal_id": _bounded_text(goal_id, "goal_id", limit=128),
++            "objective": _bounded_text(spec.get("objective"), "objective"),
++            "completion_criteria": _text_list(
++                spec.get("completion_criteria"), "completion_criteria", minimum=1
++            ),
++            "stop_conditions": _text_list(spec.get("stop_conditions", []), "stop_conditions", minimum=0),
++            "budget": dict(budget),
++            "grant_ref": _bounded_text(spec.get("grant_ref"), "grant_ref", limit=512, required=False),
++            "policy_revision": _bounded_text(
++                spec.get("policy_revision"), "policy_revision", limit=512, required=False
++            ),
++        }
++
++    def put(self, spec: Any, *, command_id: str, expected_version: Any) -> dict[str, Any]:
++        if type(expected_version) is not int or expected_version < 0:
++            raise SessionError("invalid_argument", "expected_version must be a nonnegative integer")
++        if self.session.parent is not None:
++            raise SessionError("invalid_request", "goals belong to the root session")
++        normalized = self._normalize(spec, command_id)
++
++        def apply() -> dict[str, Any]:
++            goal_id = normalized["goal_id"]
++            existing = self.store.get("goals", goal_id)
++            if existing is None:
++                if expected_version != 0:
++                    raise SessionError("stale_version", "goal does not exist", retryable=False)
++                active = self.current()
++                if active is not None:
++                    raise SessionError(
++                        "active_work", f"goal {active['goal_id']} is still open; finish it first"
++                    )
++                row = {**normalized, "goal_version": 1, "status": "active", "history": []}
++            else:
++                if existing["status"] in TERMINAL_GOAL:
++                    raise SessionError("stale_version", "finished goals are immutable")
++                if int(existing["goal_version"]) != expected_version:
++                    raise SessionError("stale_version", "goal version has moved on")
++                row = {
++                    **existing,
++                    **normalized,
++                    "goal_version": expected_version + 1,
++                    "history": [*existing.get("history", []), expected_version],
++                }
++            row["updated_at"] = time.time()
++            self.store.put("goals", goal_id, row)
++            self.store.event(
++                "goal_updated",
++                key=f"goal:{goal_id}:{row['goal_version']}",
++                goal_id=goal_id,
++                goal_version=row["goal_version"],
++                payload={"objective": row["objective"], "status": row["status"]},
++            )
++            return {**self.ref(row), "status": row["status"], "version": row["goal_version"]}
++
++        return self.session._commands.run(
++            command_id,
++            "put_goal",
++            {"spec": normalized, "expected_version": expected_version},
++            apply,
++        )
++
++    def blockers(self, goal_id: str) -> list[str]:
++        """收口前还差的结构事实。只看事实，不判结果好坏。"""
++
++        session = self.session
++        problems = []
++        for task in session.tasks():
++            ref = task.get("goal_ref") or {}
++            if ref.get("goal_id") == goal_id and task["status"] not in TERMINAL_TASK:
++                problems.append(f"task {task['delegation_id']} is {task['status']}")
++        for notice in session.inbox():
++            if notice.get("applied_turn_id") is None and not notice.get("excluded"):
++                problems.append(f"result {notice['event_id']} has not been applied to a turn")
++        return problems
++
++    def finish(
++        self,
++        goal_id: Any,
++        outcome: Any,
++        *,
++        command_id: str,
++        expected_version: Any,
++        basis: Any = "",
++    ) -> dict[str, Any]:
++        if outcome not in GOAL_OUTCOMES:
++            raise SessionError("invalid_argument", "outcome must be succeeded, failed or cancelled")
++        if type(expected_version) is not int or expected_version < 1:
++            raise SessionError("invalid_argument", "expected_version must be a positive integer")
++        basis = _bounded_text(basis, "basis", required=False)
++        if outcome == "succeeded" and not basis:
++            raise SessionError("invalid_argument", "succeeded needs a recorded basis")
++        goal_id = _bounded_text(goal_id, "goal_id", limit=128)
++
++        def apply() -> dict[str, Any]:
++            row = self.get(goal_id)
++            if row["status"] in TERMINAL_GOAL or int(row["goal_version"]) != expected_version:
++                raise SessionError("stale_version", "goal version has moved on")
++            blockers = self.blockers(goal_id)
++            if blockers:
++                raise SessionError("active_work", "; ".join(blockers)[:2000])
++            row = {**row, "status": outcome, "basis": basis, "finished_at": time.time()}
++            self.store.put("goals", goal_id, row)
++            self.store.event(
++                "goal_finished",
++                key=f"goal-finished:{goal_id}:{expected_version}",
++                goal_id=goal_id,
++                goal_version=expected_version,
++                payload={"status": outcome, "basis": basis},
++            )
++            return {**self.ref(row), "status": outcome, "version": row["goal_version"]}
++
++        return self.session._commands.run(
++            command_id,
++            "finish_goal",
++            {"goal_id": goal_id, "outcome": outcome, "expected_version": expected_version,
++             "basis": basis},
++            apply,
++        )
++
++
++__all__ = (
++    "CONFIG_VERSION",
++    "PROTOCOL_VERSION",
++    "Children",
++    "Commands",
++    "Goals",
++    "child_session_id",
++)
+diff --git a/sdk/simple-harness-sdk/tests/orchestrator/host/test_session_tree.py b/sdk/simple-harness-sdk/tests/orchestrator/host/test_session_tree.py
+new file mode 100644
+index 000000000..daf930d01
+--- /dev/null
++++ b/sdk/simple-harness-sdk/tests/orchestrator/host/test_session_tree.py
+@@ -0,0 +1,177 @@
++# SPDX-License-Identifier: Apache-2.0
++"""主会话统筹工作会话：命令幂等、父子关系、委派到子、结果回父、Goal 收口（AgentOS 合同 M1）。"""
++
++from __future__ import annotations
++
++import asyncio
++
++import pytest
++from test_session import SPEC, FakeHost
++
++from agent_orchestrator.host import Session
++from agent_orchestrator.host.session_ledger import SessionError
++
++
++def make(tmp_path):
++    host = FakeHost(tmp_path)
++    return host, Session(host, session_id="main")
++
++
++def run(coro):
++    return asyncio.run(coro)
++
++
++def test_old_store_version_is_refused_as_incompatible(tmp_path):
++    host, session = make(tmp_path)
++    with session._store.transaction():
++        configuration = session._store.get("meta", "configuration")
++        configuration["version"] = 2
++        session._store.put("meta", "configuration", configuration)
++    session._store.connection.close()
++    with pytest.raises(SessionError) as caught:
++        Session(host, session_id="main")
++    assert caught.value.code == "incompatible_store_version"
++    assert caught.value.retryable is False and caught.value.safe_message
++
++
++def test_create_child_is_idempotent_and_refuses_drift_and_depth(tmp_path):
++    host, parent = make(tmp_path)
++    first = run(parent.create_child("photos", command_id="cmd-1", purpose="整理照片"))
++    assert first["status"] == "completed" and first["created"] is True
++    assert first["child_session_id"] == "main_c_photos"
++    replay = run(parent.create_child("photos", command_id="cmd-1", purpose="整理照片"))
++    assert replay == first
++    with pytest.raises(SessionError) as drift:
++        run(parent.create_child("photos", command_id="cmd-1", purpose="别的"))
++    assert drift.value.code == "idempotency_conflict"
++    # 同一个 child_key 换命令号：已存在的子会话不重复创建
++    again = run(parent.create_child("photos", command_id="cmd-2"))
++    assert again["created"] is False and again["child_session_id"] == first["child_session_id"]
++    child = parent.child("photos")
++    with pytest.raises(SessionError) as depth:
++        run(child.create_child("deeper", command_id="cmd-3"))
++    assert depth.value.code == "invalid_request"
++    assert [c["child_key"] for c in parent.children()] == ["photos"]
++    assert sum(e["kind"] == "child_created" for e in parent._store.events(0)) == 1
++
++
++def test_child_cannot_be_opened_as_a_root_and_reopen_restores_relation(tmp_path):
++    host, parent = make(tmp_path)
++    run(parent.create_child("photos", command_id="cmd-1"))
++    with pytest.raises(SessionError) as caught:
++        Session(host, session_id="main_c_photos")
++    assert caught.value.code == "permission_denied"
++    reopened = Session(host, session_id="main")
++    run(reopened.recover())
++    assert reopened.child("photos").session_id == "main_c_photos"
++    with pytest.raises(SessionError) as missing:
++        reopened.child("nope")
++    assert missing.value.code == "not_found_or_forbidden"
++
++
++def test_delegating_to_two_children_runs_in_parallel_and_results_mirror_to_parent(tmp_path):
++    host, parent = make(tmp_path)
++    run(parent.create_child("a", command_id="c-a"))
++    run(parent.create_child("b", command_id="c-b"))
++    turn = parent._commit_input("两件事一起做", "k")["turn_id"]
++    one = parent._delegations.delegate(turn, "call-1", {**SPEC, "child_key": "a"})
++    two = parent._delegations.delegate(turn, "call-2", {**SPEC, "child_key": "b"})
++    assert one["mission_id"] != two["mission_id"] and len(host.made) == 2
++    assert one["child_key"] == "a" and two["child_key"] == "b"
++    # 同一个工作会话仍是一个在途
++    with pytest.raises(SessionError) as busy:
++        parent._delegations.delegate(turn, "call-3", {**SPEC, "child_key": "a"})
++    assert busy.value.code == "busy"
++    # 父自己直接委派不受子会话影响
++    direct = parent._delegations.delegate(turn, "call-4", SPEC)
++    assert direct["mission_id"] not in {one["mission_id"], two["mission_id"]}
++    tasks = {t.get("child_key"): t for t in parent.tasks()}
++    assert set(tasks) == {"a", "b", None}
++    assert parent.child("a").tasks()[0]["mission_id"] == one["mission_id"]
++    host.finish(one["mission_id"])
++    parent._inbox.catch_up()
++    parent._inbox.catch_up()
++    [notice] = parent.inbox()
++    assert notice["child_key"] == "a" and notice["mission_id"] == one["mission_id"]
++    assert notice["source"] == "child_result" and notice["instruction"] is False
++    assert sum(e["kind"] == "result_ready" for e in parent._store.events(0)) == 1
++    nxt = parent._commit_input("看看结果", "k2")
++    assert nxt["inbox_ids"] == [notice["event_id"]]
++    with pytest.raises(SessionError):
++        parent.child("b").ack(notice["event_id"])
++    assert parent.ack(notice["event_id"])["acked"]
++
++
++def test_goal_lifecycle_requires_structural_facts_before_success(tmp_path):
++    host, parent = make(tmp_path)
++    spec = {
++        "objective": "整理本周照片并写说明",
++        "completion_criteria": ["相册说明文件存在"],
++        "stop_conditions": ["超过 3 次失败"],
++        "budget": {"max_model_calls": 40},
++        "grant_ref": "grant-7",
++        "policy_revision": "rev-1",
++    }
++    put = parent.put_goal(spec, command_id="g-1", expected_version=0)
++    assert put["goal_version"] == 1 and put["status"] == "active"
++    assert parent.put_goal(spec, command_id="g-1", expected_version=0) == put
++    goal_id = put["goal_id"]
++    with pytest.raises(SessionError) as stale:
++        parent.put_goal(
++            {**spec, "goal_id": goal_id, "objective": "改"}, command_id="g-2", expected_version=0
++        )
++    assert stale.value.code == "stale_version"
++    with pytest.raises(SessionError) as second:
++        parent.put_goal({**spec, "goal_id": "other"}, command_id="g-3", expected_version=0)
++    assert second.value.code == "active_work"
++    updated = parent.put_goal(
++        {**spec, "goal_id": goal_id, "objective": "只整理周末的"},
++        command_id="g-4",
++        expected_version=1,
++    )
++    assert updated["goal_version"] == 2
++    turn = parent._commit_input("去做", "k")["turn_id"]
++    run(parent.create_child("a", command_id="c-a"))
++    receipt = parent._delegations.delegate(turn, "call-1", {**SPEC, "child_key": "a"})
++    assert receipt["goal_ref"] == {"goal_id": goal_id, "goal_version": 2}
++    with pytest.raises(SessionError) as active:
++        parent.finish_goal(goal_id, "succeeded", command_id="f-1", expected_version=2, basis="x")
++    assert active.value.code == "active_work"
++    host.finish(receipt["mission_id"])
++    parent._inbox.catch_up()
++    with pytest.raises(SessionError) as unread:
++        parent.finish_goal(goal_id, "succeeded", command_id="f-1", expected_version=2, basis="x")
++    assert unread.value.code == "active_work" and "result" in unread.value.safe_message
++    applied = parent._commit_input("汇总", "k2")
++    with parent._store.transaction():
++        for event_id in applied["inbox_ids"]:
++            notice = parent._store.get("inbox", event_id)
++            notice["applied_turn_id"] = applied["turn_id"]
++            parent._store.put("inbox", event_id, notice)
++    with pytest.raises(SessionError) as basis:
++        parent.finish_goal(goal_id, "succeeded", command_id="f-2", expected_version=2, basis="")
++    assert basis.value.code == "invalid_argument"
++    done = parent.finish_goal(
++        goal_id, "succeeded", command_id="f-3", expected_version=2, basis="说明文件已核对"
++    )
++    assert done["status"] == "succeeded" and parent.goal(goal_id)["status"] == "succeeded"
++    with pytest.raises(SessionError) as frozen:
++        parent.put_goal({**spec, "goal_id": goal_id}, command_id="g-5", expected_version=3)
++    assert frozen.value.code == "stale_version"
++    fresh = parent.put_goal({**spec, "goal_id": "next"}, command_id="g-6", expected_version=0)
++    assert fresh["goal_id"] == "next" and fresh["goal_version"] == 1
++
++
++def test_child_send_queues_input_without_running_it_and_capabilities_need_no_model(tmp_path):
++    host, parent = make(tmp_path)
++    run(parent.create_child("a", command_id="c-a"))
++    queued = parent.child_send("a", "也把视频算进去", command_id="in-1")
++    assert queued["status"] == "accepted" and queued["input_id"]
++    assert parent.child_send("a", "也把视频算进去", command_id="in-1") == queued
++    [row] = parent.child("a").queued_inputs()
++    assert row["input_id"] == queued["input_id"] and row["state"] == "queued"
++    assert any(e["kind"] == "input_accepted" for e in parent.child("a")._store.events(0))
++    capabilities = parent.capabilities()
++    assert capabilities["protocol_version"] == 2
++    assert {"child_sessions", "goals", "command_receipts"} <= set(capabilities["capabilities"])
++    assert "continuation_policy" not in capabilities["capabilities"]
