@@ -255,7 +255,8 @@ def test_real_host_summary_narrows_tools_and_search_without_authorizing_result(t
                 "task_cancel",
                 "delete_file",
             } & set(allowed)
-            assert {"tool_search", "tool_schema", "task_status"} <= set(allowed)
+            kept = {"tool_search", "tool_schema", "task_status", "task_artifact_read"}
+            assert kept <= set(allowed)
             tool_messages = [
                 m.content
                 for request in script.asked

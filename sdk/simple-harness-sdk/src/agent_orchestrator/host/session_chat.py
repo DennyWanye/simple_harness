@@ -248,6 +248,7 @@ class SessionChatService(ChatService):
             "workspace_list",
             "task_status",
             "child_status",
+            "task_artifact_read",
             *META_SCHEMAS,
         }
         return tuple(
