@@ -112,3 +112,14 @@ Simple Harness SDK 的会话层（`sdk/simple-harness-sdk/src/agent_orchestrator
 ## 9. 有问题怎么办
 
 写进记录"拿不准的"，按最合理的做法先做完，不停下等。
+
+## 10. 任务书 C（工具目录与 ToolSearch）合并后的补充说明（2026-10-31 审核人追加）
+
+发包基线已含 C 与 C2 的改动，以下几点与本任务书直接相关：
+
+- 聊天池的允许名单现在来自 `ChatService._registered_tools()`：工具目录（`runtime/tool_catalog.py`）里该角色（`main` / `child`）可见的条目。续办回合（4.3）的"收窄到只读 + 查询命令"就在这条路径上做：按回合来源（`source="continuation"`）决定这一回合绑定的 `allowed`（`_bind(pool, agent, session_id, allowed)` 已经按绑定传允许名单），**不要**另写拒绝逻辑。为此本任务书的车道放宽：`host/session_chat.py` 除追加提示词外，允许改"按回合来源决定允许名单"那一处；`COMMAND_SCHEMAS` 仍不改。
+- `COMMAND_SCHEMAS` 里现在多了两个元命令 `tool_search` / `tool_schema`（按需加载工具说明）。续办回合可以保留它们，但它们搜到的也只能是收窄后名单里的工具（目录搜索本来就与冻结名单取交集）。
+- "始终暴露集合"由 `SessionChatService._configuration` 在加完会话控制命令后从目录重算（`always_exposed_tools`）。你若新增控制命令，不用再登记到别处；但本任务书**不加**命令。
+- 会话账本的 `meta.configuration` 不再冻结应用工具名单（只冻结 `version` 与 `policy`）；`capabilities()` 多了 `catalog_version`。4.6 加能力时放在同一个字典里。
+- 语音桥 `_catalogue` 已改成只含 `delegate_task / task_status / task_cancel` 与主会话可见的只读应用工具；你只动 `_schedule` 那段，不要恢复旧的全量命令表。
+- 现有测试里 `test_realtime_bridge.py` 新增了"任务结果资料回显不成用户输入"的反例测试，4.4 的来源标记要让它继续通过。
