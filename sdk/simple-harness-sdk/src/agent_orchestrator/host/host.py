@@ -70,7 +70,6 @@ from ..runtime.tool_catalog import (
     catalog_for,
     checked_roles,
     invoke_meta,
-    search_schema,
 )
 from ..runtime.tool_gateway import ASSURANCE_REVIEWER_TOOLS, TOOL_NAMES
 from ..version import __version__
@@ -411,7 +410,10 @@ class OrchestrationHost:
         return self
 
     async def open_session(
-        self, session_id: str = "default", *, principal: Any = None,
+        self,
+        session_id: str = "default",
+        *,
+        principal: Any = None,
         policy: SessionPolicy | None = None,
     ) -> Session:
         """Borrow this running Host; closing the session does not close the Host."""
@@ -734,24 +736,19 @@ class OrchestrationHost:
                 binding = gateway.binding_for(run_id)
                 if binding is None:
                     raise ValueError("not_found_or_forbidden")
-                try:
-                    return invoke_meta(
-                        self.tool_catalog, "task", binding.allowed_tools, name, arguments
-                    )
-                except ValueError:
-                    return {"error": "not_found_or_forbidden"}
+                return invoke_meta(
+                    self.tool_catalog, "task", binding.allowed_tools, name, arguments
+                )
 
             return invoke
 
         for name, schema in META_SCHEMAS.items():
             runtime_tools[name] = DomainTool(
                 name=name,
-                schema=search_schema(self.settings.tool_search)
-                if name == "tool_search"
-                else schema,
+                schema=schema,
                 invoke=meta_invoke(name),
             )
-        self.tool_catalog = catalog_for(runtime_tools)
+        self.tool_catalog = catalog_for(runtime_tools, commands=META_SCHEMAS)
         self._runtime_tools = runtime_tools
         task_tools = {name: tool for name, tool in runtime_tools.items() if "task" in tool.roles}
         tool_names = tuple(task_tools)
@@ -786,6 +783,11 @@ class OrchestrationHost:
             deployment_policy=self.policy,
             sandbox_executor=self.executor,
             domain_tools=task_tools,
+            always_exposed_tools=frozenset(
+                entry.name for entry in self.tool_catalog.entries if entry.always_exposed
+            )
+            if self.settings.tool_search
+            else None,
             tool_call_tenant_id=self.tenant_id,
             tool_call_principal_id=str(getattr(self.principal, "principal_id", "") or "") or None,
             task_max_tokens=self.settings.task_max_tokens,
@@ -1183,7 +1185,10 @@ class OrchestrationHost:
         return None
 
     def native_profile_ids(self) -> list[str]:
-        """原生任务池的编号；快速聊天池单独装配、任务选不到，不在其中（它在 ``status()["chat"]``）。"""
+        """原生任务池的编号；快速聊天池单独装配、任务选不到。
+
+        聊天池在 ``status()["chat"]`` 单独报告。
+        """
 
         return [
             key

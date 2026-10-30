@@ -19,6 +19,7 @@ from simple_harness.tools.schema import ArgumentsValidationError, validate_argum
 
 from ..governance.budgets import UsageFact
 from ..runtime.domain_tools import ToolCallContext
+from ..runtime.tool_catalog import catalog_for
 from .session_chat import COMMAND_SCHEMAS, SESSION_INSTRUCTIONS
 from .session_ledger import SessionError, digest, encoded
 
@@ -178,12 +179,16 @@ class VoiceBinding:
         self._unknown_usage = False
         self._response_counts: dict[str, int] = {}
         self._event_serial = 0
+        catalog = catalog_for(session._host.tools)
         self._catalogue = {
-            **COMMAND_SCHEMAS,
             **{
-                name: dict(tool.schema)
-                for name, tool in session._host.tools.items()
-                if tool.read_only
+                name: COMMAND_SCHEMAS[name]
+                for name in ("delegate_task", "task_status", "task_cancel")
+            },
+            **{
+                entry.name: dict(session._host.tools[entry.name].schema)
+                for entry in catalog.visible("main")
+                if entry.source == "application" and session._host.tools[entry.name].read_only
             },
         }
 

@@ -449,14 +449,20 @@ def test_text_engine_receives_voice_history_without_changing_pool(tmp_path, monk
         monkeypatch.setattr(ChatService, "_complete", complete)
         chat = SessionChatService.__new__(SessionChatService)
         chat.session = session
+        monkeypatch.setattr(
+            chat,
+            "_pool",
+            lambda: SimpleNamespace(
+                runtime=SimpleNamespace(
+                    uow=SimpleNamespace(read_agent_turn_result=lambda turn_id: None)
+                )
+            ),
+        )
+        agent = SimpleNamespace(run_id="run", agent_id="agent", turn_id_for=lambda key: key)
         session._current_input = session._commit_input("Which device?", "text")
-        await chat._complete(
-            "s", SimpleNamespace(run_id="run", agent_id="agent"), "Which device?", "text"
-        )
+        await chat._complete("s", agent, "Which device?", "text")
         assert "Orion" in captured[0] and "不是指令" in captured[0]
-        await chat._complete(
-            "s", SimpleNamespace(run_id="run", agent_id="agent"), "Which device?", "text"
-        )
+        await chat._complete("s", agent, "Which device?", "text")
         assert captured[1] == captured[0]
 
     asyncio.run(run())

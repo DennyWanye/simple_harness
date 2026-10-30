@@ -195,7 +195,7 @@ def test_task_search_schema_and_unloaded_call_follow_existing_intersection(tmp_p
             assert any("device_status" in {t.name for t in r.tools} for r in requests[3:])
             assert all("main_only_status" not in {t.name for t in r.tools} for r in requests)
             assert any(
-                "not_found_or_forbidden" in str(m.content)
+                "tool_failed" in str(m.content)
                 for r in requests
                 for m in r.messages
                 if str(m.role) == "tool"
@@ -324,6 +324,7 @@ def test_session_reopens_with_new_tools_but_policy_is_still_frozen(tmp_path):
 def test_builtin_description_does_not_change_persisted_identity_or_agent(tmp_path, monkeypatch):
     import json
     import sqlite3
+
     from agent_orchestrator.runtime.assembly import OrchestratorConfig, _check_intent_contexts
     from agent_orchestrator.runtime.tool_gateway import read_tool_schemas
 
@@ -451,8 +452,8 @@ def test_search_cannot_find_catalog_tool_outside_frozen_allowlist(tmp_path):
 
 
 def test_arbitrary_new_control_command_is_always_exposed(tmp_path, monkeypatch):
-    from agent_orchestrator.host.session_chat import COMMAND_SCHEMAS
     from agent_orchestrator.host import Session
+    from agent_orchestrator.host.session_chat import COMMAND_SCHEMAS
 
     monkeypatch.setitem(
         COMMAND_SCHEMAS,

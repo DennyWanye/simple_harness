@@ -6,7 +6,6 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Iterable, Mapping
-from copy import deepcopy
 from dataclasses import dataclass
 from typing import Any
 
@@ -19,8 +18,6 @@ HISTORY_TOOLS = ("session_history_read", "session_history_search")
 MAIN_READ_TOOLS = (
     "workspace_read_file",
     "workspace_list",
-    "knowledge_list",
-    "knowledge_read",
     *HISTORY_TOOLS,
 )
 META_SCHEMAS = {
@@ -86,6 +83,10 @@ class ToolCatalog:
             json.dumps(version, sort_keys=True, ensure_ascii=False, separators=(",", ":")).encode()
         ).hexdigest()
 
+    @property
+    def entries(self) -> tuple[CatalogEntry, ...]:
+        return self._entries
+
     def visible(self, role: str) -> tuple[CatalogEntry, ...]:
         if role not in ROLES:
             raise ValueError("unknown tool role")
@@ -122,12 +123,6 @@ class ToolCatalog:
         return ToolCatalog(e for e in self.visible(role) if e.name in allowed)
 
 
-def search_schema(enabled: bool) -> dict[str, Any]:
-    schema = deepcopy(META_SCHEMAS["tool_search"])
-    schema["title"] = "tool-search:lazy" if enabled else "tool-search:all"
-    return schema
-
-
 def catalog_for(
     tools: Mapping[str, DomainTool], *, commands: Mapping[str, Any] | None = None
 ) -> ToolCatalog:
@@ -136,11 +131,19 @@ def catalog_for(
 
     from .tool_gateway import read_tool_schemas
 
+    always_exposed = set(commands or {}) | set(HISTORY_TOOLS)
     entries = []
     for name, schema in read_tool_schemas(large=True).items():
         roles = ROLES if name in MAIN_READ_TOOLS else ("task",)
         entries.append(
-            CatalogEntry(name, str(schema.get("description", "")), schema, "builtin", roles)
+            CatalogEntry(
+                name,
+                str(schema.get("description", "")),
+                schema,
+                "builtin",
+                roles,
+                name in always_exposed,
+            )
         )
     for function in (*ArpSessionHistoryTools().function_tools(), *ArpSkillTools().function_tools()):
         spec = function.spec
@@ -154,7 +157,7 @@ def catalog_for(
                 thaw_json(spec.input_schema),
                 "builtin" if spec.name in HISTORY_TOOLS else "skill",
                 roles,
-                spec.name in HISTORY_TOOLS,
+                spec.name in always_exposed,
             )
         )
     entries.extend(
@@ -162,14 +165,21 @@ def catalog_for(
             name,
             str(tool.schema.get("description", "")),
             tool.schema,
-            "builtin" if name in {*META_SCHEMAS, "sandbox_run"} else "application",
+            "builtin" if name in (commands or {}) or name == "sandbox_run" else "application",
             tool.roles,
-            name in META_SCHEMAS,
+            name in always_exposed,
         )
         for name, tool in tools.items()
     )
     entries.extend(
-        CatalogEntry(name, str(schema.get("description", "")), schema, "builtin", ROLES, True)
+        CatalogEntry(
+            name,
+            str(schema.get("description", "")),
+            schema,
+            "builtin",
+            ROLES,
+            name in always_exposed,
+        )
         for name, schema in (commands or {}).items()
         if name not in tools
     )

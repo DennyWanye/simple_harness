@@ -175,7 +175,7 @@ class ChatService:
     def _configuration(self, config: Any) -> Any:
         from ..runtime.control_commands import ControlCommand
         from ..runtime.sandbox_run import sandbox_run_tool
-        from ..runtime.tool_catalog import META_SCHEMAS, catalog_for, invoke_meta, search_schema
+        from ..runtime.tool_catalog import META_SCHEMAS, catalog_for, invoke_meta
 
         role = "child" if getattr(getattr(self, "session", None), "parent", None) else "main"
         self._tool_role = role
@@ -206,14 +206,20 @@ class ChatService:
             return invoke
 
         for name, schema in META_SCHEMAS.items():
-            commands[name] = ControlCommand(
-                search_schema(self._host.settings.tool_search) if name == "tool_search" else schema,
-                meta_command(name),
-            )
+            commands[name] = ControlCommand(schema, meta_command(name))
         self._tool_catalog = catalog_for(
             tools, commands={name: command.schema for name, command in commands.items()}
         )
-        return replace(config, domain_tools=tools, control_commands=commands)
+        return replace(
+            config,
+            domain_tools=tools,
+            control_commands=commands,
+            always_exposed_tools=frozenset(
+                entry.name for entry in self._tool_catalog.entries if entry.always_exposed
+            )
+            if self._host.settings.tool_search
+            else None,
+        )
 
     def _native_plane(self, profile_id: str, tokens: int, counter: Any) -> Any:
         from ..deployment.native_pools import DeploymentToolAuthorization
@@ -443,7 +449,10 @@ class ChatService:
             reset = True
             self._replaced[session_id] = reason
             logger.warning(
-                "chat session %s: agent given up (%s), generation %d", session_id, reason, generation
+                "chat session %s: agent given up (%s), generation %d",
+                session_id,
+                reason,
+                generation,
             )
         creation_key = self._creation_key(session_id, generation)
         agent_id = agent_id_for(OWNER_SCOPE, creation_key)
@@ -522,7 +531,9 @@ class ChatService:
         if runtime.uow.read_provider_budget(RunId(binding.run_id)).has_unknown_charge:
             # 开着的回合也一样：宿主中途关掉后那次在途调用被结成"不明"，回合停在原地再也走不动，
             # 执行层也不会再让它调模型。
-            return "unknown_charge_in_open_turn" if turn is not None else "unknown_charge_after_cancel"
+            return (
+                "unknown_charge_in_open_turn" if turn is not None else "unknown_charge_after_cancel"
+            )
         return None
 
     def _bind(self, pool: Any, agent: Any, session_id: str, allowed: tuple[str, ...]) -> None:

@@ -107,14 +107,16 @@ class RuntimeProfile:
         object.__setattr__(self, "tokenizer", tokenizer)
 
         snapshot: dict[str, Any] = {
-            "schema": 1,
+            "schema": 2,
             "model": self.model,
             "policy": self.context_policy.to_json(),
             "tokenizer_fingerprint": tokenizer.fingerprint,
             "read_page_bytes": LARGE_READ_PAGE_BYTES,
             "read_max_chars": 8192,
-            "tool_schema_hash": sha256(
-                canonical_json(cast(JsonValue, read_tool_schemas(large=True))).encode("utf-8")
+            "tool_names_hash": sha256(
+                canonical_json(cast(JsonValue, sorted(read_tool_schemas(large=True)))).encode(
+                    "utf-8"
+                )
             ).hexdigest(),
         }
         snapshot["fingerprint"] = sha256(canonical_json(snapshot).encode("utf-8")).hexdigest()

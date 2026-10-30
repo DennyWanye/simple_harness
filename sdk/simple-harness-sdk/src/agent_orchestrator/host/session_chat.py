@@ -256,7 +256,14 @@ class SessionChatService(ChatService):
             config.domain_tools,
             commands={name: command.schema for name, command in config.control_commands.items()},
         )
-        return config
+        return replace(
+            config,
+            always_exposed_tools=frozenset(
+                entry.name for entry in self._tool_catalog.entries if entry.always_exposed
+            )
+            if self._host.settings.tool_search
+            else None,
+        )
 
     def _native_plane(self, profile_id: str, tokens: int, counter: Any) -> Any:
         native = super()._native_plane(profile_id, tokens, counter)

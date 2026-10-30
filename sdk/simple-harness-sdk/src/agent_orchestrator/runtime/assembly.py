@@ -116,6 +116,9 @@ class OrchestratorConfig:
     domain_tools: Mapping[str, DomainTool] = field(
         default_factory=dict, kw_only=True, repr=False, compare=False
     )
+    always_exposed_tools: frozenset[str] | None = field(
+        default=None, kw_only=True, repr=False, compare=False
+    )
     control_commands: Mapping[str, ControlCommand] = field(
         default_factory=dict, kw_only=True, repr=False, compare=False
     )
@@ -344,7 +347,7 @@ def _read_context_identity(database: Path) -> dict[str, Any] | None:
         return None
     try:
         value = json.loads(path.read_text(encoding="utf-8"))
-        if not isinstance(value, dict) or value.get("schema") != 1:
+        if not isinstance(value, dict) or value.get("schema") != 2:
             raise ValueError("unsupported context identity schema")
         body = {key: item for key, item in value.items() if key != "fingerprint"}
         if value.get("fingerprint") != sha256(canonical_json(body).encode("utf-8")).hexdigest():
@@ -539,6 +542,7 @@ def assemble_orchestrator_runtime(
             authorization=native.authorization,
             database_path=str(database),
             tool_executor=gateway,
+            always_exposed_tools=config.always_exposed_tools,
             tool_names=(*TOOL_NAMES, *config.domain_tools, *config.control_commands),
             tool_schemas={
                 **read_tool_schemas(large=profile.context_policy is not None),

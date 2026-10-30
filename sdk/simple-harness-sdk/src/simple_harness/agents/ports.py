@@ -87,6 +87,8 @@ class AgentRuntimePorts:
     provider_handoff_fence: ProviderHandoffFence | None = None
     # Deployment-only local slot accounting; never external token authority.
     local_provider_admission: LocalProviderAdmission | None = None
+    # 说明可见性由宿主目录提供，不参与工具调用许可；None 表示全量说明。
+    always_exposed_tools: frozenset[str] | None = None
 
     def __post_init__(self) -> None:
         if self.local_provider_admission is not None:

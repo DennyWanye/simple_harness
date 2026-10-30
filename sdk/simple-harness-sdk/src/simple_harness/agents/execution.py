@@ -73,13 +73,7 @@ from simple_harness.runtime.termination import (
 from simple_harness.tools.contracts import CancellationToken
 from simple_harness.tools.errors import MalformedToolArgumentsError, UnknownToolError
 from simple_harness.tools.executor import ToolAuthorizationPending
-from simple_harness.tools.runtime_catalog import (
-    RunToolExposurePort,
-    ToolEffectClass,
-    ToolExecutionPolicy,
-    ToolRouteRequirement,
-    ToolTaskScopeRequirement,
-)
+from simple_harness.tools.runtime_catalog import RunToolExposurePort
 
 from .completion import committed_outcome, failed_outcome
 from .contracts import _message_from_json
@@ -90,42 +84,21 @@ BASE_AGENT_POLICY_PROTOCOL = "base-agent-hard-policy-v1"
 AGENT_TURN_CANCELLED = "agent_turn_cancelled"
 
 
-ALWAYS_EXPOSED_TOOLS = frozenset(
-    {
-        "agent_delegate",
-        "delegate_task",
-        "create_child",
-        "child_send",
-        "child_status",
-        "task_status",
-        "task_cancel",
-        "tool_search",
-        "tool_schema",
-        "session_history_read",
-        "session_history_search",
-    }
-)
-
-
 class TurnToolExposure:
     """只控制说明可见性；执行许可始终由原有注册表与授权口决定。"""
 
     def __init__(
-        self, specs: tuple[ProviderToolSpec, ...], *, turn_id: str, enabled: bool = True
+        self,
+        specs: tuple[ProviderToolSpec, ...],
+        *,
+        turn_id: str,
+        always_exposed: frozenset[str],
     ) -> None:
-        self._specs = tuple(self._public_spec(spec) for spec in specs)
+        self._specs = specs
         self._by_name = {spec.name: spec for spec in self._specs}
         self._turn_id = turn_id
-        self._enabled = enabled
+        self._always_exposed = always_exposed
         self._loaded: set[str] = set()
-
-    @staticmethod
-    def _public_spec(spec: ProviderToolSpec) -> ProviderToolSpec:
-        if spec.parameters.get("title") not in {"tool-search:all", "tool-search:lazy"}:
-            return spec
-        parameters = thaw_json(spec.parameters)
-        parameters.pop("title")
-        return ProviderToolSpec(spec.name, spec.description, parameters)
 
     def restore(self, run_id: RunId, checkpoint: JsonValue | None) -> None:
         self._loaded.clear()
@@ -142,27 +115,12 @@ class TurnToolExposure:
         return tuple(
             spec
             for spec in self._specs
-            if not self._enabled or spec.name in ALWAYS_EXPOSED_TOOLS or spec.name in self._loaded
+            if spec.name in self._always_exposed or spec.name in self._loaded
         )
 
-    def execution_policy(self, run_id: RunId, provider_name: str) -> ToolExecutionPolicy:
-        # 未加载与幻觉工具仍走原有执行检查，不能把说明过滤变成第二套授权。
-        spec = self._by_name.get(provider_name)
-        fingerprint = hashlib.sha256(
-            canonical_json(
-                {
-                    "name": provider_name,
-                    "schema": None if spec is None else thaw_json(spec.parameters),
-                }
-            ).encode("utf-8")
-        ).hexdigest()
-        return ToolExecutionPolicy(
-            f"tool:{provider_name}",
-            fingerprint,
-            ToolEffectClass.NON_PROJECT_EFFECT,
-            ToolRouteRequirement.OPTIONAL,
-            ToolTaskScopeRequirement.OPTIONAL,
-        )
+    def execution_policy(self, run_id: RunId, provider_name: str) -> None:
+        # 这里只过滤说明；没有额外执行策略时，授权与调用判断完全沿用原路径。
+        return None
 
     def observe_tool_result(
         self, run_id: RunId, tool_name: str, result: Mapping[str, object]
@@ -243,6 +201,7 @@ class AgentExecutionDriver:
         policy_fingerprint: str | None = None,
         provider_budget_fingerprint: str | None = None,
         tool_exposure_resolver: Callable[[RunId], RunToolExposurePort | None] | None = None,
+        always_exposed_tools: frozenset[str] | None = None,
         delegation_counter: Callable[[str], int] | None = None,
         turn_cancellations: MutableMapping[str, CancellationToken] | None = None,
         empty_response_retries: int = 2,
@@ -269,6 +228,7 @@ class AgentExecutionDriver:
         self.policy_fingerprint = policy_fingerprint
         self.provider_budget_fingerprint = provider_budget_fingerprint
         self._tool_exposure_resolver = tool_exposure_resolver
+        self._always_exposed_tools = always_exposed_tools
         self._delegation_counter = delegation_counter
 
     async def start(  # type: ignore[no-untyped-def]
@@ -852,17 +812,10 @@ class AgentExecutionDriver:
         tool_exposure = (
             None if self._tool_exposure_resolver is None else self._tool_exposure_resolver(run_id)
         )
-        if tool_exposure is None:
-            search = invocation.services.tools.provider_tool_specs(("tool_search",))
-            if search:
-                tool_exposure = TurnToolExposure(
-                    tools,
-                    turn_id=turn_id,
-                    enabled=(
-                        search[0].parameters.get("title") != "tool-search:all"
-                        and {"tool_search", "tool_schema"} <= {spec.name for spec in tools}
-                    ),
-                )
+        if tool_exposure is None and self._always_exposed_tools is not None:
+            tool_exposure = TurnToolExposure(
+                tools, turn_id=turn_id, always_exposed=self._always_exposed_tools
+            )
         prepare = getattr(invocation.services.context, "prepare", None)
         if callable(prepare):
             # Slice 4: pre-embed the recall query off the loop thread (review S4-04).
@@ -1373,6 +1326,7 @@ def build_agent_execution_driver(
     estimator: FrozenPriceEstimator | None,
     effects: EffectBatchExecutor | None = None,
     tool_exposure_resolver: Callable[[RunId], RunToolExposurePort | None] | None = None,
+    always_exposed_tools: frozenset[str] | None = None,
     continuation_capability: ProviderContinuationCapability = ProviderContinuationCapability(),
     delegation_counter: Callable[[str], int] | None = None,
     clock: Callable[[], float] = time.time,
@@ -1410,6 +1364,7 @@ def build_agent_execution_driver(
         policy_fingerprint=policy_fingerprint,
         provider_budget_fingerprint=provider_fingerprint,
         tool_exposure_resolver=tool_exposure_resolver,
+        always_exposed_tools=always_exposed_tools,
         delegation_counter=delegation_counter,
         turn_cancellations=turn_cancellations,
         empty_response_retries=empty_response_retries,
