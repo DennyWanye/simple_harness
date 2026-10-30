@@ -28,7 +28,7 @@ from simple_harness.agents.context.tokenizer import TokenizerPort, UpperBoundTok
 from simple_harness.agents.ports import AgentRuntimePorts
 from simple_harness.agents.runtime import AgentRuntime
 from simple_harness.contracts import canonical_json
-from simple_harness.execution.provider_admission import ProviderHandoffFence
+from simple_harness.execution.provider_admission import LocalProviderAdmission, ProviderHandoffFence
 from simple_harness.runtime.consumer_adapter import ConsumerRuntimePolicies
 
 from ..artifacts.workspace import WorkspaceManager
@@ -55,6 +55,10 @@ class OrchestratorConfig:
     owner_id: str = "agent-orchestrator"
     max_concurrency: int = 2
     max_concurrent_model_calls: int = 2
+    #: 只透传宿主的进程内并发门，不进入持久身份或配置序列化。
+    shared_provider_admission: LocalProviderAdmission | None = field(
+        default=None, kw_only=True, repr=False, compare=False
+    )
     #: 规划预算·答错次数：自上一次提交成功起，规划器的回答被拒几次即停。
     max_planning_attempts: int = 3
     # P2.3c part 3a: how many times one ``requirements_revision`` may have its root
@@ -517,6 +521,8 @@ def assemble_orchestrator_runtime(
             provider_admission if provider_admissions is None else provider_admissions[profile_id]
         )
         _check_intent_contexts(config, profile, admission)
+        if config.shared_provider_admission is not None and admission is not None:
+            admission = config.shared_provider_admission.with_admission(admission)
         _bind_context_identity(database, profile)
         default_out = profile.default_max_output_tokens or config.default_max_output_tokens
         ceiling = profile.max_output_tokens_ceiling or config.max_output_tokens_ceiling
