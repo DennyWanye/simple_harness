@@ -254,7 +254,7 @@ async def run(root, principal, model, tools, render, last_seen=0):
 | `session.history(limit=50)` / `session.budget()` | 已提交对话及预算引用；会话账不再结算一遍费用 |
 | `await session.close()` | 关闭文字引擎和驱动，保留任务、会话与结果；重开后继续 |
 
-会话只用新池 `…-chat-v2-c1-<配置哈希>`，执行库在 `sessions/<session_id>/chat/`。
+会话只用新池 `…-chat-v3-c2-<配置哈希>`，执行库在 `sessions/<session_id>/chat/`。
 旧 `chat()` 的 v1 编号、提示词、工具名单与行为保留。`SessionPolicy` 默认每回合 16 次模型调用、
 32 次工具调用、180 秒；配置与工具名在会话建立时冻结，改配置请使用新会话号。
 

@@ -13,8 +13,8 @@ from agent_orchestrator.verification.reviewer_evidence_tools import (
 )
 
 OBSERVED_DOCUMENT_RULE_CHECK_CHARS = 19074
-# Hash of the assurance_read_evidence schema before this fix: the execution pool
-# identity (tool_schema_hash) of existing data directories depends on it.
+# 钉住 assurance_read_evidence 已发布的说明文字：池身份只哈希内置工具的名字，
+# 说明文字不进身份，所以靠这里防止它被随手改动。
 PUBLISHED_READ_SCHEMA_SHA256 = hashlib.sha256(
     json.dumps(
         {
