@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import time
 import unicodedata
 from collections.abc import Mapping
 from pathlib import PurePosixPath
@@ -77,18 +78,32 @@ class Delegations:
         self.session = session
         self.store, self.host = session._store, session._host
 
-    def delegate(self, turn_id: str, call_id: str, arguments: Mapping[str, Any]) -> dict[str, Any]:
+    def delegate(
+        self,
+        turn_id: str,
+        call_id: str,
+        arguments: Mapping[str, Any],
+        *,
+        attempt_id: str = "direct",
+    ) -> dict[str, Any]:
         spec = normalize_spec(arguments)
-        key = f"session:{self.session.session_id}:{turn_id}:{digest(spec['goal'])}"
         fingerprint = digest(spec)
+        binding_key = digest([turn_id, attempt_id, call_id])
         with self.store.transaction():
-            row = self.store.get("delegations", key)
-            if row is not None:
-                if row["spec_hash"] != fingerprint:
-                    raise SessionError(
-                        "idempotency_conflict", "same intent has different requirements or sources"
-                    )
+            binding = self.store.get("delegation_calls", binding_key)
+            if binding is None:
+                # A continuing Agent keeps its ordinal; a replacement Agent replays from zero.
+                slot = sum(
+                    r["turn_id"] == turn_id and r["attempt_id"] == attempt_id
+                    for r in self.store.rows("delegation_calls")
+                )
             else:
+                slot = binding["slot"]
+            key = f"session:{self.session.session_id}:{turn_id}:slot:{slot}"
+            row = self.store.get("delegations", key)
+            replayed = row is not None
+            drifted = replayed and row["spec_hash"] != fingerprint
+            if row is None:
                 for pending in self.store.rows("delegations"):
                     if not pending.get("error") and (
                         not pending.get("mission_id") or self.status(pending) not in TERMINAL
@@ -107,6 +122,7 @@ class Delegations:
                     "session_id": self.session.session_id,
                     "turn_id": turn_id,
                     "call_id": call_id,
+                    "slot": slot,
                     "principal_id": self.host.principal.principal_id,
                     "spec_hash": fingerprint,
                     "request": request,
@@ -116,8 +132,58 @@ class Delegations:
                     "cancel_requested": False,
                 }
                 self.store.put("delegations", key, row)
+            if drifted:
+                drift = {
+                    "old_spec_hash": row["spec_hash"],
+                    "new_spec_hash": fingerprint,
+                    "at": time.time(),
+                }
+                event_key = f"drift:{binding_key}:{fingerprint}"
+                event = self.store.event(
+                    "delegation_replayed_with_drift",
+                    key=event_key,
+                    turn_id=turn_id,
+                    delegation_id=row["delegation_id"],
+                    payload=drift,
+                )
+                drifts = row.setdefault("spec_drift", [])
+                if not any(d["event_id"] == event["event_id"] for d in drifts):
+                    drifts.append({**drift, "event_id": event["event_id"]})
+                self.store.put("delegations", key, row)
+            self.store.put(
+                "delegation_calls",
+                binding_key,
+                {
+                    "turn_id": turn_id,
+                    "attempt_id": attempt_id,
+                    "call_id": call_id,
+                    "slot": slot,
+                    "intent_binding": "replayed" if replayed else "created",
+                    "spec_drift": bool(drifted),
+                },
+            )
         self.session._checkpoint("delegation_recorded")
-        return self._create(row)
+        receipt = self._create(row)
+        return {
+            **receipt,
+            "intent_binding": "replayed" if replayed else "created",
+            "spec_drift": bool(drifted),
+        }
+
+    def receipts(self, turn_id: str) -> list[dict[str, Any]]:
+        bindings = {
+            r["slot"]: r for r in self.store.rows("delegation_calls") if r["turn_id"] == turn_id
+        }
+        return [
+            {
+                **row["receipt"],
+                "slot": row["slot"],
+                "intent_binding": bindings[row["slot"]]["intent_binding"],
+                "spec_drift": bool(row.get("spec_drift")),
+            }
+            for row in self.store.rows("delegations")
+            if row["turn_id"] == turn_id and row.get("receipt")
+        ]
 
     def _create(self, row: dict[str, Any]) -> dict[str, Any]:
         if row.get("error"):

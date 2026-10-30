@@ -1,11 +1,6 @@
 {
-  "acceptance_evidence": {
-    "gate_run_at": "2026-10-26T22:31:39+00:00",
-    "gate_sha256": "d3fee9cd592b7c385a1fd75d7d6d98a2da59d5dcd2bdb7a11cf0134dc179f848",
-    "gate_status": "PASS",
-    "source_files_sha256": "1bac83f5fbbc40aef7f474daaaaaecea1b5adba8ef7c2c9cc41b3e58978cc0f6"
-  },
-  "deployment_id": "38817ffed800df636188ecfb27348efebfc2b77d5e014f5d545441679ff9346e",
+  "acceptance_evidence": null,
+  "deployment_id": "5adf40f6f1fd99f4bcec541e10b088b0ed08a8c74e2c2aae706484898c394ec9",
   "schema": "taskgraph-htn-wiring-derivation-v1",
   "source_files": {
     "agent_orchestrator/__init__.py": "eb50152258b356bc7866e55823fc45c7209cb6150efe205dd03c40c33beedbc2",
@@ -168,7 +163,7 @@
     "agent_orchestrator/graph/view_contracts.py": "105cee92bc3ecaa21c6db44e8a32ac086199d98037540fa13d781b724560830f",
     "agent_orchestrator/host/__init__.py": "7fc98be5f35a9000b3c1298ea4cf10eb126f98fa157abc7b54d9d7853397de95",
     "agent_orchestrator/host/chat.py": "3777c6306e6dcc05a299e034a198c56d5544717e34fbd39b4871b3b097f68d4e",
-    "agent_orchestrator/host/delegation.py": "79b4b39d25f893827a036cd34a8096a92898ff142f9843b5895edb575294b2bf",
+    "agent_orchestrator/host/delegation.py": "eb39aa1c4dae74307cf4d1a4c4e6ea6cc5a39aa5497a54abdc16ce1287854349",
     "agent_orchestrator/host/embedding.py": "ac37172e30842aec43c0af0ac81a4a7b35094fadda0c5fcae8f8efddcef22d48",
     "agent_orchestrator/host/host.py": "c903db19eef808c26cbba0c425554a815a1a420ee90068ecce5a04bb3700ff70",
     "agent_orchestrator/host/inbox.py": "388e05727a6d050950e4354ea1f02a4dc7dcc0fa0c77d006d3498f20bbd991f6",
@@ -178,8 +173,8 @@
     "agent_orchestrator/host/realtime_bridge.py": "e905524df9aa080e45c0bc33d70f61d0215b38cdba1ab860d317e38f8ee0764f",
     "agent_orchestrator/host/sandbox_doctor.py": "b28434e449bee596487d8ed78eca94fef104f76d7ad50d0d6f3a694ef9161eae",
     "agent_orchestrator/host/script_runner.py": "9ac0b54f3487b6367a7f7b7f4f1a5d9acbc177b9620b7d35aceba2c89fa74736",
-    "agent_orchestrator/host/session.py": "76e95633d562654b6fc9afcdd6196346482f9047fbd0c6f9d98701a99038ca72",
-    "agent_orchestrator/host/session_chat.py": "7e2ceeb2bbe40099c48795a71fe3410bfe233877f41f7b1525e9a11d52a1583d",
+    "agent_orchestrator/host/session.py": "ebe8f27ba3a40a02345944bb7f89818f3f12d681efee3930219dd6113842507d",
+    "agent_orchestrator/host/session_chat.py": "9a6dc81beeb57ce750c457d14f0be1d0cb92ad1e8e6d199e6d150e53f789e0d0",
     "agent_orchestrator/host/session_ledger.py": "26a5aecb535a8145ac67cd4789271c06a990b00a28eed019164c3d071be873f7",
     "agent_orchestrator/host/sessions.py": "048a52d7997717d51fcc1efa0bc97a32dc1948e6df602608aed165f58775beda",
     "agent_orchestrator/host/settings.py": "a5d3e5c17636ccfeba7cb8e486d863f56d240fb885649df3532f4c33a93f4e3c",
@@ -829,7 +824,7 @@
     "simple_harness/workflow/contracts.py": "9c2cebae8352439046256288bd13ad5e013937a25415481b4172ca1513050f14",
     "simple_harness/workflow/control.py": "640e00247db14e15a956c54bdea08f9377294dc4fc5787fa3a3ed783b25a7edc",
     "simple_harness/workflow/definition.py": "235c355968d60e017ac884b3e2deb51418a24b920cae765b075320763abe87f9",
-    "simple_harness/workflow/dependency_lock.py": "9cba3d1fbecc95c74bdc17cba22e99542f226a058356516677e4510d4f5f7045",
+    "simple_harness/workflow/dependency_lock.py": "fa4bd7eb557f82d660447b1ddb6f41b1ce643eff06ff073db6820a5d03112967",
     "simple_harness/workflow/errors.py": "1b219af4f56c5df034093d9110841e33aad70b80e1be5576a081f18811a2629f",
     "simple_harness/workflow/execution_ports.py": "6e8443d61f9b1d72501b653c9789c07238c65eaa60680539486b0b791b744bbf",
     "simple_harness/workflow/lease.py": "c206de6b82783bc32644f356df3c9423d5c009b2c0c35fdf9bb0817d9ac5a7ec",
@@ -857,7 +852,7 @@
     "simple_harness/workflows/personal_v1/ports.py": "1e5ec7df071b3ab19729f0768811fcc5544fd6a89421b4b34f7f5dde28ead1de",
     "simple_harness/workflows/personal_v1/selection.py": "c65c5e41abebfacc359bff6fe79f39b3cd87f0ff2739e2b398215ccd9dde033f"
   },
-  "taskgraph_acceptance": "VALIDATED",
+  "taskgraph_acceptance": "NOT_RUN",
   "upstream": {
     "business_replay": "CONSISTENT",
     "business_replay_receipt_sha256": "ba06c71d6123c2726041d11fe385cfec01cb57bef29ff9b22f6d9551cda05887",

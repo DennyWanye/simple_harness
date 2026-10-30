@@ -1,3 +1,15 @@
+最后更新：2026-10-30（AIPhone P1：Session 同键重放，源码专项验证完成、发版待独立回执）。
+Session 委派绑定改为用户 turn 与从 0 起的调用槽位；持久调用映射区分原 Agent 继续恢复与换代重放，
+原任务 ACTIVE/COMPLETED/CANCELLED/FAILED 均不会因重放目标改写而新建任务。
+规格漂移保留原 request，持久记录新旧哈希/时间并发布事件；工具回执含 intent_binding/spec_drift，
+Session receipt 增加 delegations。聊天回执已落账时直接补账，原 Agent 已提交的成功结果即使 Agent 已关闭也优先复用；
+失败执行者保留原换代路径。配置版本 2，要用新的数据根，opt.221 的数据不保证可读。
+指定四文件基线 64 通过/0 失败（先修正既有依赖锁与清单不同步）；修后四文件加新回归共 96 通过/0 失败，
+覆盖五个真实进程退出边界、终态重放、跨语言漂移、并发、唯一任务配额账户、inbox/后续使用/ack。
+模块状态：P1 源码修复完成且默认生效；SDK/Host 仍 opt.221，清单 NOT_RUN，未标记发版完成或新增发版里程碑。
+opt.222 发布与 Host 钉版等待绑定本次源码的独立 PASS 回执；未 push、无新 worktree，AIPhone 真机第 8 条待复验。
+工具说明、提示词、模板和并发默认值未改。详见[中文交付与恢复链路说明](../plans/2026-10-24-unified-session-realtime/交付-opt222-同键重放修复-给AIPhone-2026-10-30.md)。
+
 最后更新：2026-10-28（内嵌 SDK 依赖换为 release 轮子）。`sdk/simple-harness-sdk/uv.lock` 的 Service SDK 0.3.20 现在以 URL 指向 GitHub v0.3.20 release，轮子 SHA-256 为 `95a5ec79e6b12d7958f282e11c5e833f904f51505220a9d704698c14b2547bbb`；工作流依赖身份已同步为 `5fdec4bf373c4201f11a8922a0e66dfe81b77262f64708c597a09f3c64a8b6e3`。89 条锁记录的版本不变，其余包未变。冻结安装、新环境版本及下载轮子哈希核验通过，相关三文件 35 通过/0 失败，改动 Python 文件 Ruff 通过。本次仅完成锁文件来源与工作流身份同步，未重发 SDK 或重装 Host；详见[换源记录](../plans/2026-10-24-unified-session-realtime/记录-uvlock换指向release轮子-2026-10-28.md)。
 
 最后更新：2026-10-27 07:01:41 CST（SDK opt.221本地发版、Host钉版及桌面控制入口冒烟完成）。缺陷C第二次独立复评PASS；发布门首轮3条夹具前置时序失败经先红后绿修正，完整重跑451+Host180共631通过/0失败，12变异及三保证通道接缝通过。SDK `fb7980c7e` / Host `23a9731bf`，848项源码/轮子/安装匹配，清单VALIDATED、正式安装opt.221。真实DeepSeek文字/委派2场景通过，`mission-726b66b71cb33d0a` COMPLETED、89.32秒，唯一结果回流，成功代答0次；进程/端口与临时目录清理。本地main、未push；原生UI PRD及成功恢复不外推。详见[opt.221发版记录](../plans/2026-10-24-unified-session-realtime/阶段3b-记录.md#opt221-发版)。

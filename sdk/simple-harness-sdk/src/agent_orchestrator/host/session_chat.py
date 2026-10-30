@@ -229,7 +229,9 @@ class SessionChatService(ChatService):
             if active is None:
                 raise SessionError("permission_denied", "no committed input belongs to this run")
             if name == "delegate_task":
-                return self.session._delegations.delegate(active["turn_id"], call_id, arguments)
+                return self.session._delegations.delegate(
+                    active["turn_id"], call_id, arguments, attempt_id=run_id
+                )
             if name == "task_status":
                 task_id = arguments.get("task_id")
                 return self.session.task(task_id) if task_id else {"tasks": self.session.tasks()}
@@ -245,6 +247,7 @@ class SessionChatService(ChatService):
             raise SessionError("permission_denied", "no active input")
         with self.session._store.transaction():
             self.session._store.put("run_inputs", agent.run_id, active["idempotency_key"])
+            self.session._store.put("turn_agents", active["turn_id"], agent.agent_id)
         engine_key = f"{agent.agent_id}:{input_id}"
         with self.session._store.transaction():
             frozen_input = self.session._store.get("engine_inputs", engine_key)
@@ -269,9 +272,25 @@ class SessionChatService(ChatService):
                 self.session._store.put("engine_inputs", engine_key, frozen_input)
                 self.session._store.put("voice_history_read", agent.agent_id, voice_version)
         self._restore_history = False
+        # A closed Agent cannot accept inputs, but its committed result remains authoritative.
+        if self._pool().runtime.uow.read_agent_turn_result(agent.turn_id_for(input_id)):
+            return agent.get_result(agent.turn_id_for(input_id))
         return await super()._complete(session_id, agent, frozen_input, input_id)
 
     async def _agent(self, session_id: str, tools: Any) -> Any:
+        active = self.session._current_input
+        if active is not None:
+            agent_id = self.session._store.get("turn_agents", active["turn_id"])
+            runtime = self._pool().runtime
+            if agent_id is not None:
+                agent = await runtime.open(agent_id)
+                stored = runtime.uow.read_agent_turn_result(agent.turn_id_for(active["turn_id"]))
+                if stored and str(agent.get_result(stored.turn_id).state) == "committed":
+                    binding = runtime.binding(agent_id)
+                    config = AgentConfig.from_json(thaw_json(binding.config_json))
+                    self._runs[agent.run_id] = session_id
+                    self._restore_history = False
+                    return agent, tuple(config.tool_names), False
         result = await super()._agent(session_id, tools)
         self._restore_history = result[2]
         return result
@@ -282,6 +301,7 @@ class SessionChatService(ChatService):
             row["error"] = thaw_json(row["error"])
         with self.session._store.transaction():
             self.session._store.put("chat_receipts", row["input_id"], row)
+        self.session._checkpoint("chat_receipt_recorded")
 
     def _rows(self) -> list[dict[str, Any]]:
         return self.session._store.rows("chat_receipts")

@@ -1,3 +1,15 @@
+## opt.222 — Session 同键重放稳定委派（2026-10-30）
+
+`session.send(text, key=...)` 的委派意图改为绑定用户回合与从 0 起的调用槽位；
+重放时即使模型改写 goal、原任务已终态，也返回原 mission。规格漂移持久记录旧/新哈希与时间、
+发布 `delegation_replayed_with_drift` 事件，委派回执增加 `intent_binding` 与 `spec_drift`；
+Session 最终回执增加 `delegations`，原 key 不同原文仍拒绝，新 key 可以创建新任务。
+
+恢复优先补用已落账的聊天回执；原 Agent 已提交的结果在其关闭后仍可用于完成 Session 落账。
+同键并发请求经原有发送锁取得同一最终回执。公开方法不变，工具描述、提示词及并发默认值不变。
+**要用新的数据根，opt.221 的数据不保证可读**；Session 配置版本升级为 2，不迁移旧库。
+Service SDK 0.3.20 无须改动。发布状态与验证证据以本次中文交付文档为准。
+
 ## opt.218 — 语音联合桥与 host.open_session（2026-10-26）
 
 按用户放行口径与第十一次独立复核 PASS 发布。新增 `attach_voice`、`announce`、本地打断与有界重连，

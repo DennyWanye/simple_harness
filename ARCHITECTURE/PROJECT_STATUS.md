@@ -1,3 +1,15 @@
+最后更新：2026-10-30（AIPhone P1：Session 同键重放，源码专项验证完成、发版待独立回执）。
+Session 委派绑定改为用户 turn 与从 0 起的调用槽位；持久调用映射区分原 Agent 继续恢复与换代重放，
+原任务 ACTIVE/COMPLETED/CANCELLED/FAILED 均不会因重放目标改写而新建任务。
+规格漂移保留原 request，持久记录新旧哈希/时间并发布事件；工具回执含 intent_binding/spec_drift，
+Session receipt 增加 delegations。聊天回执已落账时直接补账，原 Agent 已提交的成功结果即使 Agent 已关闭也优先复用；
+失败执行者保留原换代路径。配置版本 2，要用新的数据根，opt.221 的数据不保证可读。
+指定四文件基线 64 通过/0 失败（先修正既有依赖锁与清单不同步）；修后四文件加新回归共 96 通过/0 失败，
+覆盖五个真实进程退出边界、终态重放、跨语言漂移、并发、唯一任务配额账户、inbox/后续使用/ack。
+模块状态：P1 源码修复完成且默认生效；SDK/Host 仍 opt.221，清单 NOT_RUN，未标记发版完成或新增发版里程碑。
+opt.222 发布与 Host 钉版等待绑定本次源码的独立 PASS 回执；未 push、无新 worktree，AIPhone 真机第 8 条待复验。
+工具说明、提示词、模板和并发默认值未改。详见[中文交付与恢复链路说明](../plans/2026-10-24-unified-session-realtime/交付-opt222-同键重放修复-给AIPhone-2026-10-30.md)。
+
 最后更新：2026-10-28（内嵌 SDK release 依赖锁定完成）。模块完成度：Service SDK 0.3.20 本机候选换源及工作流依赖身份同步已完成，锁文件 URL 指向 GitHub release 并固定轮子 SHA-256 `95a5ec79e6b12d7958f282e11c5e833f904f51505220a9d704698c14b2547bbb`。定向测试 35 通过/0 失败，两份 Python 文件 Ruff、临时环境冻结安装与轮子哈希核验通过；临时环境已删除，其它包版本不变。SDK/Host 仍 opt.221，未发版、重装、push 或新建 worktree，不扩展既有阶段验收结论。详见[换源记录](../plans/2026-10-24-unified-session-realtime/记录-uvlock换指向release轮子-2026-10-28.md)。
 
 最后更新：2026-10-27 07:48:51 CST（opt.221第四轮原生PRD委派与成功恢复已跑通；执行时限未全通过）。正式opt.221、debug应用实际重打、新userdata-opt221；mission-3b0974c24a7a9ce5于07:39:09 COMPLETED/version5，设窗到完成2048.42秒。真实首项通过已ANSWERED/pass，result_ready1、COMPLETED inbox恰1；56169字节终稿有完整实质章节、待补全0，6份文件哈希通过。真实Cmd+Q释放进程后重启，原消息/同任务COMPLETED/产物引用仍在，desktop-main与唯一结果事件不变、游标676未回退、文件哈希一致。PlanningRejected/MissionFailed0；A/B指定特征0，收敛WAITING0，所有12回合最大总存续483.513秒，未见C超15分钟形态，不外推专门边界全覆盖。HTTP200×61/524×1（125.078秒），客户端明确超时/结果未知0。代签69.32秒超60，待答处理窗口快照间隔70秒超30：本轮业务2通过/0失败，执行时限0通过/2失败；完整四场景3通过/1失败（问答/取消沿用opt.218），不记全绿。两轮PID/8100/新旧与模板userdata占用全0，扫描503文件0命中；证据索引及失败时序保留。只提交两份中文文档，无生产代码/SDK改动、不push；待执行时限复验、终审无可用回复检查及Claude复核。见[本轮真机记录](../plans/2026-10-24-unified-session-realtime/阶段3b-记录.md#真机鼠标点击验收2026-10-26)。下文保留历史。

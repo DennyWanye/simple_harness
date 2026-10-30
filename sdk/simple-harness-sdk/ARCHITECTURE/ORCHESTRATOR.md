@@ -1,3 +1,15 @@
+最后更新：2026-10-30（AIPhone P1：Session 同键重放，源码专项验证完成、发版待独立回执）。
+Session 委派绑定改为用户 turn 与从 0 起的调用槽位；持久调用映射区分原 Agent 继续恢复与换代重放，
+原任务 ACTIVE/COMPLETED/CANCELLED/FAILED 均不会因重放目标改写而新建任务。
+规格漂移保留原 request，持久记录新旧哈希/时间并发布事件；工具回执含 intent_binding/spec_drift，
+Session receipt 增加 delegations。聊天回执已落账时直接补账，原 Agent 已提交的成功结果即使 Agent 已关闭也优先复用；
+失败执行者保留原换代路径。配置版本 2，要用新的数据根，opt.221 的数据不保证可读。
+指定四文件基线 64 通过/0 失败（先修正既有依赖锁与清单不同步）；修后四文件加新回归共 96 通过/0 失败，
+覆盖五个真实进程退出边界、终态重放、跨语言漂移、并发、唯一任务配额账户、inbox/后续使用/ack。
+模块状态：P1 源码修复完成且默认生效；SDK/Host 仍 opt.221，清单 NOT_RUN，未标记发版完成或新增发版里程碑。
+opt.222 发布与 Host 钉版等待绑定本次源码的独立 PASS 回执；未 push、无新 worktree，AIPhone 真机第 8 条待复验。
+工具说明、提示词、模板和并发默认值未改。详见[中文交付与恢复链路说明](../../../plans/2026-10-24-unified-session-realtime/交付-opt222-同键重放修复-给AIPhone-2026-10-30.md)。
+
 最后更新：2026-09-23。此目录是私有仓库的 HTN + TaskGraph23 + Assurance 开发源码快照，版本 `0.13.0.dev20260923+assurance.1`。Assurance 尚未 BODY_WIRED/整体验收，Host 仍消费旧 HTN wheel。交接与全部未完成项见 [仓库 HANDOFF](../../../docs/archive/reports-2026-08/HANDOFF-2026-09-23.md)。下文仅为相应历史阶段事实。
 
 <!-- v14-final-integration-current -->

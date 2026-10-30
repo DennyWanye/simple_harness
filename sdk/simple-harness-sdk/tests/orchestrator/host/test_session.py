@@ -193,10 +193,12 @@ def test_delegation_idempotency_matrix_and_busy(tmp_path):
     host, session = make_session(tmp_path)
     turn = session._commit_input("do it", "k")["turn_id"]
     first = session._delegations.delegate(turn, "c1", SPEC)
-    assert session._delegations.delegate(turn, "c1", SPEC) == first
-    assert session._delegations.delegate(turn, "c2", SPEC) == first
-    with pytest.raises(Exception, match="idempotency_conflict"):
-        session._delegations.delegate(turn, "c3", {**SPEC, "success_criteria": ["different"]})
+    replay = session._delegations.delegate(turn, "c1", SPEC)
+    assert replay["mission_id"] == first["mission_id"] and replay["intent_binding"] == "replayed"
+    with pytest.raises(Exception, match="busy"):
+        session._delegations.delegate(turn, "c2", SPEC)
+    drift = session._delegations.delegate(turn, "c1", {**SPEC, "success_criteria": ["different"]})
+    assert drift["mission_id"] == first["mission_id"] and drift["spec_drift"]
     second_turn = session._commit_input("again", "k2")["turn_id"]
     with pytest.raises(Exception, match="busy"):
         session._delegations.delegate(second_turn, "c4", SPEC)
@@ -226,7 +228,7 @@ def test_crash_recovery_at_each_durable_boundary(tmp_path, point):
             session._delegations.delegate(turn, "c1", SPEC)
         session = Session(host, session_id="s")
         session._delegations.recover()
-    receipt = session._delegations.delegate(turn, "c2", SPEC)
+    receipt = session._delegations.delegate(turn, "c1", SPEC)
     assert len(host.made) == 1
     host.finish(receipt["mission_id"])
     if point == "inbox_written":
@@ -347,7 +349,10 @@ def test_real_control_command_creates_one_mission_without_domain_tool(tmp_path):
             assert reply["state"] == "committed", reply
             assert len(session.tasks()) == 1, (reply, session._chat._assembled.gateway.calls)
             assert "delegate_task" not in session._host.tools
-            assert [c["outcome"] for c in reply["tool_calls"]] == ["succeeded", "succeeded"], (
+            assert [c["outcome"] for c in reply["tool_calls"]] == [
+                "succeeded",
+                "rejected:rejected",
+            ], (
                 [
                     (c.get("error_code"), c.get("stage"))
                     for c in session._chat._assembled.gateway.calls

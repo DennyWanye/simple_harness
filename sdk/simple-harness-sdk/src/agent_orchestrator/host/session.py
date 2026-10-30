@@ -62,7 +62,7 @@ class Session:
         with self._store.transaction():
             frozen = self._store.get("meta", "configuration")
             configuration = {
-                "version": 1,
+                "version": 2,
                 "policy": self.policy.public(),
                 "tools": list(host.tools),
             }
@@ -202,15 +202,23 @@ class Session:
             row = self._commit_input(text, input_key)
             self._current_input = row
             try:
-                reply = await self._chat.turn(
-                    {
-                        "session_id": self.session_id,
-                        "text": row["model_input"],
-                        "idempotency_key": row["turn_id"],
-                    },
-                    on_delta=self._piece,
-                )
-                receipt = {**reply, "engine_turn_id": reply["turn_id"], "turn_id": row["turn_id"]}
+                reply = self._store.get("chat_receipts", row["turn_id"])
+                if reply is None:
+                    reply = await self._chat.turn(
+                        {
+                            "session_id": self.session_id,
+                            "text": row["model_input"],
+                            "idempotency_key": row["turn_id"],
+                        },
+                        on_delta=self._piece,
+                    )
+                self._checkpoint("before_receipt_commit")
+                receipt = {
+                    **reply,
+                    "engine_turn_id": reply["turn_id"],
+                    "turn_id": row["turn_id"],
+                    "delegations": self._delegations.receipts(row["turn_id"]),
+                }
                 if reply["state"] == "committed":
                     self._release_result_allowances(row)
                 with self._store.transaction():
