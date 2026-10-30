@@ -57,6 +57,7 @@ class DomainTool:
     invoke: ToolInvoke = field(repr=False, compare=False)
     read_only: bool = True
     timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS
+    roles: tuple[str, ...] = ("task", "main", "child")
 
     def __post_init__(self) -> None:
         if not isinstance(self.name, str) or not NAME_PATTERN.match(self.name):

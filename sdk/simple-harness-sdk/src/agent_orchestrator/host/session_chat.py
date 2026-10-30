@@ -14,6 +14,7 @@ from ..deployment.native_pools import DeploymentToolAuthorization
 from ..governance.budgets import BudgetExhausted
 from ..orchestrator.budget_accounts import global_account_id
 from ..runtime.control_commands import ControlCommand
+from ..runtime.tool_catalog import META_SCHEMAS
 from .chat import ChatService
 from .session_ledger import SessionError, digest, encoded
 
@@ -36,9 +37,12 @@ SESSION_INSTRUCTIONS = (
     "\n一个持续主题或独立工作开一个工作会话，用 create_child 创建；"
     "同一主题追问用 child_send 排入下一回合；复杂工作在工作会话里用 "
     "delegate_task(child_key=…) 交给后台。用 child_status 查询工作会话与任务。"
+    "\n你直接看到的只有常用命令。要用别的工具先 tool_search 找，再 tool_schema 拿到说明后调用。"
+    "小而简单的事自己做；需要时间、多步骤、要审阅的交给 delegate_task。"
 )
 
 COMMAND_SCHEMAS = {
+    **META_SCHEMAS,
     "delegate_task": {
         "type": "object",
         "description": (
@@ -232,18 +236,27 @@ class SessionChatService(ChatService):
         )
 
     def _registered_tools(self) -> tuple[str, ...]:
-        return (*self._host.tools, *COMMAND_SCHEMAS, *HISTORY_TOOLS)
+        return super()._registered_tools()
 
     def _configuration(self, config: Any) -> Any:
+        config = super()._configuration(config)
         commands = {
             name: ControlCommand(schema, self._command(name))
             for name, schema in COMMAND_SCHEMAS.items()
+            if name not in META_SCHEMAS
         }
         if set(commands) & set(config.domain_tools):
             raise SessionError(
                 "invalid_request", "application tool conflicts with a session command"
             )
-        return replace(config, control_commands=commands)
+        config = replace(config, control_commands={**config.control_commands, **commands})
+        from ..runtime.tool_catalog import catalog_for
+
+        self._tool_catalog = catalog_for(
+            config.domain_tools,
+            commands={name: command.schema for name, command in config.control_commands.items()},
+        )
+        return config
 
     def _native_plane(self, profile_id: str, tokens: int, counter: Any) -> Any:
         native = super()._native_plane(profile_id, tokens, counter)

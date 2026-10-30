@@ -6,7 +6,6 @@ import asyncio
 import socket
 
 import pytest
-from agent_orchestrator.runtime.sandbox_run import sandbox_run_tool
 
 from agent_orchestrator.artifacts.workspace import WorkspaceManager
 from agent_orchestrator.runtime.domain_tools import ToolCallContext
@@ -16,7 +15,9 @@ from agent_orchestrator.runtime.sandbox import (
     SandboxUnavailable,
     platform_executor,
     probe_sandbox,
+    process_identity,
 )
+from agent_orchestrator.runtime.sandbox_run import sandbox_run_tool
 
 
 @pytest.fixture(scope="module")
@@ -127,14 +128,16 @@ def test_sandbox_run_timeout_kills_process_tree(executor, workspace):
             executor.interpreter,
             "-c",
             "import subprocess,sys,time; "
-            "subprocess.Popen([sys.executable,'-c','import time;time.sleep(60)']); "
-            "print('started',flush=True); time.sleep(60)",
+            "child=subprocess.Popen([sys.executable,'-c','import time;time.sleep(60)']); "
+            "print('started',child.pid,flush=True); time.sleep(60)",
         ],
         timeout_seconds=1,
     )
     assert result["killed_by_timeout"] is True
     assert result["exit_code"] is None
     assert "started" in result["stdout"]
+    child_pid = int(result["stdout"].split()[1])
+    assert process_identity(child_pid) is None
     assert result.get("status") != "unknown"
 
 
@@ -174,3 +177,54 @@ def test_sandbox_run_unconfirmed_end_is_unknown(executor, workspace, monkeypatch
     result = _invoke(sandbox_run_tool(executor, workspace.root), argv=["echo", "anything"])
     assert result["status"] == "unknown"
     assert result["exit_code"] is None
+
+
+def test_sandbox_run_does_not_follow_command_output_links(executor, workspace, tmp_path):
+    secret = tmp_path / "host-secret"
+    secret.write_text("host-private-value")
+    code = (
+        "from pathlib import Path; "
+        "p=next(Path.cwd().glob('.sandbox-run-*')); "
+        "(p/'stdout').unlink(); "
+        f"(p/'stdout').symlink_to({str(secret)!r})"
+    )
+    result = _invoke(
+        sandbox_run_tool(executor, workspace.root),
+        argv=[executor.interpreter, "-c", code],
+    )
+    assert "host-private-value" not in result["stdout"]
+    assert secret.read_text() == "host-private-value"
+
+
+def test_sandbox_run_killed_wrapper_does_not_claim_command_exit(executor, workspace):
+    result = _invoke(
+        sandbox_run_tool(executor, workspace.root),
+        argv=[executor.interpreter, "-c", "import os; os.kill(os.getppid(), 9)"],
+    )
+    assert result["status"] == "unknown"
+    assert result["exit_code"] is None
+    assert result["killed_by_timeout"] is False
+
+
+def test_sandbox_run_bounds_executor_diagnostics_in_utf8(executor, workspace, monkeypatch):
+    async def diagnostic(command, *, cwd, spec):
+        return ExecutionReceipt(
+            execution_id="diagnostic",
+            kind=executor.kind,
+            isolated=True,
+            environment_digest=executor.environment_digest,
+            effective_limits={},
+            exit_code=1,
+            output="\ufffd" * 65536,
+            truncated=False,
+            timed_out=False,
+            limit_exceeded=None,
+            tree_killed=True,
+            residual_pids=(),
+            status="ok",
+        )
+
+    monkeypatch.setattr(executor, "execute", diagnostic)
+    result = _invoke(sandbox_run_tool(executor, workspace.root), argv=["echo", "anything"])
+    assert len(result["stderr"].encode("utf-8")) <= 65536
+    assert result["truncated"] is True

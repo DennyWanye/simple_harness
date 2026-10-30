@@ -64,6 +64,14 @@ from ..runtime.domain_tools import DomainTool
 from ..runtime.model_fallback import LEDGER_NAME, read_model_calls
 from ..runtime.planning_operations import SourceUnavailable
 from ..runtime.sandbox import SandboxUnavailable
+from ..runtime.sandbox_run import sandbox_run_tool
+from ..runtime.tool_catalog import (
+    META_SCHEMAS,
+    catalog_for,
+    checked_roles,
+    invoke_meta,
+    search_schema,
+)
 from ..runtime.tool_gateway import ASSURANCE_REVIEWER_TOOLS, TOOL_NAMES
 from ..version import __version__
 from .chat import ChatService
@@ -113,10 +121,17 @@ def _checked_tools(tools: Sequence[DomainTool]) -> dict[str, DomainTool]:
     """注册时就把能拒的拒掉：类型、重名、与内置/技能工具同名、副作用。"""
 
     checked: dict[str, DomainTool] = {}
-    reserved = set(TOOL_NAMES) | set(SKILL_TOOL_NAMES) | set(ASSURANCE_REVIEWER_TOOLS)
+    reserved = (
+        set(TOOL_NAMES)
+        | set(SKILL_TOOL_NAMES)
+        | set(ASSURANCE_REVIEWER_TOOLS)
+        | set(META_SCHEMAS)
+        | {"sandbox_run"}
+    )
     for tool in tools:
         if not isinstance(tool, DomainTool):
             raise ValueError(f"tools must be DomainTool instances, got {type(tool).__name__}")
+        checked_roles(tool.roles)
         if not tool.read_only:
             raise ValueError(
                 f"tool {tool.name!r} has side effects; register side effects as a connector"
@@ -702,7 +717,44 @@ class OrchestrationHost:
             if sandboxed
             else (*WORKSPACE_TOOLS, *KNOWLEDGE_TOOLS, "session_history_read")
         )
-        tool_names = tuple(self.tools)
+        runtime_tools = dict(self.tools)
+        if sandboxed:
+            command = sandbox_run_tool(self.executor, self.root / "workspaces")
+            runtime_tools[command.name] = replace(
+                command,
+                roles=("task", "main", "child")
+                if self.settings.main_session_sandbox_run
+                else ("task",),
+            )
+
+        def meta_invoke(name):
+            def invoke(arguments, context):
+                run_id = context.call_id.split(":", 1)[0]
+                gateway = self.orchestrator._assembled.gateway
+                binding = gateway.binding_for(run_id)
+                if binding is None:
+                    raise ValueError("not_found_or_forbidden")
+                try:
+                    return invoke_meta(
+                        self.tool_catalog, "task", binding.allowed_tools, name, arguments
+                    )
+                except ValueError:
+                    return {"error": "not_found_or_forbidden"}
+
+            return invoke
+
+        for name, schema in META_SCHEMAS.items():
+            runtime_tools[name] = DomainTool(
+                name=name,
+                schema=search_schema(self.settings.tool_search)
+                if name == "tool_search"
+                else schema,
+                invoke=meta_invoke(name),
+            )
+        self.tool_catalog = catalog_for(runtime_tools)
+        self._runtime_tools = runtime_tools
+        task_tools = {name: tool for name, tool in runtime_tools.items() if "task" in tool.roles}
+        tool_names = tuple(task_tools)
         self.policy = DeploymentPolicy(
             allowed_tools=(*base_tools, *skill_tools, *tool_names),
             skill_tools=skill_tools,
@@ -733,7 +785,7 @@ class OrchestrationHost:
             lease_seconds=self.settings.lease_seconds,
             deployment_policy=self.policy,
             sandbox_executor=self.executor,
-            domain_tools=dict(self.tools),
+            domain_tools=task_tools,
             tool_call_tenant_id=self.tenant_id,
             tool_call_principal_id=str(getattr(self.principal, "principal_id", "") or "") or None,
             task_max_tokens=self.settings.task_max_tokens,

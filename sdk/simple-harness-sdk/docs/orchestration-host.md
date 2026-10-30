@@ -647,6 +647,7 @@ tool = DomainTool(
     },
     invoke=device_status,                      # 普通函数（线程里跑）或 async def（事件循环上跑）
     timeout_seconds=30,
+    roles=("task", "main", "child"),          # 允许范围，只缩不放
 )
 host = await OrchestrationHost.open(root, principal=..., model=..., tools=[tool])
 ```
@@ -678,6 +679,43 @@ host = await OrchestrationHost.open(root, principal=..., model=..., tools=[tool]
 事件按 `seq` 排序，`events(mission_id, after_seq=上次的 through_seq)` 续读；同一调用的事件共用 `call_key`，
 可以拿它去重；同一调用号有多条结束事件时（极少见：记完结果后、交回模型前进程崩溃，重启对账又补一条），以 `seq` 最大的那条为准。`on_write` 只是"有新写入"的提醒，内容从事件续读。可运行的例子（用公开模块 `agent_orchestrator.host.offline` 的脚本模型，不联网）见
 `examples/orchestration-host/tools_readonly.py`（同步工具）与 `tools_async.py`（异步工具：抛错一次、超时一次、再成功）。
+
+## 工具层
+
+`ToolCatalog` 把 SDK 内置、技能、应用只读工具及预留的动作来源收进一张版本化目录。
+目录条目包含 `name`、`description`、`schema`、`source`、`roles`、`always_exposed`；
+`catalog_version` 按全部条目的名字、schema、角色与来源计算，不传入池编号。
+公开入口是 `agent_orchestrator.host.ToolCatalog` / `CatalogEntry`。
+
+`DomainTool.roles` 默认 `("task", "main", "child")`，可以声明任意子集（也可以为空）。
+`child` 还必须同时声明 `main` 才生效；任务工具继续取任务、步骤角色、部署的既有交集。
+主会话和子会话默认有工作区读/列、知识列/读、两个历史回读工具及对应角色的应用只读工具。
+工作区读/列作用于本会话的 `chat-<会话号>` 工作区；不会得到工作区写或 `run_tests`。
+知识读仍需任务知识作用域：目前聊天绑定没有 Mission，调用会明确不可用，不能跨任务读取。
+
+`HostSettings.tool_search=True` 默认启用按需说明：模型先调用
+`tool_search({"query": "设备", "limit": 8})` 搜名字或说明，再调用
+`tool_schema({"names": ["device_status"]})` 加载完整说明，随后正常调用工具。
+返回对象分别用 `tools` / `schemas` 承载条目，并附 `catalog_version`。
+搜索和 schema 读取始终与当前角色、冻结允许名单取交集；名单外统一
+`not_found_or_forbidden`。控制命令和两个历史回读始终下发，其余说明按需加载。
+加载集合写入本回合 checkpoint，恢复同回合会复用，下一回合清空。
+直接调用允许名单内尚未加载的工具照常经过原授权执行。
+设 `tool_search=False` 会下发全部允许说明；显式收窄工具名单而未保留两个元工具时，
+也下发该收窄名单内的全部说明，避免模型找不到已授权工具。
+
+`sandbox_run` 在启动隔离检查通过后默认供任务使用。参数是 `argv`（至少一个字符串）、
+`stdin`（最多 64 KiB UTF-8）、`timeout_seconds`（1–120，默认 60）及工作区相对 `cwd`。
+命令复用 Seatbelt / bubblewrap 执行器，无网络、受资源限制，超时清理进程树，
+修改只保留在一次性工作区副本。stdout / stderr 各最多 64 KiB，截断标出 `truncated`。
+结果含 `exit_code`、`stdout`、`stderr`、`duration_ms`、`killed_by_timeout`，
+以及 `status=exited/timeout/unknown`；`unknown` 的退出码为空，不能算成功。
+`HostSettings.main_session_sandbox_run=True` 才给主/子会话；沙箱检查失败时所有角色均不出现此工具。
+
+当前范围不包含动作工具和宿主运行中热注册。聊天池、任务池沿用原编号；
+但完整的池身份分离仍待修复既有内置 schema 身份冻结，且 `Session` 账本仍冻结应用工具名：
+新增应用工具后，旧 `Session` 会报 `session_config_frozen`；需新会话号，不能当作旧会话可重开。
+这些限制和车道冲突见本次任务记录，不承诺旧数据全面兼容。
 
 ## 4b. 注册应用自己的连接器（有副作用的操作）
 

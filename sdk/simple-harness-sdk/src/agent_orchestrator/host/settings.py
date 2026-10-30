@@ -111,8 +111,13 @@ class HostSettings:
     chat_max_model_calls: int = 8
     chat_max_tool_calls: int = 8
     chat_turn_seconds: float = 180.0
+    tool_search: bool = True
+    main_session_sandbox_run: bool = False
 
     def __post_init__(self) -> None:
+        for name in ("tool_search", "main_session_sandbox_run"):
+            if type(getattr(self, name)) is not bool:
+                raise ValueError(f"{name} must be bool")
         if self.context_input_tokens not in CONTEXT_INPUT_CHOICES:
             raise ValueError(f"context_input_tokens 只能是 {CONTEXT_INPUT_CHOICES} 之一")
         for name in ("max_concurrency", "max_concurrent_model_calls"):
@@ -176,6 +181,12 @@ def host_settings_from_mapping(section: Mapping[str, Any] | None) -> HostSetting
     context = raw.get("context_input_tokens")
     publish = raw.get("publish_dir")
     return HostSettings(
+        tool_search=raw.get("tool_search")
+        if type(raw.get("tool_search")) is bool
+        else defaults.tool_search,
+        main_session_sandbox_run=raw.get("main_session_sandbox_run")
+        if type(raw.get("main_session_sandbox_run")) is bool
+        else defaults.main_session_sandbox_run,
         max_concurrency=bounded("max_concurrency", 1, 4),
         max_concurrent_model_calls=bounded("max_concurrent_model_calls", 1, 4),
         context_input_tokens=(

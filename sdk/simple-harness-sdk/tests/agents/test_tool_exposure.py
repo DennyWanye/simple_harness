@@ -9,7 +9,7 @@ import json
 from agent_orchestrator.host import DomainTool, HostSettings, OrchestrationHost, Principal
 from agent_orchestrator.host.offline import FixtureWordCounter, ScriptedProvider
 from simple_harness.agents.execution import TurnToolExposure
-from simple_harness.contracts import RunId
+from simple_harness.contracts import RunId, thaw_json
 from simple_harness.providers import ProviderToolSpec
 
 RUN = RunId("exposure-test")
@@ -126,7 +126,7 @@ def test_real_chat_search_load_execute_and_new_turn_forgets_loaded_set(tmp_path)
             checkpoint = host.chat_service._pool().runtime.uow.read_react_checkpoint(
                 reply["agent_id"]
             )
-            assert "device_status" in json.dumps(dict(checkpoint.checkpoint))
+            assert "device_status" in json.dumps(thaw_json(checkpoint.checkpoint))
             await host.chat({"session_id": "s", "text": "继续", "idempotency_key": "j"})
             assert "device_status" not in {t.name for t in script.requests[-1].tools}
         finally:
@@ -191,6 +191,134 @@ def test_real_chat_meta_tools_obey_frozen_allowlist(tmp_path):
             ]
             assert any("not_found_or_forbidden" in str(m.content) for m in observations)
             assert all("device_status" not in {t.name for t in r.tools} for r in script.requests)
+        finally:
+            await host.close()
+
+    asyncio.run(case())
+
+
+def test_inflight_turn_reopens_from_sqlite_with_same_loaded_tools(tmp_path):
+    from provider_fixture import MODEL
+    from provider_fixture import ScriptedProvider as AgentProvider
+
+    from simple_harness.agents import AgentConfig, AgentTurnState, build_agent_runtime
+    from simple_harness.agents.ports import AgentRuntimePorts, AllowAllAuthorization
+    from simple_harness.providers.errors import ProviderTransportError
+    from simple_harness.providers.reconciliation import (
+        ProviderReconciliationObservation,
+        ProviderReconciliationState,
+    )
+    from simple_harness.runtime.consumer_adapter import ConsumerRuntimePolicies
+    from simple_harness.tools import ToolResult
+
+    names = ("tool_search", "tool_schema", "device_status")
+    schemas = {name: thaw_json(_spec(name).parameters) for name in names}
+    schemas["tool_search"]["title"] = "tool-search:lazy"
+    schemas["tool_schema"] = {
+        "type": "object",
+        "properties": {"names": {"type": "array", "items": {"type": "string"}}},
+        "required": ["names"],
+        "additionalProperties": False,
+    }
+
+    class Executor:
+        async def execute(self, call, context):
+            result = {"schemas": [{"name": "device_status"}]} if call.name == "tool_schema" else {}
+            return ToolResult.succeeded(call.call_id, result)
+
+    class CountedProvider(AgentProvider):
+        async def invoke(self, request, *, cancel):
+            from dataclasses import replace
+
+            from simple_harness.providers.base import ProviderUsage
+
+            response = await super().invoke(request, cancel=cancel)
+            return replace(response, usage=ProviderUsage(10, 2, 12))
+
+    class InterruptedProvider(CountedProvider):
+        async def invoke(self, request, *, cancel):
+            if self.calls:
+                self.requests.append(request)
+                raise ProviderTransportError()
+            return await super().invoke(request, cancel=cancel)
+
+    class NotStarted:
+        async def observe(self, invocation):
+            return ProviderReconciliationObservation(
+                ProviderReconciliationState.CONFIRMED_NOT_STARTED, "exposure-test:not-started"
+            )
+
+    def ports(provider, reconcile=None):
+        policy = ConsumerRuntimePolicies.local_default()
+        if reconcile is not None:
+            from dataclasses import replace
+
+            policy = replace(policy, provider_reconciliation=reconcile)
+        return AgentRuntimePorts(
+            provider=provider,
+            authorization=AllowAllAuthorization(),
+            database_path=str(tmp_path / "execution.db"),
+            tool_executor=Executor(),
+            tool_names=names,
+            tool_schemas=schemas,
+            model=MODEL,
+            owner_id="exposure-owner",
+            policies=policy,
+        )
+
+    async def case():
+        interrupted = InterruptedProvider([("tool_schema", {"names": ["device_status"]})])
+        async with build_agent_runtime(ports(interrupted)) as runtime:
+            agent = await runtime.create(
+                AgentConfig("assistant", "Use tools.", "test", tool_names=names), creation_key="a"
+            )
+            receipt = await agent.submit("read battery", input_id="i")
+            for _ in range(200):
+                if runtime.uow.list_open_wait_blockers_for_run(agent.run_id):
+                    break
+                await asyncio.sleep(0.01)
+            else:
+                raise AssertionError("interrupted turn never reached durable provider wait")
+            agent_id = agent.agent_id
+            checkpoint = thaw_json(runtime.uow.read_react_checkpoint(agent.run_id).checkpoint)
+            assert checkpoint["tool_exposure_state"]["loaded_names"] == ["device_status"]
+            assert agent.turn_state(receipt.turn_id) is AgentTurnState.RUNNING
+        recovered = CountedProvider([("device_status", {}), "battery read"])
+        async with build_agent_runtime(ports(recovered, NotStarted())) as runtime:
+            agent = await runtime.open(agent_id)
+            await runtime.kernel.reconcile()
+            await runtime.recover_pending_turns()
+            result = await agent.wait_turn(receipt.turn_id, timeout=5)
+            assert result.state is AgentTurnState.COMMITTED
+            assert result.public_output.content == "battery read"
+            assert all(
+                "device_status" in {tool.name for tool in r.tools} for r in recovered.requests
+            )
+            assert agent.turn_snapshot(receipt.turn_id).seq == 1
+
+    asyncio.run(case())
+
+
+def test_frozen_allowlist_without_meta_tools_keeps_its_schemas_visible(tmp_path):
+    async def case():
+        seen = []
+        script = _chat([("device_status", {}), "42"])
+        host = await _open(tmp_path, script, [_device(seen)])
+        try:
+            reply = await host.chat(
+                {
+                    "session_id": "restricted",
+                    "text": "查电量",
+                    "idempotency_key": "i",
+                    "tools": ["device_status"],
+                }
+            )
+            assert reply["state"] == "committed", reply
+            assert seen == [{}]
+            assert {tool.name for tool in script.requests[0].tools} == {"device_status"}
+            assert all(
+                "tool_search" not in {tool.name for tool in r.tools} for r in script.requests
+            )
         finally:
             await host.close()
 

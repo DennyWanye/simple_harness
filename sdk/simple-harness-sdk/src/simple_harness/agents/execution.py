@@ -44,6 +44,7 @@ from simple_harness.execution.dispatch import (
 )
 from simple_harness.execution.sqlite.base_agent import turns as turn_helpers
 from simple_harness.execution.uow import RunState, UnitOfWorkConflict
+from simple_harness.providers import ProviderToolSpec
 from simple_harness.providers.base import ProviderContinuationCapability
 from simple_harness.providers.errors import ProviderTimeoutError
 from simple_harness.runtime.context import ContextSnapshot
@@ -72,7 +73,13 @@ from simple_harness.runtime.termination import (
 from simple_harness.tools.contracts import CancellationToken
 from simple_harness.tools.errors import MalformedToolArgumentsError, UnknownToolError
 from simple_harness.tools.executor import ToolAuthorizationPending
-from simple_harness.tools.runtime_catalog import RunToolExposurePort
+from simple_harness.tools.runtime_catalog import (
+    RunToolExposurePort,
+    ToolEffectClass,
+    ToolExecutionPolicy,
+    ToolRouteRequirement,
+    ToolTaskScopeRequirement,
+)
 
 from .completion import committed_outcome, failed_outcome
 from .contracts import _message_from_json
@@ -81,6 +88,100 @@ logger = logging.getLogger(__name__)
 
 BASE_AGENT_POLICY_PROTOCOL = "base-agent-hard-policy-v1"
 AGENT_TURN_CANCELLED = "agent_turn_cancelled"
+
+
+ALWAYS_EXPOSED_TOOLS = frozenset(
+    {
+        "agent_delegate",
+        "delegate_task",
+        "create_child",
+        "child_send",
+        "child_status",
+        "task_status",
+        "task_cancel",
+        "tool_search",
+        "tool_schema",
+        "session_history_read",
+        "session_history_search",
+    }
+)
+
+
+class TurnToolExposure:
+    """只控制说明可见性；执行许可始终由原有注册表与授权口决定。"""
+
+    def __init__(
+        self, specs: tuple[ProviderToolSpec, ...], *, turn_id: str, enabled: bool = True
+    ) -> None:
+        self._specs = tuple(self._public_spec(spec) for spec in specs)
+        self._by_name = {spec.name: spec for spec in self._specs}
+        self._turn_id = turn_id
+        self._enabled = enabled
+        self._loaded: set[str] = set()
+
+    @staticmethod
+    def _public_spec(spec: ProviderToolSpec) -> ProviderToolSpec:
+        if spec.parameters.get("title") not in {"tool-search:all", "tool-search:lazy"}:
+            return spec
+        parameters = thaw_json(spec.parameters)
+        parameters.pop("title")
+        return ProviderToolSpec(spec.name, spec.description, parameters)
+
+    def restore(self, run_id: RunId, checkpoint: JsonValue | None) -> None:
+        self._loaded.clear()
+        if not isinstance(checkpoint, dict) or checkpoint.get("turn_id") != self._turn_id:
+            return
+        if checkpoint.get("run_id") != run_id.value:
+            raise ValueError("ToolSearch checkpoint belongs to another run")
+        names = checkpoint.get("loaded_names", [])
+        if not isinstance(names, list) or not all(isinstance(name, str) for name in names):
+            raise ValueError("ToolSearch checkpoint loaded_names must contain strings")
+        self._loaded.update(name for name in names if name in self._by_name)
+
+    def provider_specs(self, run_id: RunId) -> tuple[ProviderToolSpec, ...]:
+        return tuple(
+            spec
+            for spec in self._specs
+            if not self._enabled or spec.name in ALWAYS_EXPOSED_TOOLS or spec.name in self._loaded
+        )
+
+    def execution_policy(self, run_id: RunId, provider_name: str) -> ToolExecutionPolicy:
+        # 未加载与幻觉工具仍走原有执行检查，不能把说明过滤变成第二套授权。
+        spec = self._by_name.get(provider_name)
+        fingerprint = hashlib.sha256(
+            canonical_json(
+                {
+                    "name": provider_name,
+                    "schema": None if spec is None else thaw_json(spec.parameters),
+                }
+            ).encode("utf-8")
+        ).hexdigest()
+        return ToolExecutionPolicy(
+            f"tool:{provider_name}",
+            fingerprint,
+            ToolEffectClass.NON_PROJECT_EFFECT,
+            ToolRouteRequirement.OPTIONAL,
+            ToolTaskScopeRequirement.OPTIONAL,
+        )
+
+    def observe_tool_result(
+        self, run_id: RunId, tool_name: str, result: Mapping[str, object]
+    ) -> None:
+        if tool_name != "tool_schema" or result.get("error"):
+            return
+        schemas = result.get("schemas")
+        if not isinstance(schemas, (list, tuple)):
+            return
+        for schema in schemas:
+            if isinstance(schema, Mapping) and schema.get("name") in self._by_name:
+                self._loaded.add(str(schema["name"]))
+
+    def checkpoint(self, run_id: RunId) -> JsonValue:
+        return {
+            "run_id": run_id.value,
+            "turn_id": self._turn_id,
+            "loaded_names": sorted(self._loaded),
+        }
 
 
 class _TurnCancelled(Exception):
@@ -751,6 +852,17 @@ class AgentExecutionDriver:
         tool_exposure = (
             None if self._tool_exposure_resolver is None else self._tool_exposure_resolver(run_id)
         )
+        if tool_exposure is None:
+            search = invocation.services.tools.provider_tool_specs(("tool_search",))
+            if search:
+                tool_exposure = TurnToolExposure(
+                    tools,
+                    turn_id=turn_id,
+                    enabled=(
+                        search[0].parameters.get("title") != "tool-search:all"
+                        and {"tool_search", "tool_schema"} <= {spec.name for spec in tools}
+                    ),
+                )
         prepare = getattr(invocation.services.context, "prepare", None)
         if callable(prepare):
             # Slice 4: pre-embed the recall query off the loop thread (review S4-04).
