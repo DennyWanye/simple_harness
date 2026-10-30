@@ -11,11 +11,11 @@
 
 - [x] 完整阅读任务书（含 §10）、当前代码、引用设计段落与仓库入口规则。
 - [x] 从指定目录创建规定工作树与分支。
-- [ ] 指定六文件绿色基线。
+- [x] 指定六文件绿色基线：在未改动的 main 独立执行，285 passed，269.44 秒。
 - [x] 红测试：新增两文件 16 failed（5.82 秒），缺失 API/字段导致，尚未改源码。
-- [ ] 持久受理、串行队列、子 directive 唯一委派。
-- [ ] 默认自动汇总、合并窗口、策略拒绝/暂缓、预算与恢复。
-- [ ] 语音播报来源与实际应用分离，不并行文字回合。
+- [x] 持久受理、串行队列、子 directive 唯一委派。
+- [x] 默认自动汇总、合并窗口、策略拒绝/暂缓、预算与恢复。
+- [x] 语音播报来源与实际应用分离，不并行文字回合。
 - [ ] 定向回归、格式检查、独立审阅、绿色提交与提交态核验。
 
 ## 预先冻结的验收映射
@@ -45,3 +45,43 @@
 ## 没做的
 
 任务书 E、工具/任务/连接器层、命令表、池编号、部署清单提交、推送、合并及全量回归均不在本次范围。
+
+
+## 实现与恢复边界
+
+- `Session.send(wait=False)` 先持久受理，再由本会话后台串行协程复用 `_send`；同步默认路径保持原幂等和恢复语义。后台早期失败即使 turn 尚未创建，也在 queue 保存终态回执，重开同键不挂起。更早的同步输入先恢复，后受理异步输入仍按序执行。
+- 子 directive 以 input_id 作回合键；在途 Mission 阻止消费，之后的新委派带 source_input_id（只关联相同 turn）。不同会话各有自己的锁，仍共用 Host 总模型并发门。
+- continuation 保存策略决定、合并窗口起点、冻结事件集合、输入、轮次预留及调用用量。来源带 Mission 的结果 ID 可区分同一子会话后续工作，也避免宿主原始版本号在不同 Mission 间碰撞。
+- 文字汇总使用专用的受限 Agent，原池编号、命令表、工具说明均未动。只读允许名单在任务书 §10 指定路径收窄，目录搜索继续取交集。普通用户回合保留正常工具权限。
+- 用户回合抢先应用整批结果时，续办不再调用模型；只消费部分时保留原冻结集合身份，模型仅接收未应用子集，应用事件与收件箱回合血缘一致。更早同步回合的恢复同样在续办扣额前完成。
+- 语音直接复用播报队列。prepared_turn_key 在准备草稿前落账，submitted 在交线路前落账；未发送草稿可恢复，不能以用户身份重放。已交线路而播放不明则保留 effect_unknown 等待，不自动重播。实际播放完成才应用；模型/人已读/播放三种事实分开。
+- 语音续办用既有 admission 计数的 baseline 收窄额度，不新增工具拒绝逻辑；调度退出 finally 结清中断/失败/上限拒绝用量，实际计数扣除 baseline。
+
+## 现有测试修改（逐条）
+
+仅改 `tests/orchestrator/host/test_session_tree.py::test_capabilities_are_local_and_errors_do_not_disclose_details` 内 unsupported 集合的 `continuation_policy` 一项：任务书 §4.6 明确要求移除。其他既有断言不变；其余新增测试全部在指定两份新测试文件内。
+
+## 独立审阅与反例闭环
+
+使用独立 reviewer 子代理，按 plan-task 的代码审阅/最小化要求只读检查；没有派实现子代理、没有额外创建报告文件。
+首审无 P0、四项 P1：未提交语音投递重开永久挂起、turn 落账前异常重开无回执、用户应用与自动汇总竞争、语音未收窄/结清调用预算。
+四条决定性反例先跑 **4 failed**（6.15 秒，`review-red.txt`），修复后 **4 passed**；追加覆盖真实 announcement 的 input_committed 子窗口、部分消费与更早同步恢复，发现的交互继续修复，局部 **4 passed**（0.58 秒）。
+更早同步恢复先红 `sync-recovery-red.txt`；其消费结果与续办扣额的交互先红 `consumed-recovery-red.txt`。策略真实挂起超时（5 秒）与完整消费者 create_child→delegate_task→Mission COMPLETED→父自动汇总均已加入回归。
+最小化结论：保留原 `_send`、目录授权与语音接缝，不另造工具/任务执行器；无必须额外重构项。
+
+## 已执行命令补充
+
+- 干净 main 基线：SDK 目录 `uv run --frozen python -m pytest tests/orchestrator/host/test_session_tree.py tests/orchestrator/host/test_session.py tests/orchestrator/host/test_session_replay.py tests/orchestrator/host/test_host_sessions.py tests/orchestrator/host/test_realtime_bridge.py tests/test_public_api.py -q -p no:cacheprovider` → **285 passed，269.44 秒**；`baseline.txt`。
+- 初次在开发工作树运行基线时与源码编辑重叠，子进程读到未写完模块；该局 283 passed/2 failed 不作有效基线。另一失败是新环境缺 realtime extra，已用 `uv sync --frozen --extra realtime` 安装锁定的 Service SDK 0.3.20；未改依赖或锁文件。随后在干净 main 完整重跑得到上一条有效基线。
+- 新增两文件逐步扩展验证：16 failed → 16 passed；26 passed（32.23 秒，含三个真实进程退出边界）；34 passed（44.04 秒）；36 passed（42.58 秒）。最终累计测试见后续终验段。
+- 每次源码修改后的真宿主测试前，均执行 `uv run --frozen python scripts/build/taskgraph_manifest.py generate --upstream ../../.local-test-evidence/2026-10-05/f2-upstream/evidence.json`；清单是构建产物，不提交。上游证据用 ignored 符号链接指向主工作树现有本地证据，未复制或上传原始材料。
+- `ruff check` / `ruff format --check` 检查所有改动 Python 文件；源码清单和 lint 结果在终验后补最终内容身份。
+
+## 自我批评
+
+独立审阅真正在恢复窗口与来源边界上找到了问题；初次基线与修改并行造成无效读数，应先隔离读基线再动源码。过程模板文件已按用户车道合并到本记录，避免额外仪式文件；没有向用户重复询问已授权事项。
+
+## 提交
+
+- 红测试：`76146bf79`，先确认缺失能力的 16 条反例失败后提交。
+- 实现提交与最终终验记录在下节补入；不推送、不合并。

@@ -6,6 +6,7 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 
+from .continuation import ContinuationPolicy
 from .host import HostUnavailable, OrchestrationHost
 from .session import Session, SessionPolicy
 from .session_chat import COMMAND_SCHEMAS, RESERVED_TOOLS
@@ -19,6 +20,7 @@ async def open_session(
     principal: Any = None,
     policy: SessionPolicy | None = None,
     parent: tuple[str, str] | None = None,
+    continuation_policy: ContinuationPolicy | None = None,
 ) -> Session:
     """Reuse Host identity, execution store, driver, and output event stream."""
     async with host._session_open_lock:
@@ -41,8 +43,19 @@ async def open_session(
                 raise SessionError("session_closing", "await session.close() before reopening")
             if policy is not None and policy != session.policy:
                 raise SessionError("session_config_frozen")
+            if (
+                continuation_policy is not None
+                and continuation_policy is not session._continuation.policy
+            ):
+                raise SessionError("session_config_frozen", "continuation policy already selected")
         else:
-            session = Session(host, session_id=session_id, policy=policy, parent=parent)
+            session = Session(
+                host,
+                session_id=session_id,
+                policy=policy,
+                parent=parent,
+                continuation_policy=continuation_policy,
+            )
         if not session._chat.available:
             try:
                 await session._chat.open()

@@ -71,6 +71,7 @@ class SessionInbox:
                                 or event.get("event_id")
                                 or f"{mid}:{seq}"
                             )
+                            final_id = "result-" + digest([mid, final_id])
                             if self.store.get("inbox", final_id) is None:
                                 notice = {
                                     "event_id": final_id,
@@ -138,6 +139,7 @@ class SessionInbox:
                         child_key=key,
                         payload=mirrored,
                     )
+                self.session._continuation.received(mirrored)
                 self.session._checkpoint("inbox_written")
 
     def _requests(self, mid: str, snapshot: Mapping[str, Any]) -> None:

@@ -142,6 +142,9 @@ class Delegations:
                     "delegation_id": f"delegation-{digest(key)[:32]}",
                     "session_id": self.session.session_id,
                     "turn_id": turn_id,
+                    "source_input_id": (self.session._current_input or {}).get("source_input_id")
+                    if (self.session._current_input or {}).get("turn_id") == turn_id
+                    else None,
                     "call_id": call_id,
                     "slot": slot,
                     "principal_id": self.host.principal.principal_id,

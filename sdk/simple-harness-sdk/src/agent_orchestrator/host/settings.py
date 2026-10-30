@@ -10,6 +10,7 @@ OpenAI 协议模型（Luna / Sol 这类，2026-10-21 用户决定放开）用按
 
 from __future__ import annotations
 
+import math
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any
@@ -111,13 +112,30 @@ class HostSettings:
     chat_max_model_calls: int = 8
     chat_max_tool_calls: int = 8
     chat_turn_seconds: float = 180.0
+    continuation_enabled: bool = True
+    continuation_merge_window_seconds: float = 5.0
+    continuation_max_turns_per_session: int = 50
+    continuation_max_model_calls_per_turn: int | None = None
+    continuation_voice_max_wait_seconds: float = 60.0
     tool_search: bool = True
     main_session_sandbox_run: bool = False
 
     def __post_init__(self) -> None:
-        for name in ("tool_search", "main_session_sandbox_run"):
+        for name in ("tool_search", "main_session_sandbox_run", "continuation_enabled"):
             if type(getattr(self, name)) is not bool:
                 raise ValueError(f"{name} must be bool")
+        for name in ("continuation_merge_window_seconds", "continuation_voice_max_wait_seconds"):
+            value = getattr(self, name)
+            if not math.isfinite(value) or value < 0:
+                raise ValueError(f"{name} must be finite and nonnegative")
+        if (
+            type(self.continuation_max_turns_per_session) is not int
+            or self.continuation_max_turns_per_session < 0
+        ):
+            raise ValueError("continuation_max_turns_per_session must be nonnegative")
+        calls = self.continuation_max_model_calls_per_turn
+        if calls is not None and (type(calls) is not int or calls < 1):
+            raise ValueError("continuation_max_model_calls_per_turn must be positive or None")
         if self.context_input_tokens not in CONTEXT_INPUT_CHOICES:
             raise ValueError(f"context_input_tokens 只能是 {CONTEXT_INPUT_CHOICES} 之一")
         for name in ("max_concurrency", "max_concurrent_model_calls"):

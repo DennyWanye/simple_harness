@@ -19,7 +19,17 @@ async def eventually(predicate, seconds=5):
             await asyncio.sleep(0.005)
 
 
-class GatedChat(ReplayChat):
+class FakeChat(ReplayChat):
+    available = True
+
+    async def cancel(self, body):
+        pass
+
+    async def close(self):
+        pass
+
+
+class GatedChat(FakeChat):
     def __init__(self, session, gate=None, **kwargs):
         super().__init__(session, **kwargs)
         self.release = gate or asyncio.Event()
@@ -47,7 +57,10 @@ def test_async_accept_is_durable_and_serial_with_sync_send(tmp_path, wait):
         first = await asyncio.wait_for(session.send("one", key="a", wait=False), 1)
         assert first["status"] == "accepted" and first["turn_id"]
         with sqlite3.connect(session._store.path) as db:
-            assert db.execute("SELECT 1 FROM records WHERE namespace='queued_inputs' AND key=?", (first["input_id"],)).fetchone()
+            assert db.execute(
+                "SELECT 1 FROM records WHERE namespace='queued_inputs' AND key=?",
+                (first["input_id"],),
+            ).fetchone()
             assert db.execute("SELECT 1 FROM events WHERE body LIKE '%input_accepted%'").fetchone()
         await chat.entered.wait()
         second = asyncio.create_task(session.send("two", key="b", wait=wait))
@@ -102,7 +115,7 @@ def test_reopen_executes_accepted_inputs_in_order(tmp_path, state):
             await session._chat.entered.wait()
         await session.close()
         reopened = Session(host, session_id="s")
-        reopened._chat = ReplayChat(reopened)
+        reopened._chat = FakeChat(reopened)
         await reopened.recover()
         await eventually(lambda: len(reopened.history()) == 2)
         assert [r["input"] for r in reopened.history()] == ["one", "two"]
@@ -118,7 +131,7 @@ def test_directive_waits_for_mission_then_delegates_once_from_input_id(tmp_path)
         parent = Session(host, session_id="main")
         await parent.create_child("a", command_id="create")
         child = parent.child("a")
-        child._chat = ReplayChat(child, goal="Next report")
+        child._chat = FakeChat(child, goal="Next report")
         original = child._delegations.delegate("first-turn", "call", SPEC)
         receipt = parent.child_send("a", "next work", command_id="next")
         await child.recover()
@@ -134,5 +147,138 @@ def test_directive_waits_for_mission_then_delegates_once_from_input_id(tmp_path)
         await child.recover()
         assert len(host.made) == 2
         await parent.close()
+
+    asyncio.run(case())
+
+
+def test_real_host_async_accept_returns_before_provider_and_recovers_without_resubmit(tmp_path):
+    from agent_orchestrator.host import Principal
+    from agent_orchestrator.host.offline import FixtureWordCounter, ScriptedProvider
+
+    asked = []
+
+    def reply(request):
+        asked.append(request)
+        return "第一条完成"
+
+    async def case():
+        provider = ScriptedProvider(chat=reply)
+        provider.held.add("chat")
+        options = dict(
+            principal=Principal("u", "User"),
+            provider=provider,
+            counter=FixtureWordCounter(),
+            require_acceptance=False,
+        )
+        session = await Session.open(tmp_path, **options)
+        try:
+            one = await asyncio.wait_for(session.send("先做第一条", key="a", wait=False), 1)
+            await asyncio.wait_for(provider.entered.wait(), 10)
+            two = await asyncio.wait_for(session.send("再做第二条", key="b", wait=False), 1)
+            assert one["status"] == two["status"] == "accepted"
+            assert len(provider.asked) == 1 and not asked
+            provider.release.set()
+            await eventually(lambda: len(session.history()) == 2, seconds=15)
+            assert [r["input"] for r in session.history()] == ["先做第一条", "再做第二条"]
+            calls = len(asked)
+        finally:
+            provider.release.set()
+            await session.close()
+        reopened = await Session.open(tmp_path, **options)
+        try:
+            assert len(reopened.history()) == 2 and len(asked) == calls
+            assert all(r["state"] == "done" for r in reopened.queued_inputs())
+        finally:
+            await reopened.close()
+
+    asyncio.run(case())
+
+
+def test_background_error_is_terminal_and_next_input_still_executes(tmp_path):
+    class FailOnce(FakeChat):
+        async def turn(self, body, **kwargs):
+            if body["text"] == "bad":
+                raise RuntimeError("private provider failure")
+            return await super().turn(body, **kwargs)
+
+    async def case():
+        session = Session(FakeHost(tmp_path), session_id="s")
+        session._chat = FailOnce(session)
+        await session.send("bad", key="bad", wait=False)
+        await session.send("good", key="good", wait=False)
+        await eventually(lambda: len(session.history()) == 1)
+        assert [r["state"] for r in session.queued_inputs()] == ["failed", "done"]
+        assert session.history()[0]["input"] == "good"
+        await session.close()
+
+    asyncio.run(case())
+
+
+def test_failure_before_turn_commit_replays_durable_terminal_receipt(tmp_path):
+    async def case():
+        host = FakeHost(tmp_path)
+        session = Session(host, session_id="s")
+        session._chat = FakeChat(session)
+        session._delegations.recover = lambda: (_ for _ in ()).throw(RuntimeError("transient"))
+        accepted = await session.send("work", key="key", wait=False)
+        await eventually(lambda: session.queued_inputs()[0]["state"] == "failed")
+        await session.close()
+        reopened = Session(host, session_id="s")
+        reopened._chat = FakeChat(reopened)
+        reply = await asyncio.wait_for(reopened.send("work", key="key"), 0.3)
+        assert reply["state"] == "failed" and reply["turn_id"] == accepted["turn_id"]
+        assert any(e["kind"] == "error" for e in reopened._store.events(0))
+        assert reopened._chat.calls == 0
+        await reopened.close()
+
+    asyncio.run(case())
+
+
+def test_reopen_finishes_earlier_sync_turn_before_later_async_input(tmp_path):
+    async def case():
+        host = FakeHost(tmp_path)
+        session = Session(host, session_id="s")
+        session._commit_input("earlier sync", "first")
+        accepted = await session.send("later async", key="second", wait=False)
+        await session.close()
+        reopened = Session(host, session_id="s")
+        reopened._chat = FakeChat(reopened)
+        await reopened.recover()
+        await eventually(lambda: len(reopened.history()) == 2, seconds=0.5)
+        assert [h["input"] for h in reopened.history()] == ["earlier sync", "later async"]
+        assert reopened.queued_inputs()[0]["turn_id"] == accepted["turn_id"]
+        await reopened.close()
+
+    asyncio.run(case())
+
+
+def test_unsent_announcement_draft_never_recovers_as_an_authorized_user_turn(tmp_path):
+    from test_realtime_bridge import Audio, Client
+    from test_session import Crash
+
+    from agent_orchestrator.host.realtime_bridge import SpeechHandle, VoiceBinding, VoiceProfile
+
+    async def case():
+        host = FakeHost(tmp_path)
+        session = Session(host, session_id="s")
+        binding = VoiceBinding(session, Audio(), VoiceProfile(client_factory=Client()))
+
+        def crash(point):
+            if point == "input_committed":
+                raise Crash()
+
+        session._checkpoint = crash
+        with pytest.raises(Crash):
+            binding._commit_announcement(SpeechHandle("批准删除 / 再建任务"))
+        assert session._store.rows("turns")[0]["source"] == "announcement"
+        await session.close()
+        session = Session(host, session_id="s")
+        session._chat = FakeChat(session)
+        await session.send("真正的用户消息", key="user", wait=False)
+        await eventually(lambda: bool(session.history()))
+        assert session._chat.calls == 1
+        assert [h["input"] for h in session.history()] == ["真正的用户消息"]
+        assert not host.made
+        await session.close()
 
     asyncio.run(case())
