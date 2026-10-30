@@ -9,7 +9,11 @@ from pathlib import Path
 
 import httpx
 import pytest
-from agent_orchestrator.runtime.deepseek_tokens import DeepSeekV41TokenEstimator
+
+from agent_orchestrator.runtime.deepseek_tokens import (
+    DeepSeekV41TokenEstimator,
+    LegacyPriorOutputDeepSeekCounter,
+)
 from agent_orchestrator.runtime.model_router import RuntimeProfile
 from agent_orchestrator.runtime.tool_gateway import read_tool_schemas
 from simple_harness.agents.context.budget import ContextPolicy
@@ -27,6 +31,9 @@ MODEL = "deepseek-flash"
 STRICT = "deepseek-strict-v1"
 BETA = "https://api.deepseek.com/beta"
 LEGACY_FINGERPRINT = "deepseek-v41:0f06e5994d18d90023a59966c593aef152d66a0679f0df56c35e7268e15c959d"
+CURRENT_FINGERPRINT = (
+    "deepseek-v41:f29fec4d7cef53f3d3c4661208d16d03d9f04d6b57db456f4e487c68f08a62b5"
+)
 
 
 def test_strict_wire_body_survives_canonical_durable_request_roundtrip():
@@ -75,9 +82,14 @@ def test_exact_counter_and_http_share_strict_body_and_legacy_identity(tokenizer_
 
     legacy = DeepSeekV41TokenEstimator(tokenizer_path)
     strict = DeepSeekV41TokenEstimator(tokenizer_path, tool_schema_mode=STRICT)
-    assert legacy.fingerprint == LEGACY_FINGERPRINT
+    # 当前池和历史池有不同的公开合同，不能把历史身份绑到当前类上。
+    historical = LegacyPriorOutputDeepSeekCounter(tokenizer_path)
+    assert historical.fingerprint == LEGACY_FINGERPRINT
+    assert historical.requires_prior_output_reserve is True
+    assert legacy.fingerprint == CURRENT_FINGERPRINT
     assert strict.fingerprint != legacy.fingerprint
-    assert strict.requires_prior_output_reserve
+    assert legacy.requires_prior_output_reserve is False
+    assert strict.requires_prior_output_reserve is False
     serialized = []
     original = counting.openai_chat_request_payload
 
