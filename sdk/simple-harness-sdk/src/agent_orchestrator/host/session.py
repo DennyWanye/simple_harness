@@ -927,7 +927,7 @@ class Session:
             except asyncio.CancelledError:
                 raise
             except BaseException as error:
-                if self._closed:
+                if self._closed or getattr(error, "code", None) == "session_closed":
                     return
                 if input_id in self._input_waiters:
                     self._input_errors[input_id] = error

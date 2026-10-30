@@ -184,3 +184,9 @@ uv run --frozen python - < ../../.local-test-evidence/2026-10-31/sol-E/e2/dispat
 其余22个改动Python文件ruff check/format --check全绿，git diff --check绿。**tool_gateway.py整文件在基线已有18条Ruff诊断：14×E402、3×E501、1×F811；补修后完全相同，没有新增**（baseline/current JSON对照存e2）。任务书只放宽该文件两处控制命令调用，因此保留周边既有代码，没有为全文件lint绿越车道搬动导入、删方法或改工具说明。此项为存量限制，不冒称整文件Ruff已绿；最终测试结果在后文回写。首轮fake selector误包含名字不带real的模型Future测试且未生成对应源码清单，该试跑不作真宿主证据，后续已明确重生成并通过。
 
 欠账按任务书保留：session.py取消收敛职责较多，后续拆独立取消模块；本轮不扩大重构。未推送、未合并、未提交清单、未跑全量回归。
+
+### E2 首轮全范围与关闭窗口补测
+
+提交`a78e4082a`在源码清单0830c25e…下，完整19指定文件加直接受影响的test_session_finish.py：**550 passed in 503.35s，exit 0**（acceptance.log/xml）。指定八文件已全部转绿，未再保留E轮35项冲突。
+
+同步独立审查又锁定一个close交界：根已关闭但正在等待泵取消清理、子尚未关闭时，子授权返回可能被误记failed/session_closed。新增queued/running两种Event夹持测试，先红2项，修后2项绿：收到本树session_closed只放手、保留原排队行，不写业务失败，重开同input_id只执行一次。该补丁后将重新生成清单，并行按相同完整范围复验（没有缩减文件或场景）。

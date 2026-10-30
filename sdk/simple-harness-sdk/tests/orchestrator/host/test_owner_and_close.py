@@ -458,3 +458,83 @@ def test_closed_root_rejects_child_without_recreating_ledger_handle(tmp_path):
         assert child_id not in host._session_handles
 
     asyncio.run(run())
+
+
+@pytest.mark.parametrize("state", ["queued", "running"])
+def test_root_close_preserves_child_input_when_authorization_returns_during_cleanup(
+    tmp_path, state
+):
+    from test_session_async import FakeChat, eventually
+
+    from agent_orchestrator.host import AuthorizationDecision
+
+    async def run():
+        host, root = c1_session(tmp_path)
+        await root.create_child("worker", command_id="child")
+        worker = root.child("worker")
+        worker._chat = FakeChat(worker)
+        authorization_entered, authorization_release = asyncio.Event(), asyncio.Event()
+        pump_started, pump_cancelling, pump_cleanup_release = (
+            asyncio.Event(),
+            asyncio.Event(),
+            asyncio.Event(),
+        )
+
+        class Port:
+            async def decide(self, request):
+                authorization_entered.set()
+                await authorization_release.wait()
+                return AuthorizationDecision.allow()
+
+        async def controlled_pump():
+            pump_started.set()
+            try:
+                await asyncio.Future()
+            except asyncio.CancelledError:
+                pump_cancelling.set()
+                await pump_cleanup_release.wait()
+
+        worker._authorization.port = Port()
+        root._pump_task = asyncio.create_task(controlled_pump())
+        await pump_started.wait()
+        accepted = worker._accept_input("重开继续的输入", "queued")
+        with worker._store.transaction():
+            row = worker._store.get("queued_inputs", accepted["input_id"])
+            row["state"] = state
+            worker._store.put("queued_inputs", accepted["input_id"], row)
+        worker._wake_inputs()
+        await asyncio.wait_for(authorization_entered.wait(), 1)
+        closing = asyncio.create_task(root.close())
+        try:
+            await asyncio.wait_for(pump_cancelling.wait(), 1)
+            assert root._closed and not worker._closed
+            authorization_release.set()
+            await asyncio.wait_for(asyncio.shield(worker._input_task), 1)
+            queued = worker._store.get("queued_inputs", accepted["input_id"])
+            assert queued["state"] == state
+            assert queued["receipt"] is None
+            assert worker._chat.calls == 0
+            assert not any(
+                event["kind"] == "error"
+                and event.get("payload", {}).get("code") == "session_closed"
+                for event in worker._store.events(0)
+            )
+        finally:
+            authorization_release.set()
+            pump_cleanup_release.set()
+            await asyncio.wait_for(closing, 1)
+
+        reopened = Session(host, session_id="main")
+        try:
+            await reopened.recover()
+            restored = reopened.child("worker")
+            restored._chat = FakeChat(restored)
+            await restored.recover()
+            await eventually(lambda: restored.queued_inputs()[0]["state"] == "done")
+            assert restored.queued_inputs()[0]["input_id"] == accepted["input_id"]
+            assert restored._chat.calls == 1
+            assert len(restored.history()) == 1
+        finally:
+            await reopened.close()
+
+    asyncio.run(run())
