@@ -25,10 +25,13 @@ import secrets
 import sys
 import time
 from collections.abc import Awaitable, Callable, Iterator, Mapping, Sequence
+from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import httpx
+
+from simple_harness.execution.provider_admission import LocalProviderAdmission
 
 if TYPE_CHECKING:
     from .session import Session, SessionPolicy
@@ -332,6 +335,7 @@ class OrchestrationHost:
         self.policy_api: Any = None
         self.native: Any = None
         self.runtime_options: dict[str, Any] = {}
+        self._provider_admission: LocalProviderAdmission | None = None
         self.connectors: dict[str, Any] = {}
         self.sandbox: dict[str, Any] | None = None
         self.executor: Any = None
@@ -602,6 +606,13 @@ class OrchestrationHost:
     def _assemble_runtime(self) -> None:
         """执行池与运行选项（启动与重建共用）。"""
 
+        if self._provider_admission is None:
+            # 重建任务池时，仍有会话可能在线路上；不能因此另开一份宿主名额。
+            self._provider_admission = LocalProviderAdmission(
+                self.settings.max_concurrent_model_calls,
+                fence=lambda _agent_id, _turn_id: contextlib.nullcontext(),
+            )
+        self.config = replace(self.config, shared_provider_admission=self._provider_admission)
         counter, thinking_counter = self._counters()
         self._pool_counter = counter
         meter_factory = (
@@ -843,6 +854,7 @@ class OrchestrationHost:
             except Exception:
                 logger.exception("orchestration driver ended with an error")
         await self._close_runtime()
+        self._provider_admission = None
         self.lock.release()
         self.state = "closed"
 

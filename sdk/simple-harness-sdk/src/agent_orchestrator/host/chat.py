@@ -152,7 +152,10 @@ class ChatService:
             native_plane=self._native_plane(profile_id, tokens, counter),
         )
         assembled = assemble_orchestrator_runtime(
-            config, profiles={profile_id: profile}, default_profile=profile_id
+            config,
+            profiles={profile_id: profile},
+            default_profile=profile_id,
+            provider_admission=host._provider_admission,
         )
         await assembled.__aenter__()
         self._assembled, self.profile_id, self.reason = assembled, profile_id, None

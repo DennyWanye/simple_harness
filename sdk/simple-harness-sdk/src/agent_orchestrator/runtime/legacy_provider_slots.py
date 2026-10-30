@@ -347,7 +347,8 @@ class LegacyProviderSlots(LocalProviderAdmission):
                                     ticket.handoff_ordinal,
                                 ),
                             )
-                        self._acquired[record.invocation_id] = (binding.agent_id, turn.turn_id)
+                        # 父类按票据对象记在途名额；交接与回收都靠这把键，子类必须同键。
+                        self._acquired[id(ticket)] = (ticket, (binding.agent_id, turn.turn_id))
                         self._leases[record.invocation_id] = (lease.owner_id, lease.epoch)
                         return ticket
                 self._waiting[record.invocation_id] = (binding.agent_id, turn.turn_id)

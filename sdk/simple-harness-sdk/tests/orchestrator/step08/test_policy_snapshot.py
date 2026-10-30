@@ -47,6 +47,8 @@ def test_s8_07_every_configuration_field_is_classified(tmp_path):
         # 交给应用工具的宿主身份：谁在用，不是行为参数
         "tool_call_tenant_id",
         "tool_call_principal_id",
+        "control_commands",
+        "shared_provider_admission",
     }
 
 

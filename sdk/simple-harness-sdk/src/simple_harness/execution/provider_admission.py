@@ -136,11 +136,15 @@ class LocalProviderAdmission:
     def __init__(self, max_concurrent: int | None, fence: ProviderHandoffFence) -> None:
         self._semaphore = None if max_concurrent is None else asyncio.Semaphore(max_concurrent)
         self._fence = fence
-        self._waiting: dict[str, tuple[str, str]] = {}
-        self._acquired: dict[str, tuple[str, str]] = {}
+        self._waiting: dict[object, tuple[str, str]] = {}
+        self._acquired: dict[int, tuple[ProviderAdmissionTicket, tuple[str, str]]] = {}
 
     def waiting_for_slot(self, *, agent_id: str, turn_id: str) -> bool:
         return (agent_id, turn_id) in self._waiting.values()
+
+    def with_admission(self, admission: ProviderAdmissionPort) -> ProviderAdmissionPort:
+        """Share physical capacity without replacing the caller's durable authority."""
+        return self if admission is self else _SharedProviderAdmission(self, admission)
 
     async def acquire(
         self,
@@ -157,7 +161,9 @@ class LocalProviderAdmission:
         if binding is None or turn is None or binding.agent_id != turn.agent_id:
             raise ProviderAdmissionDenied(public_message="Provider requires a live Agent turn.")
         identity = (binding.agent_id, turn.turn_id)
-        self._waiting[record.invocation_id] = identity
+        # 不同执行库可以生成相同调用号；进程内名额按本次申请的对象区分。
+        waiting = object()
+        self._waiting[waiting] = identity
         acquired = False
         try:
             if self._semaphore is not None:
@@ -173,14 +179,14 @@ class LocalProviderAdmission:
                 provider_request_fingerprint(request),
                 self.fingerprint,
             )
-            self._acquired[record.invocation_id] = identity
+            self._acquired[id(ticket)] = (ticket, identity)
             return ticket
         except BaseException:
             if acquired and self._semaphore is not None:
                 self._semaphore.release()
             raise
         finally:
-            self._waiting.pop(record.invocation_id, None)
+            self._waiting.pop(waiting, None)
 
     @contextmanager
     def handoff(
@@ -196,7 +202,7 @@ class LocalProviderAdmission:
             )
         # The caller owns the transaction; no await separates its fresh lifecycle
         # check from the coordinator's synchronous SDK handoff.
-        with self._fence(*self._acquired[ticket.invocation_id]):
+        with self._fence(*self._acquired[id(ticket)][1]):
             yield
 
     def observe(
@@ -205,13 +211,67 @@ class LocalProviderAdmission:
         *,
         record: ProviderInvocationRecord | None,
     ) -> None:
-        if self._acquired.pop(ticket.invocation_id, None) is not None:
+        if self._acquired.pop(id(ticket), None) is not None:
             if self._semaphore is not None:
                 self._semaphore.release()
 
     def recover(self, uow: object) -> None:
         # Local slots have no durable authority over existing UNKNOWN invocations.
         pass
+
+
+class _SharedProviderAdmission:
+    """A runtime's existing authority behind one host-owned local gate."""
+
+    def __init__(self, shared: LocalProviderAdmission, admission: ProviderAdmissionPort) -> None:
+        self.shared = shared
+        self.admission = admission
+        self.fingerprint = admission.fingerprint
+        self._tickets: dict[int, tuple[ProviderAdmissionTicket, ProviderAdmissionTicket]] = {}
+
+    def accepts(self, fingerprint: object) -> bool:
+        accepts = getattr(self.admission, "accepts", None)
+        return accepts(fingerprint) if callable(accepts) else fingerprint == self.fingerprint
+
+    def waiting_for_slot(self, *, agent_id: str, turn_id: str) -> bool:
+        return self.shared.waiting_for_slot(
+            agent_id=agent_id, turn_id=turn_id
+        ) or self.admission.waiting_for_slot(agent_id=agent_id, turn_id=turn_id)
+
+    async def acquire(self, **kwargs: Any) -> ProviderAdmissionTicket:
+        ticket = await self.shared.acquire(**kwargs)
+        try:
+            admitted = await self.admission.acquire(**kwargs)
+            self._tickets[id(admitted)] = (admitted, ticket)
+            return admitted
+        except BaseException:
+            self.shared.observe(ticket, record=None)
+            raise
+
+    @contextmanager
+    def handoff(
+        self,
+        ticket: ProviderAdmissionTicket,
+        *,
+        request: ProviderRequest,
+        cancel: CancelToken,
+    ) -> Iterator[None]:
+        with self.shared.handoff(self._tickets[id(ticket)][1], request=request, cancel=cancel):
+            with self.admission.handoff(ticket, request=request, cancel=cancel):
+                yield
+
+    def observe(
+        self, ticket: ProviderAdmissionTicket, *, record: ProviderInvocationRecord | None
+    ) -> None:
+        try:
+            self.admission.observe(ticket, record=record)
+        finally:
+            shared = self._tickets.pop(id(ticket), None)
+            if shared is not None:
+                self.shared.observe(shared[1], record=record)
+
+    def recover(self, uow: object) -> None:
+        self.admission.recover(uow)
 
 
 __all__ = (
