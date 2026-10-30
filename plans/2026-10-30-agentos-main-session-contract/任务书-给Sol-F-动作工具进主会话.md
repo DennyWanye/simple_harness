@@ -94,3 +94,16 @@
 ## 9. 有问题怎么办
 
 写进记录"拿不准的"，按最合理的做法先做完，不停下等。
+
+## 10. 任务书 C/D/E 合并后的补充说明（2026-11-01 审核人追加）
+
+发包基线已含 C（工具目录/ToolSearch）、D（异步受理/自动汇总）、E（授权回调/取消/Goal/效果账本）。以下几点与本任务书直接相关，**以这里为准覆盖第 4 节里不一致的写法**：
+
+- **效果账本已经有了，直接用。** `host/authorization.py` 的 `EffectLedger.execute(connector, operation, target, params, *, operation_key, goal_ref=…, delegation_id=None, grant_ref=None, policy_revision=None)`：它负责 claim → 交接前再核授权/owner/屏障 → `connector.execute(idempotency_key=operation_key)` → `committed`；同 key 异参 `idempotency_conflict`；异常保持 `unknown` 不重放；`lookup` 对账在 `_reconcile`。本任务书的动作工具**只做适配**：把模型调用转成一次 `EffectLedger.execute`，`operation_key = "action:" + digest([session_id, turn_id, "action", 调用槽位])`。不要再写第二套 claim/对账。
+- **授权只有异步一条路。** `SessionAuthorization.ensure(action="connector_effect", target_ref, params, operation_key=…, goal_ref=…)`；`EffectLedger.execute` 内部已经调它。人工模式（`auto_mode=False`）默认端口只对 `connector_effect` 发 `needs_approval`（走现有 `needs_response` 卡片 + `respond()`），auto 模式 allow；`always_needs_approval` 的操作由本任务书在适配层转成 `needs_approval`（不管端口怎么说）。动作工具的 `invoke` 是 async（`DomainTool.invoke` 支持协程）。
+- **审批后的执行**：E 的 `respond()` 批准后由谁执行？——本任务书负责：批准落账后把这条待执行动作放进该会话的排队输入（`kind="action_followup"`，走 D 的 `_run_inputs` 串行消费，拿锁后看屏障），执行结果作为通知进收件箱（`source="action_result"`），下一句附上或自动汇总照旧。
+- **屏障**：`EffectLedger.execute` 交接前已查 `session._is_cancelled(goal_ref, delegation_id)`；审批后的执行也走 `_run_inputs`，自然受屏障约束。不要另写。
+- **工具目录**：C 的 `runtime/tool_catalog.py` 条目有 `source`，本任务书加 `source="action"`；`catalog_for(tools, commands=…)` 的 `always_exposed` 规则不动（动作工具按需加载，模型先 `tool_search`）。工具名 `f"{connector.name}.{operation}"` 里有点号——先确认 `DomainTool` 的 `NAME_PATTERN` 允不允许，不允许就用下划线 `f"{connector.name}__{operation}"` 并在记录里写明。
+- **续办回合调不到动作工具**：D 的 `_registered_tools(source="continuation")` 收窄名单是写死的查询集合，动作工具不在里面，天然调不到；加测试钉住即可，不改收窄逻辑。
+- **能力发现**：`capabilities` 已含 `goals / authorization_port / cancel_scope / recovery_report / archive`，加 `action_tools`。
+- **文档**：`docs/orchestration-host.md` 已有"授权回调、取消范围、Goal、恢复报告"一节，动作工具小节放在 §4b 后面；原则"主会话不再只读、小事自己做"写进 §2d。
