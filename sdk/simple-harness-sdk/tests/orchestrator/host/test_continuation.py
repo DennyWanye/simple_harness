@@ -1221,6 +1221,37 @@ def test_d2_policy_context_includes_conservative_unknown_calls(tmp_path):
     asyncio.run(case())
 
 
+def test_d2_idle_pump_does_not_retry_a_synchronous_failure_without_new_input(tmp_path):
+    from agent_orchestrator.host.session_ledger import SessionError
+
+    class Interrupted(FakeChat):
+        async def turn(self, body, **kwargs):
+            if self.calls == 0:
+                self.calls += 1
+                raise SessionError("chat_timeout")
+            return await super().turn(body, **kwargs)
+
+    async def case():
+        parent = Session(FakeHost(tmp_path))
+        parent._chat = Interrupted(parent)
+        await parent.recover()
+        with pytest.raises(Exception, match="chat_timeout"):
+            await parent.send("work", key="one")
+        for _ in range(3):
+            await parent.recover()
+            await parent._continuation.tick()
+            parent._wake_inputs()
+            await asyncio.sleep(0)
+        assert parent._chat.calls == 1 and not parent.queued_inputs()
+        assert parent._store.get("turns", "one")["receipt"] is None
+        reply = await parent.send("work", key="one")
+        assert reply["state"] == "committed"
+        assert parent._chat.calls == 2
+        await parent.close()
+
+    asyncio.run(case())
+
+
 if __name__ == "__main__":
     import sys
     from pathlib import Path

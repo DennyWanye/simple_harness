@@ -118,7 +118,6 @@ class Continuation:
             return
         async with self._lock:
             self.reconcile()
-            self.session._queue_pending_turns()
             notices = [
                 n
                 for n in self.session.inbox()
@@ -194,6 +193,8 @@ class Continuation:
                 + self.settings.continuation_merge_window_seconds
             ):
                 return
+            # 只有真正的新批次才需要排在较早的前台输入后，空闲轮询不能擅自重试同步异常。
+            self.session._queue_pending_turns()
             event_ids = sorted(r["event_id"] for r in pending)
             input_id = self.input_id_for(event_ids)
             turn_id = f"turn-{digest([self.session.session_id, input_id])[:32]}"

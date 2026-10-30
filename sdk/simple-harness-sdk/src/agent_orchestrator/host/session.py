@@ -117,6 +117,7 @@ class Session:
         self._send_lock = asyncio.Lock()
         self._voice = None
         self._input_task: asyncio.Task[None] | None = None
+        self._inputs_recovered = False
         self._input_errors: dict[str, BaseException] = {}
         self._input_waiters: dict[str, int] = {}
         self._continuation = Continuation(self, continuation_policy)
@@ -387,7 +388,6 @@ class Session:
             or (self._input_task is not None and not self._input_task.done())
         ):
             return
-        self._queue_pending_turns()
         if self._next_input() is not None:
             self._input_task = asyncio.create_task(
                 self._run_inputs(), name=f"session-inputs-{self.session_id}"
@@ -687,6 +687,9 @@ class Session:
         """重开后按父账本把子会话重新打开；子会话自己的账本与任务照旧恢复。"""
 
         self._check_open()
+        if not self._inputs_recovered and self._current_input is None:
+            self._queue_pending_turns()
+            self._inputs_recovered = True
         for row in self._tree.rows():
             child = self._children.get(row["child_key"])
             if (
