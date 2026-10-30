@@ -587,6 +587,15 @@ def test_f2_response_and_queue_rollback_together(tmp_path, monkeypatch):
         session.respond(pending["request_id"], "approve", request["version"])
         await session._run_inputs()
         assert len(connector.calls) == 1
+        [queued] = session.queued_inputs()
+        with session._store.transaction():
+            session._store.delete("action_followups", queued["input_id"])
+        statements = []
+        session._store.connection.set_trace_callback(statements.append)
+        session.respond(pending["request_id"], "approve", request["version"])
+        session._store.connection.set_trace_callback(None)
+        assert not [s for s in statements if s.upper().startswith("BEGIN")]
+        assert session.queued_inputs()[0]["state"] == "done" and len(connector.calls) == 1
 
     asyncio.run(case())
 
@@ -719,6 +728,10 @@ def test_f2_child_queue_projection_recovers_after_committed_approval(tmp_path, m
             [durable] = parent._store.rows("action_followups")
             assert durable["session_id"] == child.session_id
             assert child.queued_inputs() == [] and not connector.calls
+            from agent_orchestrator.host import SessionError
+
+            with pytest.raises(SessionError, match="active_work"):
+                parent.archive(command_id="cannot-archive-durable-action")
         finally:
             await parent.close()
         reopened = await real_session(tmp_path, connector, _chat_script(["done"]))

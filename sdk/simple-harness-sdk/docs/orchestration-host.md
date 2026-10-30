@@ -821,8 +821,10 @@ operations = {
 拒绝后不执行，两者都将通知写到收件箱（`source="action_result"`，`instruction=False`）。
 通知可附在下一句，或沿已有的只读自动汇总回流；排队期间取消与交接前的屏障仍生效。
 
-每回合至多 4 次动作调用，并受 `SessionPolicy.max_tool_calls` 限制。`HostSettings` 可配置的
-`max_actions_per_turn` 字段尚未加入（定义文件不在本任务车道内），目前采用默认 4。
+每回合动作调用上限由 `HostSettings.max_actions_per_turn` 配置（默认 4，正整数），并受
+`SessionPolicy.max_tool_calls` 限制。无效参数不会占用动作槽位；只声明 `child` 的动作不登记进目录。
+批准与权威待执行记录在根库同事务落账；子会话队列是提交后的幂等投影，重开会话可补齐，
+不会把两份 WAL 数据库的独立提交当作跨库原子提交。历史授权单只在首次恢复时扫描。
 任务中的 `action:` 要求与步骤提议继续走原申请单、审阅、批准和回执链；匹配的任务回执在会话
 轮询时记入同一份 `effects` 账本，沿用任务的 `idempotency_key`，不重新执行。
 

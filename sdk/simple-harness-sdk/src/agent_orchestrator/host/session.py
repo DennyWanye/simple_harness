@@ -611,6 +611,7 @@ class Session:
         exclusions = {r["event_id"] for r in root._store.rows("result_exclusions")}
         notices = {n["event_id"]: n for owner in reversed(owners) for n in owner.inbox()}
         root_notices = {n["event_id"]: n for n in root.inbox()}
+        action_followups = root._store.rows("action_followups")
         if any(
             n.get("applied_turn_id") is None
             and eid not in exclusions
@@ -619,6 +620,13 @@ class Session:
         ):
             return True
         for owner in owners:
+            if any(
+                row["session_id"] == owner.session_id
+                and owner._store.get("queued_inputs", row["input"]["input_id"]) is None
+                for row in action_followups
+            ):
+                # 子队列尚未投影也已经受理，归档不能把这份持久工作藏掉。
+                return True
             if owner._delegations.has_in_flight():
                 return True
             if any(r["state"] in {"queued", "running"} for r in owner.queued_inputs()):
@@ -1253,6 +1261,7 @@ class Session:
 
         self._check_open()
         if not self._inputs_recovered and self._current_input is None:
+            self._actions.recover()
             self._queue_pending_turns()
             self._inputs_recovered = True
         for row in self._tree.rows():
@@ -1307,6 +1316,7 @@ class Session:
                     policy=self.policy,
                     parent=(self.session_id, child_key),
                 )
+                await child.recover()
                 await child._delegations.recover()
                 child._inbox.catch_up()
             if self._closed:
@@ -1533,14 +1543,16 @@ class Session:
     ) -> dict[str, Any]:
         self._check_open()
         if self._root_session()._store.get("authorization_requests", request_id) is not None:
-            receipt = self._authorization.respond(request_id, decision, version, fields)
             row = self._root_session()._store.get("authorization_requests", request_id)
             owner = next(
                 s
                 for s in self._root_session()._tree_sessions()
                 if s.session_id == row["request"]["session_id"]
             )
-            owner._actions.responded(row)
+            receipt = self._authorization.respond(
+                request_id, decision, version, fields, _on_decided=owner._actions.responded
+            )
+            owner._actions.publish_followup(row["request"].get("operation_key"))
             owner._wake_inputs()
             return receipt
         store = getattr(self._host, "store", None)

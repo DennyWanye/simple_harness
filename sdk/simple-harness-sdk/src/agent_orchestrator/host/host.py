@@ -797,7 +797,7 @@ class OrchestrationHost:
                 checked_roles(spec.tool_roles)
                 if "task" in spec.tool_roles:
                     raise ValueError("action tool_roles may only contain main and child")
-                if not spec.tool_roles or level_rank(spec.level) > level_rank(
+                if "main" not in spec.tool_roles or level_rank(spec.level) > level_rank(
                     self.settings.max_action_level
                 ):
                     continue

@@ -6,6 +6,7 @@ from __future__ import annotations
 import json
 import math
 import time
+from contextlib import nullcontext
 from dataclasses import asdict
 
 from .connectors import LEVELS, level_rank
@@ -35,7 +36,7 @@ def action_tool(connector, operation: str, *, host) -> DomainTool:
         run_id, _, call_id = context.call_id.partition(":")
         if context.mission_id is not None:
             raise SessionError("permission_denied")
-        for session in getattr(host, "_session_handles", {}).values():
+        for session in host._session_handles.values():
             if session._closed:
                 continue
             key = session._store.get("run_inputs", run_id)
@@ -70,11 +71,16 @@ class ActionTools:
 
     def apply_authorization(self, request, decision, apply):
         from ..host.authorization import AuthorizationDecision
-        from ..host.session_ledger import SessionError, digest
+        from ..host.session_ledger import digest
 
         intent = self.store.get("action_intents", request.operation_key or "")
         if request.action != "connector_effect" or intent is None:
             return apply(request, decision)
+        key = digest(asdict(request))
+        if intent.get("authorization_key") != key:
+            intent["authorization_key"] = key
+            with self.store.transaction():
+                self.store.put("action_intents", request.operation_key, intent)
         if not isinstance(decision, AuthorizationDecision):
             return apply(request, decision)
         approved = self.session._authorization._approved(request)
@@ -122,50 +128,7 @@ class ActionTools:
             with self.store.transaction():
                 self.store.put("action_intents", request.operation_key, intent)
             return apply(request, decision)
-        if decision.action != "needs_approval":
-            return apply(request, decision)
-        # 复用授权请求、绑定及 respond；这里只投影动作卡片，批准不发生在工具回合里。
-        auth = self.session._authorization
-        auth.check(request, require_allow=False)
-        if (
-            not isinstance(decision.request_ref, str)
-            or not decision.request_ref
-            or (
-                decision.expires_at is not None
-                and (
-                    not isinstance(decision.expires_at, (int, float))
-                    or not math.isfinite(decision.expires_at)
-                    or decision.expires_at <= time.time()
-                )
-            )
-        ):
-            return apply(request, decision)
-        key = digest(asdict(request))
-        request_id = "auth-" + digest([decision.request_ref, key])
-        with auth.store.transaction():
-            row = auth.store.get("authorization_requests", request_id)
-            if row is None:
-                row = {
-                    "request_id": request_id,
-                    "request_ref": decision.request_ref,
-                    "request_kind": "action",
-                    "request": asdict(request),
-                    "goal_ref": request.goal_ref,
-                    "version": int(key[:15], 16),
-                    "state": "pending",
-                    "expires_at": decision.expires_at,
-                    "receipt": None,
-                }
-                auth.store.put("authorization_requests", request_id, row)
-                auth.store.put("authorization_bindings", key, {"request_id": request_id})
-                auth.store.event(
-                    "needs_response",
-                    key=f"authorization:{request_id}:{row['version']}",
-                    request_id=request_id,
-                    goal_ref=request.goal_ref,
-                    payload=row,
-                )
-        raise SessionError("authorization_required", retryable=True)
+        return apply(request, decision, request_kind="action")
 
     async def invoke(self, connector, operation, arguments, *, turn_id, run_id, call_id, **fields):
         from ..host.session_ledger import SessionError, digest, encoded
@@ -175,7 +138,7 @@ class ActionTools:
         spec = connector.operations[operation]
         roles = checked_roles(spec.tool_roles)
         role = "child" if session.parent else "main"
-        ceiling = getattr(session._host.settings, "max_action_level", None)
+        ceiling = session._host.settings.max_action_level
         if (
             role not in roles
             or "main" not in roles
@@ -184,12 +147,6 @@ class ActionTools:
             or level_rank(spec.level) > level_rank(ceiling)
         ):
             return {"status": "denied", "reason": "permission_denied"}
-        command_id = session._model_command_id("action", turn_id, run_id, call_id)
-        operation_key = "action:" + command_id.removeprefix("command-")
-        route = self.store.get("command_routes", digest(["action", turn_id, run_id, call_id]))
-        limit = getattr(session._host.settings, "max_actions_per_turn", 4)
-        if route["slot"] >= min(limit, session.policy.max_tool_calls):
-            return {"status": "capacity_exceeded"}
         target = arguments.get("target")
         if not isinstance(target, str) or not target.strip():
             return {"status": "invalid_argument"}
@@ -197,6 +154,12 @@ class ActionTools:
         params = json.loads(encoded({k: v for k, v in arguments.items() if k != "target"}))
         if not all(name in params for name in spec.required_params):
             return {"status": "invalid_argument"}
+        command_id = session._model_command_id("action", turn_id, run_id, call_id)
+        operation_key = "action:" + command_id.removeprefix("command-")
+        route = self.store.get("command_routes", digest(["action", turn_id, run_id, call_id]))
+        limit = session._host.settings.max_actions_per_turn
+        if route["slot"] >= min(limit, session.policy.max_tool_calls):
+            return {"status": "capacity_exceeded"}
         old = self.store.get("action_intents", operation_key)
         goal_ref = old["goal_ref"] if old else fields.get("goal_ref", session._goal_ref())
         binding = digest([connector.name, operation, target, params, goal_ref])
@@ -220,18 +183,30 @@ class ActionTools:
             return await self.execute(intent, connector)
         except SessionError as error:
             if error.code == "authorization_required":
-                for row in session._authorization.store.rows("authorization_requests"):
-                    if row["request"].get("operation_key") == operation_key:
-                        if row["state"] == "pending":
-                            return {"status": "pending_approval", "request_id": row["request_id"]}
-                        if row["state"] == "denied":
-                            return {"status": "denied", "reason": "human_denied"}
                 current = self.store.get("action_intents", operation_key)
+                auth_store = session._authorization.store
+                binding = auth_store.get(
+                    "authorization_bindings", current.get("authorization_key", "")
+                )
+                row = (
+                    auth_store.get("authorization_requests", binding["request_id"])
+                    if binding
+                    else None
+                )
+                if row is not None:
+                    if row["state"] == "pending":
+                        return {"status": "pending_approval", "request_id": row["request_id"]}
+                    if row["state"] == "denied":
+                        return {"status": "denied", "reason": "human_denied"}
                 if "denied_reason" in current:
                     return {"status": "denied", "reason": current["denied_reason"]}
             return {"status": error.code}
 
     async def execute(self, intent, connector=None):
+        if "denied_reason" in intent:
+            intent.pop("denied_reason")
+            with self.store.transaction():
+                self.store.put("action_intents", intent["operation_key"], intent)
         connector = connector or self.session._host.connectors[intent["connector"]]
         row = await self.session._effects.execute(
             connector,
@@ -263,41 +238,65 @@ class ActionTools:
         if intent is None or row["state"] not in {"approved", "denied"}:
             return
         input_id = "action-followup:" + key
-        with self.store.transaction():
-            if self.store.get("queued_inputs", input_id) is None:
-                self.store.put(
-                    "queued_inputs",
+        if self.store.get("queued_inputs", input_id) is not None:
+            return
+        root_store = self.session._authorization.store
+        if root_store.get("action_followups", input_id) is not None:
+            return
+        with nullcontext() if root_store.connection.in_transaction else root_store.transaction():
+            if root_store.get("action_followups", input_id) is None:
+                root_store.put(
+                    "action_followups",
                     input_id,
                     {
-                        "input_id": input_id,
-                        "idempotency_key": input_id,
-                        "turn_id": intent["turn_id"],
-                        "origin_turn_id": intent["turn_id"],
-                        "source_session_id": self.session.session_id,
-                        "goal_ref": intent["goal_ref"],
-                        "kind": "action_followup",
-                        "state": "queued",
-                        "text": "",
-                        "receipt": None,
-                        "request_id": row["request_id"],
-                        "operation_key": key,
+                        "session_id": self.session.session_id,
+                        "input": {
+                            "input_id": input_id,
+                            "idempotency_key": input_id,
+                            "turn_id": intent["turn_id"],
+                            "origin_turn_id": intent["turn_id"],
+                            "source_session_id": self.session.session_id,
+                            "goal_ref": intent["goal_ref"],
+                            "kind": "action_followup",
+                            "state": "queued",
+                            "text": "",
+                            "receipt": None,
+                            "request_id": row["request_id"],
+                            "operation_key": key,
+                        },
                     },
                 )
+            if root_store is self.store:
+                self.publish_followup(key)
+
+    def publish_followup(self, operation_key):
+        if operation_key is None:
+            return
+        input_id = "action-followup:" + operation_key
+        root_store = self.session._authorization.store
+        durable = root_store.get("action_followups", input_id)
+        if durable is None or self.store.get("queued_inputs", input_id) is not None:
+            return
+        # 子库只是执行队列的投影；权威受理记录与批准在根库同一次提交里，重开可补投影。
+        with nullcontext() if self.store.connection.in_transaction else self.store.transaction():
+            if self.store.get("queued_inputs", input_id) is None:
+                self.store.put("queued_inputs", input_id, durable["input"])
 
     def recover(self):
         for row in self.session._authorization.store.rows("authorization_requests"):
             if row["request"]["session_id"] == self.session.session_id:
                 self.responded(row)
+                self.publish_followup(row["request"].get("operation_key"))
 
     def observe_task_actions(self, mission_id, delegation):
         from ..host.session_ledger import digest
         from .actions import checked_receipt
         from .connectors import Receipt
 
-        store = getattr(self.session._host, "store", None)
-        if store is None or not hasattr(store, "list_actions"):
-            return
+        store = self.session._host.store
         for action in store.list_actions(mission_id):
+            if self.store.get("effects", action["idempotency_key"]) is not None:
+                continue
             receipt = action.get("receipt")
             if not isinstance(receipt, dict):
                 continue

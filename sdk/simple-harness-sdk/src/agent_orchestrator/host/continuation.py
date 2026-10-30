@@ -37,8 +37,8 @@ class ContinuationContext:
     session_id: str
     child_key: str
     child_session_id: str
-    delegation_id: str
-    mission_id: str
+    delegation_id: str | None
+    mission_id: str | None
     event_id: str
     pending_event_ids: tuple[str, ...]
     used_turns: int

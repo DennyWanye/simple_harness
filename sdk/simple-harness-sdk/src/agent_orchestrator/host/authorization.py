@@ -213,7 +213,13 @@ class SessionAuthorization:
         if not task.cancelled():
             task.exception()
 
-    def _apply(self, request: AuthorizationRequest, decision: AuthorizationDecision):
+    def _apply(
+        self,
+        request: AuthorizationRequest,
+        decision: AuthorizationDecision,
+        *,
+        request_kind: str = "authorization",
+    ):
         self.check(request, require_allow=False)
         if not isinstance(decision, AuthorizationDecision):
             raise SessionError("authorization_required", retryable=True)
@@ -235,7 +241,7 @@ class SessionAuthorization:
                     pending = {
                         "request_id": request_id,
                         "request_ref": decision.request_ref,
-                        "request_kind": "authorization",
+                        "request_kind": request_kind,
                         "request": asdict(request),
                         "goal_ref": request.goal_ref,
                         "version": version,
@@ -348,7 +354,15 @@ class SessionAuthorization:
             )
         self._cache.clear()
 
-    def respond(self, request_id: str, decision: str, version: int, fields: Mapping[str, Any]):
+    def respond(
+        self,
+        request_id: str,
+        decision: str,
+        version: int,
+        fields: Mapping[str, Any],
+        *,
+        _on_decided=None,
+    ):
         row = self.store.get("authorization_requests", request_id)
         if row is None:
             raise SessionError("not_found_or_forbidden")
@@ -388,6 +402,8 @@ class SessionAuthorization:
         if row["receipt"] is not None:
             if row["state"] != state:
                 raise SessionError("idempotency_conflict")
+            if _on_decided is not None:
+                _on_decided(row)
             return row["receipt"]
         with self.store.transaction():
             row["state"] = state
@@ -405,6 +421,9 @@ class SessionAuthorization:
                 request_id=request_id,
                 payload=row["receipt"],
             )
+            if _on_decided is not None:
+                # 批准与它受理的后续工作必须共享这一次提交，不能在回执之后另留崩溃间隙。
+                _on_decided(row)
         return row["receipt"]
 
 

@@ -31,12 +31,10 @@ class SessionInbox:
         self.host, self.store = session._host, session._store
 
     def catch_up(self) -> None:
-        self.session._actions.recover()
         for row in self.store.rows("delegations"):
             mid = row.get("mission_id")
             if mid is None:
                 continue
-            self.session._actions.observe_task_actions(mid, row)
             cursor = int(self.store.get("cursors", mid) or 0)
             mission_store = getattr(self.host, "store", None)
             tail = None
@@ -49,6 +47,7 @@ class SessionInbox:
                     )
                 if tail <= cursor:
                     continue
+            self.session._actions.observe_task_actions(mid, row)
             while True:
                 page = self.host.events(mid, after_seq=cursor, limit=100)
                 events = page.get("events", [])

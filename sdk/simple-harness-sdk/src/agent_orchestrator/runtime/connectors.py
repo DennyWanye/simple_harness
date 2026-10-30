@@ -126,7 +126,8 @@ class Receipt:
         )
 
 
-#: ``Receipt.after["kind"]`` of a receipt that stands for a person's ruling, not a connector's reply.
+#: ``Receipt.after["kind"]`` of a receipt that stands for a person's ruling,
+#: not a connector's reply.
 HUMAN_RULING = "human_ruling"
 
 

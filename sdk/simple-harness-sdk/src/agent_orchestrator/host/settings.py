@@ -104,6 +104,7 @@ class HostSettings:
     publish_dir: str = ""
     #: 外部操作的最高风险等级（L0～L3）。注册了应用连接器时必须写明；没写时只有文件发布，按 L2。
     max_action_level: str | None = None
+    max_actions_per_turn: int = 4
     #: 一个任务里步骤中途可提议的动作上限（持久，跨尝试与重启累计）。
     max_step_actions_per_mission: int = 20
     #: 连接器一次执行 / 查询 / 整理参数的时限（秒）；超时记"结果不明"，不自动重做。
@@ -155,7 +156,7 @@ class HostSettings:
             raise ValueError("max_step_actions_per_mission 必须是正整数")
         if not float(self.connector_timeout_seconds) > 0:
             raise ValueError("connector_timeout_seconds 必须是正数")
-        for name in ("chat_max_model_calls", "chat_max_tool_calls"):
+        for name in ("chat_max_model_calls", "chat_max_tool_calls", "max_actions_per_turn"):
             if type(getattr(self, name)) is not int or getattr(self, name) < 1:
                 raise ValueError(f"{name} 必须是正整数")
         if not float(self.chat_turn_seconds) > 0:
@@ -201,6 +202,9 @@ def host_settings_from_mapping(section: Mapping[str, Any] | None) -> HostSetting
     context = raw.get("context_input_tokens")
     publish = raw.get("publish_dir")
     return HostSettings(
+        max_actions_per_turn=raw["max_actions_per_turn"]
+        if type(raw.get("max_actions_per_turn")) is int and raw["max_actions_per_turn"] > 0
+        else defaults.max_actions_per_turn,
         tool_search=raw.get("tool_search")
         if type(raw.get("tool_search")) is bool
         else defaults.tool_search,
