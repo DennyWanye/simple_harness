@@ -215,3 +215,61 @@ VERDICT: SHIPPED — 任务书 D 指定源码车道与 327 项定向验证（仅
 补修后迁移触发点为：初始化恢复一次、显式 send 遇 pending、真正准备创建续办批次。空闲 `_wake_inputs` 只驱动已经持久的队列，`tick` 空集合不接管同步异常；执行仍统一 `_send`，没有恢复 `turn_pending` 拒绝路径。新增 idle-pump-no-retry 反例并验证同键仍可提交；与更早同步输入先应用结果、原失败真宿主用例合跑 **3 passed，11.92 秒**。独立复核确认无新恢复缺口或 P0/P1。
 
 新增该反例后 D2 新用例为 17 项，指定 12 文件合计 **386 项**。下面结果对应最后补修提交，前述失败局保留原始记录，不冒称终验通过。
+
+
+### D2 最终终验
+
+最终被测源码提交：`8a50a4041`。基线 `4fa97dc7e`，工作树及分支始终为 `simple_harness-sol-D` / `sol/D-continuation`。
+命令全部在指定 SDK 目录运行，源码变更后先重生成清单；以下四组为同一已提交源码，分别使用隔离的测试数据根，并行但没有实现子代理：
+
+```sh
+uv run --frozen python scripts/build/taskgraph_manifest.py generate --upstream ../../.local-test-evidence/2026-10-05/f2-upstream/evidence.json
+uv run --frozen --extra realtime python -m pytest tests/orchestrator/host/test_session_async.py tests/orchestrator/host/test_continuation.py -q -p no:cacheprovider --tb=short
+uv run --frozen --extra realtime python -m pytest tests/orchestrator/host/test_session.py tests/orchestrator/host/test_host_sessions.py -q -p no:cacheprovider --tb=short
+uv run --frozen --extra realtime python -m pytest tests/orchestrator/host/test_session_replay.py -q -p no:cacheprovider --tb=short
+uv run --frozen --extra realtime python -m pytest tests/orchestrator/host/test_session_tree.py tests/orchestrator/host/test_realtime_bridge.py tests/orchestrator/host/test_chat.py tests/orchestrator/host/test_chat_cancel_recovery.py tests/orchestrator/host/test_tool_catalog.py tests/agents/test_tool_exposure.py tests/test_public_api.py -q -p no:cacheprovider --tb=short
+```
+
+| 组 | 通过数 | 用时 | 本地原始输出 / SHA-256 |
+|---|---:|---:|---|
+| core | 58 | 71.29 秒 | `.local-test-evidence/2026-10-31/sol-D2/final-core.txt` / `a734be788771703eb50146909996ff9c89f0e1525b902a1d35c7263fa4a93a79` |
+| session | 44 | 145.95 秒 | `.local-test-evidence/2026-10-31/sol-D2/final-session.txt` / `d3d883a92dc418f9041da4ea44091ce91d45cd91c35e2ac9b23691bf3ee13a9c` |
+| replay | 32 | 128.27 秒 | `.local-test-evidence/2026-10-31/sol-D2/final-replay.txt` / `3f64c5bcbee2b388955e7ec70d190c254c446d831570ffddc324499f25f7941c` |
+| related | 252 | 152.8 秒 | `.local-test-evidence/2026-10-31/sol-D2/final-related.txt` / `0aa652c838232f2edc00262727a4bd6db74585bbdb79d4b39bd928632528a1d7` |
+
+**总计 386 passed / 0 failed / 0 skipped，四组退出码均为 0。** 指定十二文件分别为：异步 11、续办 47、父子树 41、会话 29、重放 32、宿主会话 15、语音 61、聊天 10、聊天取消恢复 5、工具目录 15、工具曝光 12、公开 API 108。相对 D 的 369 项已审广度，本轮新增 17 项 D2 决定性反例；没有跑仓库全量。
+
+10 份改动 Python 文件（会话源码 8 份、测试 2 份）`ruff check` 全绿，`ruff format --check` 显示 10 files already formatted。
+
+```sh
+uv run --frozen ruff check src/agent_orchestrator/host/continuation.py src/agent_orchestrator/host/delegation.py src/agent_orchestrator/host/inbox.py src/agent_orchestrator/host/realtime_bridge.py src/agent_orchestrator/host/session.py src/agent_orchestrator/host/session_chat.py src/agent_orchestrator/host/session_ledger.py src/agent_orchestrator/host/settings.py tests/orchestrator/host/test_continuation.py tests/orchestrator/host/test_session_async.py
+uv run --frozen ruff format --check src/agent_orchestrator/host/continuation.py src/agent_orchestrator/host/delegation.py src/agent_orchestrator/host/inbox.py src/agent_orchestrator/host/realtime_bridge.py src/agent_orchestrator/host/session.py src/agent_orchestrator/host/session_chat.py src/agent_orchestrator/host/session_ledger.py src/agent_orchestrator/host/settings.py tests/orchestrator/host/test_continuation.py tests/orchestrator/host/test_session_async.py
+```
+
+### D2 条款兑现与边界
+
+| 条款 | 证据与实现 | 状态 |
+|---|---|---|
+| 阻断 1.1 | 完整真宿主子 Mission 完成→自动汇总→下一句模型请求仍含 SUMMARY-MARKER；三个回合 agent_id 相同；首次续办也不会永久冻结主 Agent 权限；后续用户仍能委派 | PASS |
+| 阻断 1.2 | 审核争锁探针正式化：语音期间队列仍 queued，语音应用后文字调用不增、usage 不覆盖、唯一 result_applied；锁内标 running/claim/_send 终态重查 | PASS |
+| 1.3 | 文字异常/失败零数按预扣上限，迟到回执与重开均不降低已知数，policy.used_model_calls 读保守值 | PASS |
+| 2.1 | 结构化 source/input_id；伪造正文 JSON 不能变 task_result；needs_response 走普通来源；ID 只由 input_id_for 生成 | PASS |
+| 2.2 | 父忙子仍执行；已有通知免快照，缺通知终态仅查一次并缓存 | PASS |
+| 2.3 | hold、deny、disabled 三种子结果仍经原队列可听到；未裁定事件保留游标等待泵 | PASS |
+| 2.4 | queued 的 idempotency_key 直接读完整字段，旧行回落删除；不新增兼容分支 | PASS |
+| 2.5 | 有 pending 时统一队列；初始化、显式输入、真实续办批次迁移；空闲泵不重试同步异常，_send 无 turn_pending；原重开同键用例不改断言通过 | PASS |
+| 2.6 | 连续轮次 epoch 持久，用户新输入重置，同键重放不重置，历史用量留账 | PASS |
+| 2.7 | wait=False 连续失败不积累 _input_errors；wait=True 消费/退出清除 | PASS |
+| 2.8 | Ledger.delete 封装恢复删除，正式终态缓存测试也覆盖此操作 | PASS |
+| 2.9 | inbox 说明更新“父下一句附资料或自动汇总” | PASS |
+| 2.10 | directive 已创建委派并持久 chat receipt、队列未 done 时崩溃；重开只补回执、Mission 仍唯一 | PASS |
+
+独立代码/最小化复核及最后时序 diff 复核均通过，无未关闭范围内 P0/P1。AST 对照基线确认 COMMAND_SCHEMAS、SESSION_INSTRUCTIONS、_profile_id、VoiceBinding 的工具目录装配/请求/命令执行定义不变；一次性续办 Agent 覆盖已删除。改动恰为本任务授权的 12 个文件，未动任务层、工具层、连接器、命令表、池编号或工具说明。
+
+构建清单 852 项源码逐个 SHA-256 匹配，生成身份 `587162709efe3edb98913ac28c659c6f1d1331fca8660c93317045a5d3eb500f`，清单 SHA-256 `c2f579f2bedddd5fb3114fac6f8140ee1449471a54986b410b9e9c3843c321cc`。原件存 `sol-D2/tested-manifest.json`，初始审核清单也保留；生成文件恢复 Git 基线而不提交。清单仍为 NOT_RUN，不声明部署/发版通过。汇总索引 `.local-test-evidence/2026-10-31/sol-D2/final-summary.json`。
+
+提交链：`63abd2d7d` D2 红测试 → `8ed837811` 主体补修 → `8a50a4041` 同步恢复时序修复 → 最后仅记录提交。工作树保留供复审；未推送、未合并、未发版。原始日志/数据库/清单全部 ignored 本地存放，不提交或上传。
+
+自我批评：独立复核抓到了未统一的恢复计量分支；扩展旧重放回归抓到了泵抢走同步恢复权，不能只看新反例绿。两个问题均补决定性反例并回到原断言通过；过程仍仅追加本节，没有为模板创建额外记录文件或向用户重复询问。
+
+VERDICT: SHIPPED — D2 全部两项阻断、保守用量及第 2 节十项补修；指定 12 文件 386 项定向验证（本地源码交付，无机器 receipt、未发版） — 2026-10-31 — 8a50a4041
