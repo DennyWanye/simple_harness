@@ -12,13 +12,18 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
+from .authorization import EffectLedger, SessionAuthorization
 from .continuation import Continuation, ContinuationPolicy
-from .delegation import Delegations
+from .delegation import TERMINAL, Delegations
+from .goals import Goals
 from .host import OrchestrationHost
 from .inbox import SessionInbox, request_version
+from .recovery_report import build_recovery_report
 from .session_chat import COMMAND_SCHEMAS, RESERVED_TOOLS, SessionChatService
 from .session_ledger import SessionError, SessionLedger, digest, encoded
 from .session_tree import CONFIG_VERSION, PROTOCOL_VERSION, Children, Commands, registered_parent
+
+_UNSET = object()
 
 
 @dataclass(frozen=True)
@@ -75,7 +80,10 @@ class Session:
             identity,
         )
         try:
+            self._check_owner()
             with self._store.transaction():
+                if self._store.get("meta", "archived"):
+                    raise SessionError("not_found_or_forbidden", "session is archived")
                 frozen = self._store.get("meta", "configuration")
                 configuration = {
                     "version": CONFIG_VERSION,
@@ -109,7 +117,13 @@ class Session:
         self.parent = given
         self._children: dict[str, Session] = {}
         self._child_open_tasks: set[asyncio.Task[Any]] = set()
+        if not hasattr(host, "_session_handles"):
+            host._session_handles = {}
+        host._session_handles[session_id] = self
         self._commands, self._tree = Commands(self), Children(self)
+        self._goals = Goals(self)
+        self._authorization = SessionAuthorization(self)
+        self._effects = EffectLedger(self)
         self._delegations, self._inbox = Delegations(self), SessionInbox(self)
         self._closed = False
         self._close_task: asyncio.Task[None] | None = None
@@ -160,7 +174,7 @@ class Session:
             if not session._chat.available:
                 raise SessionError("chat_unavailable", session._chat.reason or "")
             await session.recover()
-            session._delegations.recover()
+            await session._delegations.recover()
             session._inbox.catch_up()
             host.start_driver()
             session._pump_task = asyncio.create_task(session._pump(), name=f"session-{session_id}")
@@ -174,12 +188,450 @@ class Session:
     def _checkpoint(self, point: str) -> None:
         """Fault-injection seam after a durable commit, never before it."""
 
+    def _check_owner(self) -> None:
+        check_owner = getattr(self._host, "_check_owner", None)
+        if check_owner is not None:
+            check_owner()
+
     def _check_open(self) -> None:
         if self._closed:
             raise SessionError("session_closed")
+        self._check_owner()
+        if self.parent is not None:
+            self._root_session()
+        if self._store.get("meta", "archived"):
+            raise SessionError("not_found_or_forbidden", "session is archived")
+
+    def _root_session(self) -> Session:
+        if self.parent is None:
+            if self._closed:
+                raise SessionError("session_closed")
+            return self
+        parent_id = self.parent["parent_session_id"]
+        root = self._host._session_handles.get(parent_id)
+        if root is None or root._closed:
+            raise SessionError("session_closed", "root session is not open")
+        return root
+
+    def _tree_sessions(self) -> list[Session]:
+        self._check_open()
+        self._restore_child_handles()
+        return [self, *self._children.values()]
+
+    def _goal_ref(self) -> dict[str, Any] | None:
+        if self._current_input is not None and "goal_ref" in self._current_input:
+            return self._current_input["goal_ref"]
+        return self._root_session()._goals.current_ref()
+
+    def put_goal(self, spec, *, command_id: str, expected_version: int):
+        return self._goals.put(spec, command_id=command_id, expected_version=expected_version)
+
+    def finish_goal(self, goal_id, outcome, *, command_id, expected_version, basis=""):
+        return self._goals.finish(
+            goal_id, outcome, command_id=command_id, expected_version=expected_version, basis=basis
+        )
+
+    def exclude_result(self, event_id, reason, *, command_id):
+        return self._goals.exclude(event_id, reason, command_id=command_id)
+
+    def revoke_authorization(self, grant_ref: str) -> None:
+        self._check_open()
+        self._authorization.revoke(grant_ref)
+
+    def recovery_report(self):
+        return build_recovery_report(self)
+
+    def _is_cancelled(
+        self,
+        *,
+        goal_ref=None,
+        delegation_id=None,
+        input_id=None,
+        operation_key=None,
+        for_new_input=False,
+    ) -> bool:
+        root = self._root_session()
+        current = None if for_new_input else self._current_input
+        for barrier in root._store.rows("cancellations"):
+            kind, target = barrier["target_kind"], barrier["target_id"]
+            if kind == "session_tree":
+                scope = barrier["scope"]
+                if delegation_id is not None and delegation_id in scope["delegation_ids"]:
+                    return True
+                if goal_ref and goal_ref["goal_id"] in scope["goal_ids"]:
+                    return True
+                if input_id is not None and input_id in scope["inputs"].get(self.session_id, []):
+                    return True
+                if operation_key is not None and operation_key in scope["effects"].get(
+                    self.session_id, []
+                ):
+                    return True
+                if current and current["turn_id"] in scope["turns"].get(self.session_id, []):
+                    return True
+            if kind == "goal" and goal_ref and goal_ref["goal_id"] == target:
+                return True
+            if kind == "delegation" and delegation_id == target:
+                return True
+        return False
+
+    def _check_origin(self, session_id, turn_id) -> None:
+        self._check_open()
+        if turn_id is None:
+            return
+        for barrier in self._root_session()._store.rows("cancellations"):
+            if barrier["target_kind"] == "session_tree" and turn_id in barrier["scope"][
+                "turns"
+            ].get(session_id, []):
+                raise SessionError("cancelled")
+
+    def _check_dispatch(self, *, goal_ref=None, delegation_id=None, for_new_input=False) -> None:
+        self._check_open()
+        if self._is_cancelled(
+            goal_ref=goal_ref, delegation_id=delegation_id, for_new_input=for_new_input
+        ):
+            raise SessionError("cancelled")
+
+    def _input_cancelled(self, queued) -> bool:
+        origin_turn = queued.get("origin_turn_id")
+        if origin_turn is not None:
+            try:
+                self._check_origin(queued["source_session_id"], origin_turn)
+            except SessionError as error:
+                if error.code == "cancelled":
+                    return True
+                raise
+        if self._is_cancelled(
+            goal_ref=queued.get("goal_ref"),
+            delegation_id=queued.get("delegation_id"),
+            input_id=queued["input_id"],
+            for_new_input=True,
+        ):
+            return True
+        if queued["kind"] == "result_event":
+            return any(
+                self._is_cancelled(
+                    goal_ref=n.get("goal_ref"), delegation_id=n["delegation_id"], for_new_input=True
+                )
+                for eid in queued["payload"]
+                if (n := self._store.get("inbox", eid)) is not None
+            )
+        return False
+
+    def _cancel_input(self, queued) -> None:
+        self._check_owner()
+        with self._store.transaction():
+            queued.update(
+                state="cancelled",
+                receipt={
+                    "state": "failed",
+                    "text": "",
+                    "turn_id": queued["turn_id"],
+                    "error": {"code": "cancelled"},
+                },
+            )
+            self._store.put("queued_inputs", queued["input_id"], queued)
+            self._store.event(
+                "cancelled",
+                key=f"input-cancelled:{queued['input_id']}",
+                input_id=queued["input_id"],
+                turn_id=queued["turn_id"],
+            )
+            if queued["kind"] == "result_event":
+                for eid in queued["payload"]:
+                    result = self._store.get("continuation_results", eid)
+                    notice = self._store.get("inbox", eid)
+                    if result:
+                        cancelled = self._is_cancelled(
+                            goal_ref=notice.get("goal_ref"), delegation_id=notice["delegation_id"]
+                        )
+                        result.update(state="cancelled" if cancelled else "pending", input_id=None)
+                        self._store.put("continuation_results", eid, result)
+
+    def cancel(self, target_kind, target_id, *, command_id, expected_version=None, reason=""):
+        self._check_open()
+        if target_kind not in {"goal", "delegation", "session_tree"} or not isinstance(reason, str):
+            raise SessionError("invalid_argument")
+        root = self._root_session()
+        owners = self._tree_sessions()
+        if target_kind == "goal":
+            if self.parent is not None:
+                raise SessionError("not_found_or_forbidden")
+            goal = self._goals.find(target_id)
+        elif target_kind == "delegation":
+            try:
+                _, target_row = self._find_task(target_id)
+                target_id = target_row["delegation_id"]
+            except SessionError:
+                raise SessionError("not_found_or_forbidden") from None
+        elif target_id not in {owner.session_id for owner in owners}:
+            raise SessionError("not_found_or_forbidden")
+
+        def apply():
+            if target_kind == "goal":
+                if expected_version is not None and expected_version != goal["goal_version"]:
+                    raise SessionError("stale_version")
+                if goal["state"] not in {"succeeded", "failed", "cancelled"}:
+                    goal["state"] = "cancel_requested"
+                    root._store.put("goals", target_id, goal)
+            event = root._store.event(
+                "cancel_requested",
+                key=f"cancel:{command_id}",
+                target_kind=target_kind,
+                target_id=target_id,
+                reason=reason,
+            )
+            scope_owners = [
+                owner for owner in owners if target_id in {self.session_id, owner.session_id}
+            ]
+            scope = {
+                "delegation_ids": [
+                    row["delegation_id"]
+                    for owner in scope_owners
+                    for row in owner._store.rows("delegations")
+                ],
+                "inputs": {
+                    owner.session_id: [r["input_id"] for r in owner.queued_inputs()]
+                    for owner in scope_owners
+                },
+                "turns": {
+                    owner.session_id: [r["turn_id"] for r in owner._store.rows("turns")]
+                    for owner in scope_owners
+                },
+                "effects": {
+                    owner.session_id: [r["operation_key"] for r in owner._store.rows("effects")]
+                    for owner in scope_owners
+                },
+                "approval_ids": [
+                    r["request_id"]
+                    for r in root._store.rows("authorization_requests")
+                    if r["request"]["session_id"] in {o.session_id for o in scope_owners}
+                ],
+                "goal_ids": [
+                    g["goal_id"]
+                    for g in root._goals.rows()
+                    if target_id == root.session_id
+                    and g["state"] not in {"succeeded", "failed", "cancelled"}
+                ],
+            }
+            for owner in scope_owners:
+                if owner._current_input is not None:
+                    turn_id = owner._current_input["turn_id"]
+                    if turn_id not in scope["turns"][owner.session_id]:
+                        scope["turns"][owner.session_id].append(turn_id)
+            if target_kind == "session_tree":
+                for goal_id in scope["goal_ids"]:
+                    prior = root._goals.find(goal_id)
+                    prior["state"] = "cancel_requested"
+                    root._store.put("goals", goal_id, prior)
+            prior = root._store.get("cancellations", f"{target_kind}:{target_id}")
+            if prior is not None and target_kind == "session_tree":
+                for name in ("delegation_ids", "goal_ids", "approval_ids"):
+                    scope[name] = sorted(set(scope[name]) | set(prior["scope"][name]))
+                for name in ("inputs", "turns", "effects"):
+                    for session_id, refs in prior["scope"][name].items():
+                        scope[name][session_id] = sorted(
+                            set(scope[name].get(session_id, [])) | set(refs)
+                        )
+            barrier = {
+                "scope": scope,
+                "target_kind": target_kind,
+                "target_id": target_id,
+                "barrier_seq": event["seq"],
+                "reason": reason,
+                "state": "cancel_requested",
+                "command_id": command_id,
+            }
+            root._store.put("cancellations", f"{target_kind}:{target_id}", barrier)
+            return {
+                "status": "cancel_requested",
+                "barrier_seq": event["seq"],
+                "target_kind": target_kind,
+                "target_id": target_id,
+            }
+
+        receipt = root._commands.run(
+            command_id,
+            "cancel",
+            {
+                "target_kind": target_kind,
+                "target_id": target_id,
+                "expected_version": expected_version,
+                "reason": reason,
+            },
+            apply,
+        )
+        self._checkpoint("cancel_requested")
+        root._converge_cancellations()
+        return receipt
+
+    def _converge_cancellations(self) -> None:
+        root = self._root_session()
+        if root is not self:
+            return
+        pending = [b for b in root._store.rows("cancellations") if b["state"] == "cancel_requested"]
+        if not pending:
+            return
+        owners = root._tree_sessions()
+
+        def matches(owner, row, barrier):
+            kind, target = barrier["target_kind"], barrier["target_id"]
+            if kind == "session_tree":
+                scope = barrier["scope"]
+                return (
+                    row.get("delegation_id") in scope["delegation_ids"]
+                    or row.get("input_id") in scope["inputs"].get(owner.session_id, [])
+                    or row.get("operation_key") in scope["effects"].get(owner.session_id, [])
+                    or (row.get("goal_ref") or {}).get("goal_id") in scope["goal_ids"]
+                    or row.get("request_id") in scope["approval_ids"]
+                )
+            if kind == "goal":
+                return (row.get("goal_ref") or {}).get("goal_id") == target
+            return row.get("delegation_id") == target
+
+        for barrier in pending:
+            previous = dict(barrier)
+            states = []
+            for request in root._store.rows("authorization_requests"):
+                bound = {**request["request"], "request_id": request["request_id"]}
+                owner = self._host._session_handles.get(bound["session_id"], root)
+                if request["state"] == "pending" and matches(owner, bound, barrier):
+                    with root._store.transaction():
+                        request["state"] = "cancelled"
+                        root._store.put("authorization_requests", request["request_id"], request)
+                        root._store.event(
+                            "cancelled",
+                            key=f"approval-cancel:{request['request_id']}",
+                            request_id=request["request_id"],
+                        )
+            for owner in owners:
+                for row in owner._store.rows("delegations"):
+                    if not matches(owner, row, barrier):
+                        continue
+                    try:
+                        result = owner._delegations.cancel(row["delegation_id"])
+                    except Exception:
+                        owner._check_owner()
+                        if row.get("cancel_effect_state") != "unknown":
+                            with owner._store.transaction():
+                                row = owner._store.get("delegations", row["key"])
+                                row["cancel_effect_state"] = "unknown"
+                                owner._store.put("delegations", row["key"], row)
+                        result = {"status": "UNKNOWN"}
+                    states.append(result["status"])
+                for voice in owner._store.rows("voice_deliveries"):
+                    queued = owner._store.get("queued_inputs", voice["input_id"])
+                    if (
+                        voice["state"] == "submitted"
+                        and queued
+                        and (
+                            matches(owner, queued, barrier)
+                            or any(
+                                matches(owner, notice, barrier)
+                                for eid in queued.get("payload", [])
+                                if (notice := owner._store.get("inbox", eid)) is not None
+                            )
+                        )
+                    ):
+                        states.append("HANDED_OFF")
+                        if not voice.get("cancel_requested"):
+                            with owner._store.transaction():
+                                voice["cancel_requested"] = True
+                                owner._store.put("voice_deliveries", voice["input_id"], voice)
+                for queued in owner.queued_inputs():
+                    if queued["state"] == "queued" and owner._input_cancelled(queued):
+                        owner._cancel_input(queued)
+                for effect in owner._store.rows("effects"):
+                    if matches(owner, effect, barrier) and effect["state"] in {
+                        "unknown",
+                        "claimed",
+                        "pending",
+                    }:
+                        states.append("UNKNOWN")
+                owner._wake_inputs()
+            barrier["target_statuses"] = states
+            barrier["effect_state"] = (
+                "unknown"
+                if "UNKNOWN" in states
+                else "handed_off"
+                if any(state not in TERMINAL for state in states)
+                else "completed"
+            )
+            goal_ids = (
+                [barrier["target_id"]]
+                if barrier["target_kind"] == "goal"
+                else barrier["scope"]["goal_ids"]
+                if barrier["target_kind"] == "session_tree"
+                else []
+            )
+            unfinished = any(root._goals.structural_reasons(goal_id) for goal_id in goal_ids)
+            if not unfinished and all(state in TERMINAL for state in states):
+                outcome = "failed" if "FAILED" in states else "cancelled"
+                barrier["state"] = outcome
+                with root._store.transaction():
+                    for goal_id in goal_ids:
+                        goal = root._goals.find(goal_id)
+                        if goal["state"] not in {"succeeded", "failed", "cancelled"}:
+                            goal["state"] = outcome
+                            root._store.put("goals", goal_id, goal)
+                    root._store.event(
+                        outcome,
+                        key=f"cancel-done:{barrier['command_id']}",
+                        target_kind=barrier["target_kind"],
+                        target_id=barrier["target_id"],
+                    )
+            if barrier != previous:
+                with root._store.transaction():
+                    root._store.put(
+                        "cancellations", f"{barrier['target_kind']}:{barrier['target_id']}", barrier
+                    )
+                    if "UNKNOWN" in states:
+                        root._store.event(
+                            "effect_unknown",
+                            key=f"cancel-unknown:{barrier['command_id']}",
+                            target_kind=barrier["target_kind"],
+                            target_id=barrier["target_id"],
+                        )
+
+    def _has_active_work(self, *, include_goals=False) -> bool:
+        owners = self._tree_sessions()
+        root = self._root_session()
+        exclusions = {r["event_id"] for r in root._store.rows("result_exclusions")}
+        notices = {n["event_id"]: n for owner in reversed(owners) for n in owner.inbox()}
+        root_notices = {n["event_id"]: n for n in root.inbox()}
+        if any(
+            n.get("applied_turn_id") is None
+            and eid not in exclusions
+            and not root_notices.get(eid, {}).get("applied_turn_id")
+            for eid, n in notices.items()
+        ):
+            return True
+        for owner in owners:
+            if owner._delegations.has_in_flight():
+                return True
+            if any(r["state"] in {"queued", "running"} for r in owner.queued_inputs()):
+                return True
+            if any(r["state"] in {"pending", "queued"} for r in owner.continuations()):
+                return True
+        return include_goals and any(
+            g["state"] not in {"succeeded", "failed", "cancelled"} for g in root._goals.rows()
+        )
+
+    def archive(self, *, command_id: str) -> dict[str, Any]:
+        if self._store.get("commands", str(command_id)) is not None:
+            return self._commands.run(command_id, "archive", {}, lambda: {})
+        self._check_open()
+
+        def apply():
+            if self._has_active_work(include_goals=True):
+                raise SessionError("active_work")
+            self._store.put("meta", "archived", True)
+            self._store.event("archived", key=f"archive:{command_id}")
+            return {"archived": True}
+
+        return self._commands.run(command_id, "archive", {}, apply)
 
     def _commit_input(
-        self, text: str, key: str, *, queued: dict[str, Any] | None = None
+        self, text: str, key: str, *, queued: dict[str, Any] | None = None, goal_ref=_UNSET
     ) -> dict[str, Any]:
         if (
             not isinstance(text, str)
@@ -190,6 +642,7 @@ class Session:
             raise SessionError(
                 "invalid_request", "text and idempotency_key must be nonempty strings"
             )
+        self._check_owner()
         with self._store.transaction():
             previous = self._store.get("turns", key)
             if previous is not None:
@@ -204,6 +657,7 @@ class Session:
                 n
                 for n in self._store.rows("inbox")
                 if n["applied_turn_id"] is None
+                and self._root_session()._store.get("result_exclusions", n["event_id"]) is None
                 and (frozen_ids is None or n["event_id"] in frozen_ids)
             ]
             row = {
@@ -213,6 +667,9 @@ class Session:
                 "receipt": None,
                 "inbox_ids": [n["event_id"] for n in notices],
                 "result_subject": None,
+                "goal_ref": (self._goal_ref() if goal_ref is _UNSET else goal_ref)
+                if queued is None
+                else queued.get("goal_ref"),
                 "source": "user" if queued is None else queued.get("source", "user"),
                 "source_input_id": None if queued is None else queued["input_id"],
             }
@@ -254,14 +711,31 @@ class Session:
             raise SessionError(
                 "invalid_request", "text and idempotency_key must be nonempty strings"
             )
+        authorization = None
+        goal_ref = self._root_session()._goals.current_ref()
+
+        def check_frozen_goal():
+            self._check_dispatch(goal_ref=goal_ref, for_new_input=True)
+            if self._root_session()._goals.current_ref() != goal_ref:
+                raise SessionError("stale_version")
+
+        existing = self._store.get("turns", input_key)
+        if existing is None or existing["receipt"] is None:
+            self._check_dispatch(goal_ref=goal_ref, for_new_input=True)
+            authorization = await self._authorization.ensure(
+                "accept_input", self.session_id, {"text": text, "key": input_key}, goal_ref=goal_ref
+            )
+            if self._root_session()._goals.current_ref() != goal_ref:
+                raise SessionError("stale_version")
+            self._check_dispatch(goal_ref=goal_ref, for_new_input=True)
         queued = next((r for r in self.queued_inputs() if r["idempotency_key"] == input_key), None)
         pending = any(r["state"] in {"queued", "running"} for r in self.queued_inputs()) or any(
             r["receipt"] is None for r in self._store.rows("turns")
         )
         if wait and queued is None and not pending:
-            return await self._send(text, key=input_key)
+            return await self._send(text, key=input_key, _authorization=authorization)
         self._queue_pending_turns()
-        accepted = self._accept_input(text, input_key)
+        accepted = self._accept_input(text, input_key, goal_ref=goal_ref)
         input_id = accepted["input_id"]
         if wait:
             self._input_waiters[input_id] = self._input_waiters.get(input_id, 0) + 1
@@ -297,6 +771,7 @@ class Session:
             if row.get("source") == "announcement" or row["idempotency_key"].startswith(
                 ("voice:", "voice-announcement:")
             ):
+                self._check_owner()
                 with self._store.transaction():
                     row["receipt"] = {
                         "state": "failed",
@@ -312,11 +787,12 @@ class Session:
                         payload={"code": "not_submitted"},
                     )
                 continue
-            self._accept_input(row["input"], row["idempotency_key"])
+            self._accept_input(row["input"], row["idempotency_key"], goal_ref=row.get("goal_ref"))
 
-    def _accept_input(self, text: str, key: str) -> dict[str, Any]:
+    def _accept_input(self, text: str, key: str, *, goal_ref=_UNSET) -> dict[str, Any]:
         input_id = f"input-{digest([self.session_id, key])[:32]}"
         turn_id = f"turn-{digest([self.session_id, key])[:32]}"
+        self._check_owner()
         with self._store.transaction():
             existing = self._store.get("turns", key)
             queued = self._store.get("queued_inputs", input_id)
@@ -333,6 +809,7 @@ class Session:
                     "idempotency_key": key,
                     "turn_id": turn_id,
                     "kind": "user_message",
+                    "goal_ref": self._goal_ref() if goal_ref is _UNSET else goal_ref,
                     "source": "user",
                     "text": text,
                     "state": state,
@@ -406,14 +883,30 @@ class Session:
                     queued = self._store.get("queued_inputs", input_id)
                     if queued["state"] not in {"queued", "running"}:
                         continue
+                    if self._input_cancelled(queued):
+                        self._cancel_input(queued)
+                        continue
                     if (
                         queued["kind"] == "directive"
                         and queued["state"] == "queued"
                         and self._delegations.has_in_flight()
                     ):
                         return
+                    if queued["kind"] != "result_event":
+                        await self._authorization.ensure(
+                            "accept_input",
+                            self.session_id,
+                            {"text": queued["text"], "key": key},
+                            goal_ref=queued.get("goal_ref"),
+                            delegation_id=queued.get("delegation_id"),
+                        )
+                        self._check_open()
+                        if self._input_cancelled(queued):
+                            self._cancel_input(queued)
+                            continue
                     if queued["kind"] == "result_event" and not self._continuation.claim(queued):
                         continue
+                    self._check_owner()
                     with self._store.transaction():
                         queued["state"] = "running"
                         self._store.put("queued_inputs", input_id, queued)
@@ -422,6 +915,7 @@ class Session:
                     )
                     if queued["kind"] == "result_event":
                         self._continuation.finish(queued, receipt)
+                    self._check_owner()
                     with self._store.transaction():
                         current = self._store.get("queued_inputs", input_id)
                         if current["state"] == "running":
@@ -433,10 +927,13 @@ class Session:
             except asyncio.CancelledError:
                 raise
             except BaseException as error:
+                if self._closed or getattr(error, "code", None) == "session_closed":
+                    return
                 if input_id in self._input_waiters:
                     self._input_errors[input_id] = error
                 if not isinstance(error, Exception):
                     return
+                self._check_owner()
                 with self._store.transaction():
                     queued.update(state="failed", error=getattr(error, "code", "turn_failed"))
                     turn = self._store.get("turns", key)
@@ -469,6 +966,7 @@ class Session:
         key: str | None = None,
         _queued: dict[str, Any] | None = None,
         _locked: bool = False,
+        _authorization=None,
     ) -> dict[str, Any]:
         self._check_open()
         if idempotency_key is not None and key is not None and idempotency_key != key:
@@ -509,9 +1007,20 @@ class Session:
                 raise SessionError("idempotency_conflict")
             if existing and existing["receipt"] is not None:
                 return existing["receipt"]
-            self._delegations.recover()
+            if _queued is None:
+                if _authorization is not None:
+                    self._authorization.check(_authorization)
+                    if self._root_session()._goals.current_ref() != _authorization.goal_ref:
+                        raise SessionError("stale_version")
+                self._check_dispatch(goal_ref=self._goal_ref())
+            await self._delegations.recover()
             self._inbox.catch_up()
-            row = self._commit_input(text, input_key, queued=_queued)
+            row = self._commit_input(
+                text,
+                input_key,
+                queued=_queued,
+                goal_ref=_UNSET if _authorization is None else _authorization.goal_ref,
+            )
             self._current_input = row
             try:
                 reply = self._store.get("chat_receipts", row["turn_id"])
@@ -535,6 +1044,7 @@ class Session:
                 }
                 if reply["state"] == "committed":
                     self._release_result_allowances(row)
+                self._check_owner()
                 with self._store.transaction():
                     if reply["state"] == "committed":
                         for event_id in (
@@ -543,6 +1053,19 @@ class Session:
                             notice = self._store.get("inbox", event_id)
                             notice["applied_turn_id"] = row["turn_id"]
                             self._store.put("inbox", event_id, notice)
+                            result = self._store.get("continuation_results", event_id)
+                            if result is not None:
+                                result.update(state="applied", applied_turn_id=row["turn_id"])
+                                self._store.put("continuation_results", event_id, result)
+                        for queued in self.queued_inputs():
+                            if queued["kind"] == "result_event" and queued["state"] == "queued":
+                                if all(
+                                    self._store.get("inbox", eid).get("applied_turn_id") is not None
+                                    or self._store.get("result_exclusions", eid)
+                                    for eid in queued["payload"]
+                                ):
+                                    queued.update(state="done", turn_id=row["turn_id"])
+                                    self._store.put("queued_inputs", queued["input_id"], queued)
                     if (
                         reply["state"] == "committed"
                         and row.get("source") != "continuation"
@@ -563,6 +1086,7 @@ class Session:
                     )
                 return receipt
             except Exception as error:
+                self._check_owner()
                 with self._store.transaction():
                     if getattr(error, "code", None) == "budget_exhausted":
                         row["receipt"] = {
@@ -590,6 +1114,7 @@ class Session:
     def _piece(self, piece: Mapping[str, Any]) -> None:
         if not self._current_input:
             return
+        self._check_owner()
         with self._store.transaction():
             seq = self._store.get("meta", "sequence")
             event = self._store.event(
@@ -634,11 +1159,13 @@ class Session:
         while not self._closed:
             try:
                 await self.recover()
-                self._delegations.recover()
+                await self._delegations.recover()
                 self._inbox.catch_up()
+                self._converge_cancellations()
                 await self._continuation.tick()
                 self._wake_inputs()
             except Exception as error:
+                self._check_owner()
                 with self._store.transaction():
                     self._store.event(
                         "error",
@@ -668,7 +1195,9 @@ class Session:
             result["snapshot"] = self._host.snapshot(row["mission_id"])
             result["status"] = result["snapshot"]["snapshot"]["mission"]["status"]
         else:
-            result["status"] = "REJECTED" if row.get("error") else "CREATING"
+            result["status"] = row.get("terminal_status") or (
+                "REJECTED" if row.get("error") else "CREATING"
+            )
         return result
 
     def _find_task(self, task_id: str) -> tuple[Session, dict[str, Any]]:
@@ -683,6 +1212,22 @@ class Session:
         owner, _ = self._find_task(task_id)
         return owner._delegations.cancel(task_id)
 
+    def _child_archived(self, row) -> bool:
+        child_id = row["child_session_id"]
+        child = self._host._session_handles.get(child_id)
+        if child is not None:
+            return bool(child._store.get("meta", "archived"))
+        path = self._host.root / "sessions" / child_id / "session.sqlite3"
+        if not path.is_file():
+            return False
+        import sqlite3
+
+        with sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True) as connection:
+            value = connection.execute(
+                "SELECT body FROM records WHERE namespace='meta' AND key='archived'"
+            ).fetchone()
+        return value is not None and value[0] == "true"
+
     async def recover(self) -> None:
         """重开后按父账本把子会话重新打开；子会话自己的账本与任务照旧恢复。"""
 
@@ -691,6 +1236,8 @@ class Session:
             self._queue_pending_turns()
             self._inputs_recovered = True
         for row in self._tree.rows():
+            if self._child_archived(row):
+                continue
             child = self._children.get(row["child_key"])
             if (
                 child is None
@@ -703,6 +1250,8 @@ class Session:
 
     def _restore_child_handles(self) -> None:
         for row in self._tree.rows():
+            if self._child_archived(row):
+                continue
             key, child_id = row["child_key"], row["child_session_id"]
             if key in self._children and not self._children[key]._closed:
                 continue
@@ -738,7 +1287,7 @@ class Session:
                     policy=self.policy,
                     parent=(self.session_id, child_key),
                 )
-                child._delegations.recover()
+                await child._delegations.recover()
                 child._inbox.catch_up()
             if self._closed:
                 await child.close()
@@ -751,12 +1300,38 @@ class Session:
     async def create_child(
         self, child_key: str, *, command_id: str, purpose: str = ""
     ) -> dict[str, Any]:
+        receipt = await self._register_child(child_key, command_id=command_id, purpose=purpose)
+        await self.recover()
+        return receipt
+
+    async def _register_child(
+        self, child_key: str, *, command_id: str, purpose: str = ""
+    ) -> dict[str, Any]:
         """开一个工作会话。关系先持久在父账本，再打开子会话；中途失败重调即恢复。"""
 
         self._check_open()
-        receipt = self._tree.register(child_key, command_id, purpose)
+        goal_ref = self._root_session()._goals.current_ref()
+
+        def check_frozen_goal():
+            self._check_dispatch(goal_ref=goal_ref)
+            if self._root_session()._goals.current_ref() != goal_ref:
+                raise SessionError("stale_version")
+
+        if self._store.get("commands", str(command_id)) is None:
+            self._check_dispatch(goal_ref=goal_ref)
+            goal_ref = self._root_session()._goals.current_ref()
+            await self._authorization.ensure(
+                "create_child",
+                str(child_key),
+                {"child_key": child_key, "purpose": purpose},
+                goal_ref=goal_ref,
+                _guard=check_frozen_goal,
+            )
+            if self._root_session()._goals.current_ref() != goal_ref:
+                raise SessionError("stale_version")
+            self._check_dispatch(goal_ref=self._goal_ref())
+        receipt = self._tree.register(child_key, command_id, purpose, goal_ref=goal_ref)
         self._checkpoint("child_registered")
-        await self.recover()
         return receipt
 
     def children(self) -> list[dict[str, Any]]:
@@ -766,25 +1341,66 @@ class Session:
                 "child_session_id": row["child_session_id"],
                 "purpose": row.get("purpose", ""),
                 "goal_ref": row.get("goal_ref"),
-                "open": row["child_key"] in self._children,
+                "archived": self._child_archived(row),
+                "open": row["child_key"] in self._children and not self._child_archived(row),
             }
             for row in self._tree.rows()
         ]
 
     def child(self, child_key: str) -> Session:
         row = self._tree.find(child_key)
+        if self._child_archived(row):
+            raise SessionError("not_found_or_forbidden", "child session is archived")
         child = self._children.get(row["child_key"])
         if child is None:
             raise SessionError("not_found_or_forbidden", "child session is not open; recover first")
         return child
 
-    def child_send(self, child_key: str, text: str, *, command_id: str) -> dict[str, Any]:
+    async def child_send(self, child_key: str, text: str, *, command_id: str) -> dict[str, Any]:
         """持久排队追加输入；已有任务终态后由子会话串行执行。"""
 
         self._check_open()
         child = self.child(child_key)
+        goal_ref = self._goal_ref()
+        origin_turn_id = None if self._current_input is None else self._current_input["turn_id"]
         if not isinstance(text, str) or not text.strip() or len(text) > 12000:
             raise SessionError("invalid_argument", "text must be bounded nonempty text")
+
+        input_id = f"input-{digest([child.session_id, command_id])[:32]}"
+        finished = {notice["delegation_id"] for notice in child.inbox()}
+        pending = next(
+            (
+                r
+                for r in reversed(child._store.rows("delegations"))
+                if not r.get("error")
+                and r.get("terminal_status") not in TERMINAL
+                and r["delegation_id"] not in finished
+                and (not r.get("mission_id") or child._delegations.status(r) not in TERMINAL)
+            ),
+            None,
+        )
+        delegation_id = None if pending is None else pending["delegation_id"]
+
+        def check_frozen_origin():
+            self._check_origin(self.session_id, origin_turn_id)
+            if self._goal_ref() != goal_ref:
+                raise SessionError("stale_version")
+
+        if child._store.get("commands", str(command_id)) is None:
+            self._check_origin(self.session_id, origin_turn_id)
+            child._check_dispatch(goal_ref=goal_ref, delegation_id=delegation_id)
+            await child._authorization.ensure(
+                "accept_input",
+                child.session_id,
+                {"text": text, "key": input_id},
+                goal_ref=goal_ref,
+                delegation_id=delegation_id,
+                _guard=check_frozen_origin,
+            )
+            self._check_origin(self.session_id, origin_turn_id)
+            if self._goal_ref() != goal_ref:
+                raise SessionError("stale_version")
+            child._check_dispatch(goal_ref=goal_ref, delegation_id=delegation_id)
 
         def apply() -> dict[str, Any]:
             input_id = f"input-{digest([child.session_id, command_id])[:32]}"
@@ -793,12 +1409,15 @@ class Session:
                 "text": text,
                 "kind": "directive",
                 "directive": "next_turn",
+                "goal_ref": goal_ref,
+                "delegation_id": delegation_id,
                 "idempotency_key": input_id,
                 "turn_id": f"turn-{digest([child.session_id, input_id])[:32]}",
                 "source": "directive",
                 "state": "queued",
                 "command_id": command_id,
                 "source_session_id": self.session_id,
+                "origin_turn_id": origin_turn_id,
                 "created_at": time.time(),
                 "receipt": None,
             }
@@ -827,6 +1446,7 @@ class Session:
         与委派的槽位同一个道理，这样换代重放不会把同一条追加输入登记两次。"""
 
         binding_key = digest([kind, turn_id, attempt_id, call_id])
+        self._check_owner()
         with self._store.transaction():
             binding = self._store.get("command_routes", binding_key)
             if binding is not None:
@@ -855,6 +1475,7 @@ class Session:
         """能力发现：不调模型，不读任务库。"""
 
         return {
+            "owner_generation": getattr(self._host, "owner_generation", 0),
             "catalog_version": getattr(
                 getattr(self._host, "tool_catalog", None), "catalog_version", None
             ),
@@ -870,6 +1491,11 @@ class Session:
                 "async_accept",
                 "queued_input_execution",
                 "continuation",
+                "goals",
+                "authorization_port",
+                "cancel_scope",
+                "recovery_report",
+                "archive",
             ],
             "limits": {
                 "max_depth": 1,
@@ -877,8 +1503,6 @@ class Session:
                 "policy": self.policy.public(),
             },
             "unsupported": [
-                "goals",
-                "authorization_port",
                 "steer_running_mission",
             ],
         }
@@ -887,6 +1511,8 @@ class Session:
         self, request_id: str, decision: str, version: int, **fields: Any
     ) -> dict[str, Any]:
         self._check_open()
+        if self._root_session()._store.get("authorization_requests", request_id) is not None:
+            return self._authorization.respond(request_id, decision, version, fields)
         store = getattr(self._host, "store", None)
         with store.transaction() if store is not None else nullcontext():
             return self._respond_locked(request_id, decision, version, fields)
@@ -1034,7 +1660,7 @@ class Session:
             self._chat._settle(subject, [], False, 0)
 
     def _release_unused_result(self, row: Mapping[str, Any]) -> None:
-        if self._chat is None:
+        if self._chat is None or row.get("terminal_status") == "CANCELLED":
             return
         store, _ = self._chat._ledger()
         subject = self._result_subject(row["delegation_id"])
@@ -1107,6 +1733,9 @@ class Session:
             sessions = getattr(self._host, "_sessions", {})
             if sessions.get(self.session_id) is self:
                 sessions.pop(self.session_id)
+            handles = self._host._session_handles
+            if handles.get(self.session_id) is self:
+                handles.pop(self.session_id)
             if self._own_host:
                 await self._host.close()
         if child_errors:
@@ -1114,7 +1743,7 @@ class Session:
 
 
 class TreeSessionChatService(SessionChatService):
-    """命令网关是同步端口；先持久受理子身份，异步打开由父回合和恢复泵完成。"""
+    """控制命令等待宿主授权后再提交，父子使用同一条异步路径。"""
 
     async def _recover_pending_turns(self) -> None:
         # 恢复中的模型回合可能马上委派到子，必须先让同步命令看见已有身份。
@@ -1122,10 +1751,10 @@ class TreeSessionChatService(SessionChatService):
         await super()._recover_pending_turns()
 
     def _command(self, name: str):
-        if name not in {"create_child", "child_send", "child_status"}:
+        if name not in {"create_child", "child_send", "child_status", "cancel"}:
             return super()._command(name)
 
-        def invoke(arguments, run_id, call_id):
+        async def invoke(arguments, run_id, call_id):
             session = self.session
             session._check_open()
             input_key = session._store.get("run_inputs", run_id)
@@ -1133,16 +1762,24 @@ class TreeSessionChatService(SessionChatService):
             if active is None:
                 raise SessionError("permission_denied", "no committed input belongs to this run")
             command_id = session._model_command_id(name, active["turn_id"], run_id, call_id)
-            if name == "create_child":
-                receipt = session._tree.register(
-                    arguments["child_key"], command_id, arguments.get("purpose", "")
+            if name == "cancel":
+                return session.cancel(
+                    arguments["target_kind"],
+                    arguments["target_id"],
+                    command_id=command_id,
+                    reason=arguments.get("reason", ""),
                 )
-                session._checkpoint("child_registered")
-                # 同回合的后续命令需要子账本；聊天执行器在异步恢复时才打开。
+            if name == "create_child":
+                receipt = await session._register_child(
+                    arguments["child_key"],
+                    command_id=command_id,
+                    purpose=arguments.get("purpose", ""),
+                )
+                # 恢复中的根仍持有宿主打开锁，子执行器交由恢复泵打开。
                 session._restore_child_handles()
                 return receipt
             if name == "child_send":
-                return session.child_send(
+                return await session.child_send(
                     arguments["child_key"], arguments["text"], command_id=command_id
                 )
             key = arguments.get("child_key")

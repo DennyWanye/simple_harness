@@ -78,6 +78,7 @@ class SessionInbox:
                                     "mission_id": mid,
                                     "delegation_id": row["delegation_id"],
                                     "status": mission["status"],
+                                    "goal_ref": row.get("goal_ref"),
                                     "state_version": snapshot.get("state_version"),
                                     "source": "task_result",
                                     "instruction": False,

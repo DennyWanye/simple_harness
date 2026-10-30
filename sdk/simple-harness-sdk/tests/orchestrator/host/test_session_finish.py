@@ -47,7 +47,7 @@ def test_rejected_source_batch_does_not_poison_session_or_hold_budget(tmp_path, 
         try:
             assert (await session.send("Hello", key="good"))["state"] == "committed"
             turn = session._commit_input("New work", "new")["turn_id"]
-            assert session._delegations.delegate(turn, "new-call", SPEC)["mission_id"]
+            assert (await session._delegations.delegate(turn, "new-call", SPEC))["mission_id"]
         finally:
             await session.close()
 
@@ -182,7 +182,7 @@ def test_permanent_create_refusal_releases_hold_and_is_not_retried(tmp_path, mon
             assert session._host.global_budget_status()["reserved_tokens"] == 0
             [row] = session._store.rows("delegations")
             assert row["error"] == code
-            session._delegations.recover()
+            (await session._delegations.recover())
             assert len(calls) == 1
         finally:
             await session.close()
@@ -213,7 +213,7 @@ def test_temporary_create_refusal_remains_recoverable(tmp_path, monkeypatch):
             assert not row.get("error")
             assert session._host.global_budget_status()["reserved_tokens"] > 0
             monkeypatch.setattr(session._host, "create_mission", original)
-            session._delegations.recover()
+            (await session._delegations.recover())
             assert session.tasks()[0]["mission_id"]
             assert len(session._host.missions()) == 1
         finally:
@@ -421,7 +421,7 @@ def test_creation_receipt_loss_keeps_the_original_intent_recoverable(tmp_path, m
             [row] = session._store.rows("delegations")
             assert not row.get("error")
             monkeypatch.setattr(session._host, "create_mission", original)
-            session._delegations.recover()
+            (await session._delegations.recover())
             assert len(session.tasks()) == 1 and session.tasks()[0]["mission_id"]
             assert len(session._host.missions()) == 1
         finally:
@@ -442,13 +442,15 @@ def test_legacy_rejected_intent_is_finalized_during_the_first_reopen(tmp_path):
 
         session._checkpoint = interrupted
         with pytest.raises(Crash):
-            session._delegations.delegate(
-                turn["turn_id"],
-                "old-call",
-                {
-                    **SPEC,
-                    "sources": [{"path": "a.md", "content": "sample"}],
-                },
+            (
+                await session._delegations.delegate(
+                    turn["turn_id"],
+                    "old-call",
+                    {
+                        **SPEC,
+                        "sources": [{"path": "a.md", "content": "sample"}],
+                    },
+                )
             )
         with session._store.transaction():
             [row] = session._store.rows("delegations")

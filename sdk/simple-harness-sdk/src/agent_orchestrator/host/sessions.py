@@ -32,6 +32,8 @@ async def open_session(
             raise SessionError("invalid_request", "tool conflicts with a session command")
         session = host._sessions.get(session_id)
         if session is not None:
+            if session._store.get("meta", "archived"):
+                raise SessionError("not_found_or_forbidden", "session is archived")
             given = (
                 None if parent is None else {"parent_session_id": parent[0], "child_key": parent[1]}
             )
@@ -61,7 +63,7 @@ async def open_session(
                 await session._chat.open()
                 if not session._chat.available:
                     raise SessionError("chat_unavailable", session._chat.reason or "")
-                session._delegations.recover()
+                await session._delegations.recover()
                 session._inbox.catch_up()
                 host.start_driver()
                 session._pump_task = asyncio.create_task(

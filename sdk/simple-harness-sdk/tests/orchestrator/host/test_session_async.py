@@ -132,8 +132,8 @@ def test_directive_waits_for_mission_then_delegates_once_from_input_id(tmp_path)
         await parent.create_child("a", command_id="create")
         child = parent.child("a")
         child._chat = FakeChat(child, goal="Next report")
-        original = child._delegations.delegate("first-turn", "call", SPEC)
-        receipt = parent.child_send("a", "next work", command_id="next")
+        original = await child._delegations.delegate("first-turn", "call", SPEC)
+        receipt = await parent.child_send("a", "next work", command_id="next")
         await child.recover()
         await asyncio.sleep(0.03)
         assert child.queued_inputs()[0]["state"] == "queued" and child._chat.calls == 0
@@ -143,7 +143,7 @@ def test_directive_waits_for_mission_then_delegates_once_from_input_id(tmp_path)
         assert len(host.made) == 2
         [nxt] = [r for r in child._store.rows("delegations") if r.get("source_input_id")]
         assert nxt["source_input_id"] == receipt["input_id"]
-        assert parent.child_send("a", "next work", command_id="next") == receipt
+        assert (await parent.child_send("a", "next work", command_id="next")) == receipt
         await child.recover()
         assert len(host.made) == 2
         await parent.close()

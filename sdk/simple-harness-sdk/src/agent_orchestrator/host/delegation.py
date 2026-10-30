@@ -3,14 +3,18 @@
 
 from __future__ import annotations
 
+import asyncio
 import time
 import unicodedata
 from collections.abc import Mapping
+from dataclasses import asdict
 from pathlib import PurePosixPath
 from typing import Any
 
 from ..artifacts.source_paths import source_paths_conflict
 from .session_ledger import SessionError, digest
+
+_UNSET = object()
 
 TERMINAL = frozenset({"COMPLETED", "FAILED", "CANCELLED"})
 
@@ -77,8 +81,10 @@ class Delegations:
     def __init__(self, session: Any) -> None:
         self.session = session
         self.store, self.host = session._store, session._host
+        self._delegate_lock = asyncio.Lock()
+        self._create_lock = asyncio.Lock()
 
-    def delegate(
+    async def delegate(
         self,
         turn_id: str,
         call_id: str,
@@ -86,8 +92,34 @@ class Delegations:
         *,
         attempt_id: str = "direct",
         _slot: int | None = None,
+        _goal_ref: Any = _UNSET,
+        _origin_session_id: str | None = None,
+    ) -> dict[str, Any]:
+        async with self._delegate_lock:
+            return await self._delegate(
+                turn_id,
+                call_id,
+                arguments,
+                attempt_id=attempt_id,
+                _slot=_slot,
+                _goal_ref=_goal_ref,
+                _origin_session_id=_origin_session_id,
+            )
+
+    async def _delegate(
+        self,
+        turn_id: str,
+        call_id: str,
+        arguments: Mapping[str, Any],
+        *,
+        attempt_id: str = "direct",
+        _slot: int | None = None,
+        _goal_ref: Any = _UNSET,
+        _origin_session_id: str | None = None,
     ) -> dict[str, Any]:
         self.session._check_open()
+        goal_ref = self.session._goal_ref() if _goal_ref is _UNSET else _goal_ref
+        origin_session_id = _origin_session_id or self.session.session_id
         child_key = arguments.get("child_key")
         child = None
         if child_key is not None:
@@ -99,15 +131,45 @@ class Delegations:
             # 槽位属于父回合，不能换一个子账本就把原调用变成新的业务效果。
             _slot = self._route(turn_id, attempt_id, call_id, child_key)
         if child is not None:
-            return child._delegations.delegate(
+            return await child._delegations.delegate(
                 turn_id,
                 call_id,
                 {k: v for k, v in arguments.items() if k != "child_key"},
                 attempt_id=attempt_id,
                 _slot=_slot,
+                _goal_ref=goal_ref,
+                _origin_session_id=origin_session_id,
             )
         fingerprint = digest(spec)
         binding_key = digest([turn_id, attempt_id, call_id])
+        binding = self.store.get("delegation_calls", binding_key)
+        slot = (
+            _slot
+            if _slot is not None
+            else (
+                binding["slot"]
+                if binding
+                else sum(
+                    r["turn_id"] == turn_id and r["attempt_id"] == attempt_id
+                    for r in self.store.rows("delegation_calls")
+                )
+            )
+        )
+        key = f"session:{self.session.session_id}:{turn_id}:slot:{slot}"
+        authorization = None
+        if self.store.get("delegations", key) is None:
+            self.session._check_origin(origin_session_id, turn_id)
+            self.session._check_dispatch(goal_ref=goal_ref)
+            authorization = await self.session._authorization.ensure(
+                "delegate",
+                self.session.session_id,
+                spec,
+                goal_ref=goal_ref,
+                delegation_id=f"delegation-{digest(key)[:32]}",
+                _guard=lambda: self.session._check_origin(origin_session_id, turn_id),
+            )
+            self.session._check_origin(origin_session_id, turn_id)
+            self.session._check_dispatch(goal_ref=goal_ref)
         with self.store.transaction():
             binding = self.store.get("delegation_calls", binding_key)
             if _slot is not None:
@@ -142,6 +204,8 @@ class Delegations:
                     "delegation_id": f"delegation-{digest(key)[:32]}",
                     "session_id": self.session.session_id,
                     "turn_id": turn_id,
+                    "origin_session_id": origin_session_id,
+                    "origin_turn_id": turn_id,
                     "source_input_id": (self.session._current_input or {}).get("source_input_id")
                     if (self.session._current_input or {}).get("turn_id") == turn_id
                     else None,
@@ -152,7 +216,9 @@ class Delegations:
                     "request": request,
                     "sources": spec["sources"],
                     "reason": arguments.get("reason", ""),
-                    "goal_ref": None,
+                    "goal_ref": goal_ref,
+                    "authorization_params": spec,
+                    "authorization": asdict(authorization),
                     "child_key": None
                     if self.session.parent is None
                     else self.session.parent["child_key"],
@@ -191,7 +257,7 @@ class Delegations:
                 },
             )
         self.session._checkpoint("delegation_recorded")
-        receipt = self._create(row)
+        receipt = await self._create(row)
         return {
             **receipt,
             "intent_binding": "replayed" if replayed else "created",
@@ -245,7 +311,11 @@ class Delegations:
             own.extend(child._delegations.receipts(turn_id))
         return own
 
-    def _create(self, row: dict[str, Any]) -> dict[str, Any]:
+    async def _create(self, row: dict[str, Any]) -> dict[str, Any]:
+        async with self._create_lock:
+            return await self._create_locked(self.store.get("delegations", row["key"]) or row)
+
+    async def _create_locked(self, row: dict[str, Any]) -> dict[str, Any]:
         if row.get("error"):
             self.session._release_unused_result(row)
             raise SessionError(row["error"])
@@ -253,12 +323,58 @@ class Delegations:
             if row["cancel_requested"] and not row.get("cancel_converged"):
                 self._converge_cancel(row)
             return row["receipt"]
+        if row.get("terminal_status") == "CANCELLED":
+            raise SessionError("cancelled")
+        if row["cancel_requested"]:
+            result = self._converge_cancel(row)
+            current = self.store.get("delegations", row["key"])
+            if current.get("receipt") is not None:
+                return current["receipt"]
+            raise SessionError("effect_unknown" if result["status"] == "UNKNOWN" else "cancelled")
+        if row.get("dispatch_state") == "claimed":
+            found = self._lookup_created(row)
+            if found is not None:
+                return self._bind_created(row, found[0].id)
+        self.session._check_origin(row["origin_session_id"], row["origin_turn_id"])
+        self.session._check_dispatch(
+            goal_ref=row.get("goal_ref"), delegation_id=row["delegation_id"]
+        )
+        await self.session._authorization.ensure(
+            "delegate",
+            self.session.session_id,
+            row.get(
+                "authorization_params",
+                {
+                    "goal": row["request"]["goal"],
+                    "success_criteria": row["request"]["success_criteria"],
+                    "sources": row["sources"],
+                },
+            ),
+            goal_ref=row.get("goal_ref"),
+            delegation_id=row["delegation_id"],
+            _guard=lambda: self.session._check_origin(
+                row["origin_session_id"], row["origin_turn_id"]
+            ),
+        )
+        row = self.store.get("delegations", row["key"])
+        if row["cancel_requested"]:
+            result = self._converge_cancel(row)
+            raise SessionError("effect_unknown" if result["status"] == "UNKNOWN" else "cancelled")
+        if row.get("error"):
+            raise SessionError(row["error"])
+        self.session._check_origin(row["origin_session_id"], row["origin_turn_id"])
+        self.session._check_dispatch(
+            goal_ref=row.get("goal_ref"), delegation_id=row["delegation_id"]
+        )
         try:
             self.session._reserve_result(row)
         except Exception as error:
             if getattr(error, "code", None) == "budget_exhausted":
                 self._reject(row, "budget_exhausted")
             raise
+        with self.store.transaction():
+            row["dispatch_state"] = "claimed"
+            self.store.put("delegations", row["key"], row)
         try:
             if row["sources"]:
                 receipt = self.host.create_mission_with_sources(
@@ -278,11 +394,25 @@ class Delegations:
             } and self._creation_absent(row):
                 self._reject(row, code)
             raise
+        self.session._check_open()
         self.session._checkpoint("mission_created")
+        return self._bind_created(row, receipt["mission_id"])
+
+    def _lookup_created(self, row: Mapping[str, Any]):
+        orchestrator = getattr(self.host, "orchestrator", None)
+        if orchestrator is None:
+            raise SessionError("effect_unknown", "creation has no authoritative lookup")
+        try:
+            return orchestrator.store.find_mission(self.host.tenant_id, row["key"])
+        except Exception:
+            raise SessionError("effect_unknown", "creation lookup unavailable") from None
+
+    def _bind_created(self, row: dict[str, Any], mission_id: str) -> dict[str, Any]:
+        self.session._check_open()
         # A resumed create must preserve cancellation persisted while creation was pending.
         with self.store.transaction():
             current = self.store.get("delegations", row["key"])
-            row = {**current, "mission_id": receipt["mission_id"]}
+            row = {**current, "mission_id": mission_id}
             row["receipt"] = {
                 "delegation_id": row["delegation_id"],
                 "mission_id": row["mission_id"],
@@ -290,6 +420,7 @@ class Delegations:
                 "goal_ref": row.get("goal_ref"),
                 "child_key": row.get("child_key"),
             }
+            row.pop("held_reason", None)
             self.store.put("delegations", row["key"], row)
             self.store.event(
                 "delegated",
@@ -353,19 +484,58 @@ class Delegations:
         raise SessionError("permission_denied", "task is not associated with this session")
 
     def cancel(self, task_id: str) -> dict[str, Any]:
-        with self.store.transaction():
-            row = self.find(task_id)
-            row["cancel_requested"] = True
-            self.store.put("delegations", row["key"], row)
+        self.session._check_open()
+        row = self.find(task_id)
+        if not row["cancel_requested"]:
+            with self.store.transaction():
+                row["cancel_requested"] = True
+                self.store.put("delegations", row["key"], row)
         return self._converge_cancel(row)
 
     def _converge_cancel(self, row: dict[str, Any]) -> dict[str, Any]:
         if not row.get("mission_id"):
-            return {
-                "delegation_id": row["delegation_id"],
-                "status": "CREATING",
-                "cancel_requested": row["cancel_requested"],
-            }
+            if not row["cancel_requested"]:
+                return {
+                    "delegation_id": row["delegation_id"],
+                    "status": "CREATING",
+                    "cancel_requested": False,
+                }
+            absent = row.get("dispatch_state") != "claimed"
+            if not absent:
+                orchestrator = getattr(self.host, "orchestrator", None)
+                try:
+                    found = orchestrator.store.find_mission(self.host.tenant_id, row["key"])
+                    absent = found is None
+                    if found is not None:
+                        row["mission_id"] = found[0].id
+                        row["receipt"] = {
+                            "delegation_id": row["delegation_id"],
+                            "mission_id": row["mission_id"],
+                            "created": True,
+                            "goal_ref": row.get("goal_ref"),
+                            "child_key": row.get("child_key"),
+                        }
+                        with self.store.transaction():
+                            self.store.put("delegations", row["key"], row)
+                except Exception:
+                    absent = False
+            if not row.get("mission_id"):
+                updated = dict(row)
+                if absent:
+                    updated.update(
+                        terminal_status="CANCELLED", cancel_converged=True, error="cancelled"
+                    )
+                else:
+                    updated["cancel_effect_state"] = "unknown"
+                if updated != row:
+                    with self.store.transaction():
+                        self.store.put("delegations", row["key"], updated)
+                return {
+                    "delegation_id": row["delegation_id"],
+                    "status": "CANCELLED" if absent else "UNKNOWN",
+                    "cancel_requested": True,
+                    "effect_state": "not_committed" if absent else "unknown",
+                }
         status = self.status(row)
         if row["cancel_requested"]:
             result = (
@@ -373,21 +543,37 @@ class Delegations:
                 if status not in TERMINAL
                 else {"mission_id": row["mission_id"], "status": status}
             )
-            if result["status"] in TERMINAL:
+            if result["status"] in TERMINAL and not row.get("cancel_converged"):
                 with self.store.transaction():
                     row["cancel_converged"] = True
                     self.store.put("delegations", row["key"], row)
-            return result
+            return {
+                **result,
+                "effect_state": "completed" if result["status"] in TERMINAL else "handed_off",
+            }
         return {"mission_id": row["mission_id"], "status": status}
 
-    def recover(self) -> None:
+    async def recover(self) -> None:
         for row in self.store.rows("delegations"):
             if row.get("error"):
                 self.session._release_unused_result(row)
             else:
                 try:
-                    self._create(row)
-                except Exception:
+                    await self._create(row)
+                except Exception as error:
+                    if getattr(error, "code", None) in {
+                        "authorization_required",
+                        "authorization_revoked",
+                        "request_expired",
+                        "cancelled",
+                        "effect_unknown",
+                    }:
+                        current = self.store.get("delegations", row["key"])
+                        if current.get("held_reason") != error.code:
+                            with self.store.transaction():
+                                current["held_reason"] = error.code
+                                self.store.put("delegations", row["key"], current)
+                        continue
                     current = self.store.get("delegations", row["key"])
                     if not current.get("error"):
                         raise

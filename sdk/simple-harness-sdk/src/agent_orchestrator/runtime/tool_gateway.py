@@ -600,7 +600,11 @@ class WorkspaceToolGateway:
             try:
                 arguments = thaw_json(effect.arguments)
                 validate_arguments(arguments, command.schema)
+                from inspect import isawaitable
+
                 value = command.invoke(arguments, effect.run_id.value, effect.call_id.value)
+                if isawaitable(value):
+                    value = await value
                 result = ToolResult.succeeded(effect.call_id, dict(value))
             except Exception as error:
                 code = str(getattr(error, "code", "command_failed"))
@@ -764,7 +768,11 @@ class WorkspaceToolGateway:
                 )
             try:
                 validate_arguments(arguments, command.schema)
+                from inspect import isawaitable
+
                 value = command.invoke(arguments, run_id, record["call_id"])
+                if isawaitable(value):
+                    value = await value
             except ArgumentsValidationError:
                 return self._reject(
                     call, record, code="invalid_arguments", outcome="invalid_arguments",

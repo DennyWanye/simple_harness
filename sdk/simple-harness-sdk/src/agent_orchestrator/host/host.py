@@ -74,9 +74,10 @@ from ..runtime.tool_catalog import (
 )
 from ..runtime.tool_gateway import ASSURANCE_REVIEWER_TOOLS, TOOL_NAMES
 from ..version import __version__
+from .authorization import AuthorizationPort, AutoModeAuthorization
 from .chat import ChatService
 from .embedding import embedding_port
-from .instance_lock import InstanceLock
+from .instance_lock import InstanceLock, OwnerConflict
 from .provider import (
     build_providers,
     deepseek_counter,
@@ -292,6 +293,7 @@ class OrchestrationHost:
         host_fingerprint: str | None = None,
         notify: Callable[[Mapping[str, Any]], None] | None = None,
         auto_mode: AutoMode = True,
+        authorization_port: AuthorizationPort | None = None,
         models_dir: str | Path | None = None,
         require_acceptance: bool = True,
         taskgraph_ports: Any = None,
@@ -342,6 +344,11 @@ class OrchestrationHost:
         self._names = names or root_names(world_domain)
         self._notify = notify or (lambda _payload: None)
         self._auto_mode = auto_mode
+        self.authorization_port = (
+            authorization_port
+            if authorization_port is not None
+            else AutoModeAuthorization(self._auto)
+        )
         self._models_dir = None if models_dir is None else Path(models_dir)
         self._require_acceptance = require_acceptance
         self._taskgraph_ports = taskgraph_ports
@@ -350,6 +357,8 @@ class OrchestrationHost:
         self.state = "created"
         self.reason: str | None = None
         self.lock = InstanceLock(self.root)
+        self._owner_lost = False
+        self._owner_conflict = False
         self.orchestrator: Any = None
         self.control: Any = None
         self.provider: Any = None
@@ -412,12 +421,16 @@ class OrchestrationHost:
 
         host = cls(root, **options)
         await host.start()
+        if host._owner_conflict:
+            raise OwnerConflict(host.lock.owner_generation)
         if host.state not in ("available", "quarantined"):
             raise HostUnavailable(host.reason or "编排宿主没有启动")
         return host
 
     async def __aenter__(self) -> OrchestrationHost:
         await self.start()
+        if self._owner_conflict:
+            raise OwnerConflict(self.lock.owner_generation)
         if self.state not in ("available", "quarantined"):
             raise HostUnavailable(self.reason or "编排宿主没有启动")
         return self
@@ -446,6 +459,7 @@ class OrchestrationHost:
         try:
             self.root.mkdir(parents=True, exist_ok=True)
             if not self.lock.acquire():
+                self._owner_conflict = True
                 self.state, self.reason = "unavailable", "另一个实例正在使用编排目录"
                 return
             await self._ensure_tokenizer()
@@ -948,6 +962,10 @@ class OrchestrationHost:
                 logger.debug("on_write hook failed", exc_info=True)
 
     @property
+    def owner_generation(self) -> int:
+        return self.lock.owner_generation
+
+    @property
     def store(self) -> Any:
         return None if self.orchestrator is None else self.orchestrator.store
 
@@ -967,12 +985,14 @@ class OrchestrationHost:
     async def _host_duties(self) -> None:
         """每轮：保证通道检查策略投影、自动授权规划、自动确认完成要求、自动代批动作。"""
 
+        self._check_owner()
         if self.assurance is not None:
             try:
                 self.duties.project_check_policies()
             except Exception:  # noqa: BLE001 - 不停循环，下一轮再试
                 logger.exception("assurance check policy projection failed")
         auto = await self._auto()
+        self._check_owner()
         self.duties.auto_authorize_planning(auto=auto)
         self.duties.auto_confirm_content_completion(auto=auto)
         self.duties.auto_approve_actions(auto=auto)
@@ -997,7 +1017,9 @@ class OrchestrationHost:
     async def run_once(self) -> bool:
         """跑循环到空闲，再做一轮职责。False：没有进入空闲（有一轮结果不明的调用卡着）。"""
 
+        self._check_owner()
         await self.orchestrator.run()
+        self._check_owner()
         if self._degraded_recovery():
             return True
         await self._host_duties()
@@ -1039,11 +1061,13 @@ class OrchestrationHost:
 
         while not self._closing:
             try:
+                self._check_owner()
                 if self.orchestrator is None:
                     await self._rebuild()
                 if self.quarantine is not None:
                     return
                 await self.orchestrator.run()
+                self._check_owner()
                 if self._degraded_recovery():
                     return
                 await self._host_duties()
@@ -1058,6 +1082,8 @@ class OrchestrationHost:
                     self.state, self.reason = "available", None
             except asyncio.CancelledError:
                 raise
+            except OwnerConflict:
+                return
             except Exception as error:
                 self._failures += 1
                 logger.exception("orchestrator run failed (%s in a row)", self._failures)
@@ -1111,11 +1137,51 @@ class OrchestrationHost:
 
     # ------------------------------------------------------------ guards
     def _require(self) -> Any:
+        if not self._owner_conflict:
+            self._check_owner()
         if self.state not in ("available", "degraded", "degraded_recovery") or self.control is None:
             raise HostRequestError("orchestration_unavailable", self.reason or "编排服务不可用")
         return self.control
 
+    def _check_owner(self) -> None:
+        if self._owner_conflict:
+            raise OwnerConflict(self.lock.owner_generation)
+        if not self.lock.owner_generation:
+            return
+        if self.lock.held and not self._owner_lost:
+            return
+        if not self._owner_lost:
+            self._owner_lost = True
+            self.state, self.reason = "owner_lost", "编排目录的持有锁已丢失"
+            event = {"kind": "owner_lost", "owner_generation": self.lock.owner_generation}
+            # 失锁后不再写旧账本，事件仅发给在线订阅方与宿主通知口。
+            try:
+                self._notify(event)
+            except Exception:
+                logger.exception("owner loss notification failed")
+            for session in getattr(self, "_session_handles", self._sessions).values():
+                if session._closed:
+                    continue
+                notification = {
+                    **event,
+                    "schema_version": 1,
+                    "event_id": f"owner-lost-{self.lock.owner_generation}-{session.session_id}",
+                    "session_id": session.session_id,
+                    "seq": int(session._store.get("meta", "sequence")) + 1,
+                    "durable": False,
+                }
+                for queue in session._subscribers:
+                    if not queue.full():
+                        queue.put_nowait(notification)
+            self._wake.set()
+        try:
+            generation = self.lock.observed_generation()
+        except (OSError, ValueError):
+            generation = self.lock.owner_generation
+        raise OwnerConflict(generation)
+
     def _refuse_new_work(self, message: str) -> None:
+        self._check_owner()
         if self.state == "degraded":
             raise HostRequestError("orchestration_degraded", message)
         if self.state == "degraded_recovery":
@@ -1698,6 +1764,7 @@ class OrchestrationHost:
             "available": self.state == "available",
             "state": self.state,
             "reason": self.reason,
+            "owner_generation": self.lock.owner_generation,
             "orchestrator_version": __version__,
             "model": None if self.model is None else self.model.public(),
             "active_missions": active,

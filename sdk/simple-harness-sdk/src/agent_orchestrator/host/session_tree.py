@@ -15,6 +15,8 @@ from typing import Any
 
 from .session_ledger import SessionError, digest
 
+_UNSET = object()
+
 CONFIG_VERSION = 3
 PROTOCOL_VERSION = 2
 MAX_DEPTH = 1
@@ -90,7 +92,9 @@ class Children:
             raise SessionError("not_found_or_forbidden", "no such child session")
         return row
 
-    def register(self, child_key: Any, command_id: str, purpose: Any) -> dict[str, Any]:
+    def register(
+        self, child_key: Any, command_id: str, purpose: Any, *, goal_ref=_UNSET
+    ) -> dict[str, Any]:
         session = self.session
         if session.parent is not None:
             raise SessionError(
@@ -106,6 +110,8 @@ class Children:
         def apply() -> dict[str, Any]:
             existing = self.store.get("children", child_key)
             if existing is not None:
+                if session._child_archived(existing):
+                    raise SessionError("not_found_or_forbidden", "child session is archived")
                 return {
                     "child_session_id": existing["child_session_id"],
                     "child_key": child_key,
@@ -137,7 +143,7 @@ class Children:
                 "child_key": child_key,
                 "child_session_id": child_id,
                 "purpose": purpose,
-                "goal_ref": None,
+                "goal_ref": session._goal_ref() if goal_ref is _UNSET else goal_ref,
                 "command_id": command_id,
                 "created_at": time.time(),
             }

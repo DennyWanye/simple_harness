@@ -32,7 +32,7 @@ class ReplayChat:
         if self.gate:
             await self.gate.wait()
         if self.goal is not None:
-            result = self.session._delegations.delegate(
+            result = await self.session._delegations.delegate(
                 body["idempotency_key"],
                 f"call-{self.attempt}",
                 {**SPEC, "goal": self.goal},
@@ -66,7 +66,7 @@ def test_same_key_replay_after_delegation_with_drift(tmp_path, status, goal):
     async def case():
         host, session = make_session(tmp_path)
         turn = session._commit_input("Write a report", "k")["turn_id"]
-        original = session._delegations.delegate(turn, "old", SPEC, attempt_id="old-agent")
+        original = await session._delegations.delegate(turn, "old", SPEC, attempt_id="old-agent")
         next(iter(host.made.values()))["status"] = status
         session._store.connection.close()
         session = Session(host, session_id="s")
@@ -154,16 +154,18 @@ def test_public_retry_at_five_boundaries_commits_and_delivers(tmp_path, point):
 def test_slots_follow_calls_and_replay_each_slot_after_restart(tmp_path):
     host, session = make_session(tmp_path)
     turn = session._commit_input("Two reports", "k")["turn_id"]
-    first = session._delegations.delegate(turn, "a", SPEC, attempt_id="agent-1")
+    first = asyncio.run(session._delegations.delegate(turn, "a", SPEC, attempt_id="agent-1"))
     host.finish(first["mission_id"])
-    second = session._delegations.delegate(turn, "b", SPEC, attempt_id="agent-1")
+    second = asyncio.run(session._delegations.delegate(turn, "b", SPEC, attempt_id="agent-1"))
     host.finish(second["mission_id"])
     assert first["mission_id"] != second["mission_id"]
     session._store.connection.close()
     session = Session(host, session_id="s")
     for call, expected in [("new-a", first), ("new-b", second)]:
-        replay = session._delegations.delegate(
-            turn, call, {**SPEC, "goal": "写报告"}, attempt_id="agent-2"
+        replay = asyncio.run(
+            session._delegations.delegate(
+                turn, call, {**SPEC, "goal": "写报告"}, attempt_id="agent-2"
+            )
         )
         assert replay["mission_id"] == expected["mission_id"]
         assert replay["spec_drift"] is True
@@ -175,15 +177,17 @@ def test_slots_follow_calls_and_replay_each_slot_after_restart(tmp_path):
 def test_same_attempt_resumes_from_persisted_call_slots(tmp_path):
     host, session = make_session(tmp_path)
     turn = session._commit_input("Two reports", "k")["turn_id"]
-    one = session._delegations.delegate(turn, "a", SPEC, attempt_id="agent-1")
+    one = asyncio.run(session._delegations.delegate(turn, "a", SPEC, attempt_id="agent-1"))
     host.finish(one["mission_id"])
     session._store.connection.close()
     session = Session(host, session_id="s")
     assert (
-        session._delegations.delegate(turn, "a", SPEC, attempt_id="agent-1")["mission_id"]
+        asyncio.run(session._delegations.delegate(turn, "a", SPEC, attempt_id="agent-1"))[
+            "mission_id"
+        ]
         == one["mission_id"]
     )
-    two = session._delegations.delegate(turn, "b", SPEC, attempt_id="agent-1")
+    two = asyncio.run(session._delegations.delegate(turn, "b", SPEC, attempt_id="agent-1"))
     assert two["mission_id"] != one["mission_id"]
     session._store.connection.close()
 
