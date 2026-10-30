@@ -101,12 +101,12 @@ async def open_host(root, provider, slots=1, **options):
     )
 
 
-def chat(host, session_id="legacy", key="one"):
+def chat(host, session_id="host-chat", key="one"):
     return host.chat({"session_id": session_id, "text": "Hello", "idempotency_key": key})
 
 
 @pytest.mark.parametrize("slots", [1, 2])
-def test_two_sessions_and_legacy_chat_share_host_limit(tmp_path, monkeypatch, slots):
+def test_two_sessions_and_host_chat_share_host_limit(tmp_path, monkeypatch, slots):
     async def run():
         attempted = set()
         all_attempted = asyncio.Event()
@@ -155,7 +155,7 @@ def test_cancel_inflight_releases_slot_for_another_runtime(tmp_path):
             jobs.append(asyncio.create_task(chat(host)))
             await provider.wait_for_calls(1)
             jobs.append(asyncio.create_task(session.send("Hello", key="one")))
-            cancelled = await host.chat_cancel({"session_id": "legacy"})
+            cancelled = await host.chat_cancel({"session_id": "host-chat"})
             assert cancelled["cancelled"]
             provider.release.set()
             first, second = await asyncio.wait_for(asyncio.gather(*jobs), 10)
@@ -310,7 +310,7 @@ def test_cancel_waiting_turn_does_not_call_provider_or_leak_slot(tmp_path, monke
             jobs.append(asyncio.create_task(chat(host)))
             await asyncio.wait_for(queued.wait(), 10)
             assert provider.call_count == 1
-            assert (await host.chat_cancel({"session_id": "legacy"}))["cancelled"]
+            assert (await host.chat_cancel({"session_id": "host-chat"}))["cancelled"]
             provider.release.set()
             held, cancelled = await asyncio.wait_for(asyncio.gather(*jobs), 10)
             assert held["state"] == "committed" and cancelled["state"] == "failed"
@@ -365,12 +365,12 @@ def test_same_invocation_ids_in_distinct_databases_release_both_slots(tmp_path):
             ]
             await provider.wait_for_calls(2)
             session_pool = session._chat._pool()
-            legacy_pool = host.chat_service._pool()
+            chat_pool = host.chat_service._pool()
             session_run = next(iter(session._chat._runs))
-            legacy_run = next(iter(host.chat_service._runs))
-            assert session_run == legacy_run
+            chat_run = next(iter(host.chat_service._runs))
+            assert session_run == chat_run
             assert set(session._chat._invocations(session_pool, session_run)) == set(
-                host.chat_service._invocations(legacy_pool, legacy_run)
+                host.chat_service._invocations(chat_pool, chat_run)
             )
             provider.release.set()
             replies = await asyncio.wait_for(asyncio.gather(*jobs), 10)
