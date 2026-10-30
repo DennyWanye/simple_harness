@@ -15,8 +15,9 @@ from typing import Any
 from .delegation import Delegations
 from .host import OrchestrationHost
 from .inbox import SessionInbox, request_version
-from .session_chat import RESERVED_TOOLS, SessionChatService
+from .session_chat import COMMAND_SCHEMAS, RESERVED_TOOLS, SessionChatService
 from .session_ledger import SessionError, SessionLedger, digest, encoded
+from .session_tree import CONFIG_VERSION, PROTOCOL_VERSION, Children, Commands, registered_parent
 
 
 @dataclass(frozen=True)
@@ -49,28 +50,65 @@ class Session:
         session_id: str = "default",
         policy: SessionPolicy | None = None,
         own_host: bool = False,
+        parent: tuple[str, str] | None = None,
     ) -> None:
         if not isinstance(session_id, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", session_id):
             raise SessionError("invalid_request", "session_id must be a safe identifier")
         self.session_id, self._host, self._own_host = session_id, host, own_host
         self.policy = policy or SessionPolicy()
+        identity = {"tenant_id": host.tenant_id, "principal_id": host.principal.principal_id}
+        if parent is not None and (
+            not isinstance(parent, tuple)
+            or len(parent) != 2
+            or any(not isinstance(value, str) for value in parent)
+        ):
+            raise SessionError("permission_denied", "invalid parent identity")
+        given = None if parent is None else {"parent_session_id": parent[0], "child_key": parent[1]}
+        registered = registered_parent(host.root.resolve(), session_id, identity)
+        if given != registered:
+            raise SessionError("permission_denied", "parent relation must be registered")
         self._store = SessionLedger(
             host.root / "sessions" / session_id / "session.sqlite3",
             session_id,
-            {"tenant_id": host.tenant_id, "principal_id": host.principal.principal_id},
+            identity,
         )
-        with self._store.transaction():
-            frozen = self._store.get("meta", "configuration")
-            configuration = {
-                "version": 2,
-                "policy": self.policy.public(),
-                "tools": list(host.tools),
-            }
-            if frozen is not None and frozen != configuration:
-                raise SessionError(
-                    "session_config_frozen", "use the original policy and tool catalogue"
-                )
-            self._store.put("meta", "configuration", configuration)
+        try:
+            with self._store.transaction():
+                frozen = self._store.get("meta", "configuration")
+                configuration = {
+                    "version": CONFIG_VERSION,
+                    "policy": self.policy.public(),
+                    "tools": list(host.tools),
+                }
+                if frozen is not None and frozen.get("version") != CONFIG_VERSION:
+                    raise SessionError(
+                        "incompatible_store_version",
+                        f"session store version {frozen.get('version')} needs a new data root",
+                    )
+                if frozen is not None and frozen != configuration:
+                    raise SessionError(
+                        "session_config_frozen", "use the original policy and tool catalogue"
+                    )
+                self._store.put("meta", "configuration", configuration)
+                # 子会话只能经它的父打开；根会话号也不能借来打开别人的子会话。
+                stored_parent = self._store.get("meta", "parent")
+                if stored_parent is None and given is not None:
+                    if frozen is not None:
+                        raise SessionError(
+                            "permission_denied", "root session cannot become a child"
+                        )
+                    self._store.put("meta", "parent", given)
+                elif stored_parent != given:
+                    raise SessionError(
+                        "permission_denied", "child sessions are opened through their parent"
+                    )
+        except BaseException:
+            self._store.connection.close()
+            raise
+        self.parent = given
+        self._children: dict[str, Session] = {}
+        self._child_open_tasks: set[asyncio.Task[Any]] = set()
+        self._commands, self._tree = Commands(self), Children(self)
         self._delegations, self._inbox = Delegations(self), SessionInbox(self)
         self._closed = False
         self._close_task: asyncio.Task[None] | None = None
@@ -79,7 +117,7 @@ class Session:
         self._voice = None
         self._subscribers: set[asyncio.Queue[dict[str, Any]]] = set()
         self._pump_task: asyncio.Task[None] | None = None
-        self._chat = SessionChatService(self) if isinstance(host, OrchestrationHost) else None
+        self._chat = TreeSessionChatService(self) if isinstance(host, OrchestrationHost) else None
 
     @classmethod
     async def open(
@@ -95,7 +133,7 @@ class Session:
         **options: Any,
     ) -> Session:
         tools = tuple(tools)
-        if {tool.name for tool in tools} & set(RESERVED_TOOLS):
+        if {tool.name for tool in tools} & (set(RESERVED_TOOLS) | set(COMMAND_SCHEMAS)):
             raise SessionError(
                 "invalid_request", "application tool conflicts with a session command"
             )
@@ -108,6 +146,7 @@ class Session:
             await session._chat.open()
             if not session._chat.available:
                 raise SessionError("chat_unavailable", session._chat.reason or "")
+            await session.recover()
             session._delegations.recover()
             session._inbox.catch_up()
             host.start_driver()
@@ -212,6 +251,8 @@ class Session:
                         },
                         on_delta=self._piece,
                     )
+                if not self._closed:
+                    await self.recover()
                 self._checkpoint("before_receipt_commit")
                 receipt = {
                     **reply,
@@ -305,6 +346,7 @@ class Session:
     async def _pump(self) -> None:
         while not self._closed:
             try:
+                await self.recover()
                 self._delegations.recover()
                 self._inbox.catch_up()
             except Exception as error:
@@ -317,11 +359,22 @@ class Session:
             await asyncio.sleep(self.policy.poll_seconds)
 
     def tasks(self) -> list[dict[str, Any]]:
-        return [self.task(row["delegation_id"]) for row in self._store.rows("delegations")]
+        own = [self._task_view(row) for row in self._store.rows("delegations")]
+        for key, child in self._children.items():
+            own.extend({**task, "child_key": key} for task in child.tasks())
+        return own
 
     def task(self, task_id: str) -> dict[str, Any]:
-        row = self._delegations.find(task_id)
+        owner, row = self._find_task(task_id)
+        view = owner._task_view(row)
+        if owner is not self:
+            view["child_key"] = owner.parent["child_key"]
+        return view
+
+    def _task_view(self, row: Mapping[str, Any]) -> dict[str, Any]:
         result = {k: row[k] for k in ("delegation_id", "mission_id", "turn_id", "cancel_requested")}
+        result["goal_ref"] = row.get("goal_ref")
+        result["child_key"] = row.get("child_key")
         if row.get("mission_id"):
             result["snapshot"] = self._host.snapshot(row["mission_id"])
             result["status"] = result["snapshot"]["snapshot"]["mission"]["status"]
@@ -329,9 +382,199 @@ class Session:
             result["status"] = "REJECTED" if row.get("error") else "CREATING"
         return result
 
+    def _find_task(self, task_id: str) -> tuple[Session, dict[str, Any]]:
+        for owner in (self, *self._children.values()):
+            for row in owner._store.rows("delegations"):
+                if task_id in {row["delegation_id"], row.get("mission_id")}:
+                    return owner, row
+        raise SessionError("permission_denied", "task is not associated with this session")
+
     def cancel_task(self, task_id: str) -> dict[str, Any]:
         self._check_open()
-        return self._delegations.cancel(task_id)
+        owner, _ = self._find_task(task_id)
+        return owner._delegations.cancel(task_id)
+
+    async def recover(self) -> None:
+        """重开后按父账本把子会话重新打开；子会话自己的账本与任务照旧恢复。"""
+
+        self._check_open()
+        for row in self._tree.rows():
+            child = self._children.get(row["child_key"])
+            if (
+                child is None
+                or child._closed
+                or (child._chat is not None and not child._chat.available)
+            ):
+                await self._open_child(row["child_key"], row["child_session_id"])
+
+    def _restore_child_handles(self) -> None:
+        for row in self._tree.rows():
+            key, child_id = row["child_key"], row["child_session_id"]
+            if key in self._children and not self._children[key]._closed:
+                continue
+            sessions = getattr(self._host, "_sessions", {})
+            child = sessions.get(child_id)
+            if child is None:
+                child = Session(
+                    self._host,
+                    session_id=child_id,
+                    policy=self.policy,
+                    parent=(self.session_id, key),
+                )
+                if isinstance(self._host, OrchestrationHost):
+                    sessions[child_id] = child
+            if child.parent != {"parent_session_id": self.session_id, "child_key": key}:
+                raise SessionError("permission_denied", "child identity is already associated")
+            self._children[key] = child
+
+    async def _open_child(self, child_key: str, child_id: str) -> Session:
+        task = asyncio.current_task()
+        self._child_open_tasks.add(task)
+        try:
+            if isinstance(self._host, OrchestrationHost):
+                from .sessions import open_session
+
+                child = await open_session(
+                    self._host, child_id, policy=self.policy, parent=(self.session_id, child_key)
+                )
+            else:
+                child = Session(
+                    self._host,
+                    session_id=child_id,
+                    policy=self.policy,
+                    parent=(self.session_id, child_key),
+                )
+                child._delegations.recover()
+                child._inbox.catch_up()
+            if self._closed:
+                await child.close()
+                raise SessionError("session_closed")
+            self._children[child_key] = child
+            return child
+        finally:
+            self._child_open_tasks.discard(task)
+
+    async def create_child(
+        self, child_key: str, *, command_id: str, purpose: str = ""
+    ) -> dict[str, Any]:
+        """开一个工作会话。关系先持久在父账本，再打开子会话；中途失败重调即恢复。"""
+
+        self._check_open()
+        receipt = self._tree.register(child_key, command_id, purpose)
+        self._checkpoint("child_registered")
+        await self.recover()
+        return receipt
+
+    def children(self) -> list[dict[str, Any]]:
+        return [
+            {
+                "child_key": row["child_key"],
+                "child_session_id": row["child_session_id"],
+                "purpose": row.get("purpose", ""),
+                "goal_ref": row.get("goal_ref"),
+                "open": row["child_key"] in self._children,
+            }
+            for row in self._tree.rows()
+        ]
+
+    def child(self, child_key: str) -> Session:
+        row = self._tree.find(child_key)
+        child = self._children.get(row["child_key"])
+        if child is None:
+            raise SessionError("not_found_or_forbidden", "child session is not open; recover first")
+        return child
+
+    def child_send(self, child_key: str, text: str, *, command_id: str) -> dict[str, Any]:
+        """给工作会话排一条追加输入（next_turn）。只登记，不改在跑的任务。"""
+
+        self._check_open()
+        child = self.child(child_key)
+        if not isinstance(text, str) or not text.strip() or len(text) > 12000:
+            raise SessionError("invalid_argument", "text must be bounded nonempty text")
+
+        def apply() -> dict[str, Any]:
+            input_id = f"input-{digest([child.session_id, command_id])[:32]}"
+            row = {
+                "input_id": input_id,
+                "text": text,
+                "kind": "directive",
+                "directive": "next_turn",
+                "state": "queued",
+                "command_id": command_id,
+                "source_session_id": self.session_id,
+                "created_at": time.time(),
+            }
+            child._store.put("queued_inputs", input_id, row)
+            child._store.event(
+                "input_accepted",
+                key=f"queued:{input_id}",
+                input_id=input_id,
+                payload={"kind": "directive", "directive": "next_turn", "state": "queued"},
+            )
+            return {"status": "accepted", "input_id": input_id, "child_key": child_key}
+
+        return child._commands.run(command_id, "child_send", {"text": text}, apply)
+
+    def queued_inputs(self) -> list[dict[str, Any]]:
+        return self._store.rows("queued_inputs")
+
+    def _model_command_id(self, kind: str, turn_id: str, attempt_id: str, call_id: str) -> str:
+        """模型发出的子会话命令的稳定身份：回合 + 命令种类 + 调用槽位。
+
+        执行者换代后 run_id 与 call_id 都会变，只有"这是该回合里第几次这种命令"不变；
+        与委派的槽位同一个道理，这样换代重放不会把同一条追加输入登记两次。"""
+
+        binding_key = digest([kind, turn_id, attempt_id, call_id])
+        with self._store.transaction():
+            binding = self._store.get("command_routes", binding_key)
+            if binding is not None:
+                slot = binding["slot"]
+            else:
+                slot = sum(
+                    row["kind"] == kind
+                    and row["turn_id"] == turn_id
+                    and row["attempt_id"] == attempt_id
+                    for row in self._store.rows("command_routes")
+                )
+                self._store.put(
+                    "command_routes",
+                    binding_key,
+                    {"kind": kind, "turn_id": turn_id, "attempt_id": attempt_id, "slot": slot},
+                )
+        return "command-" + digest([self.session_id, turn_id, kind, slot])
+
+    def command_receipt(self, command_id: str) -> dict[str, Any]:
+        row = self._store.get("commands", str(command_id))
+        if row is None:
+            raise SessionError("not_found_or_forbidden", "no such command in this session")
+        return row["receipt"]
+
+    def capabilities(self) -> dict[str, Any]:
+        """能力发现：不调模型，不读任务库。"""
+
+        return {
+            "protocol_version": PROTOCOL_VERSION,
+            "session_config_version": CONFIG_VERSION,
+            "role": "child" if self.parent is not None else "root",
+            "capabilities": [
+                "command_receipts",
+                "child_sessions",
+                "delegation_to_child",
+                "child_result_mirroring",
+                "queued_child_inputs",
+            ],
+            "limits": {
+                "max_depth": 1,
+                "delegations_in_flight_per_session": 1,
+                "policy": self.policy.public(),
+            },
+            "unsupported": [
+                "goals",
+                "continuation_policy",
+                "authorization_port",
+                "steer_running_mission",
+            ],
+        }
 
     def respond(
         self, request_id: str, decision: str, version: int, **fields: Any
@@ -515,6 +758,23 @@ class Session:
         await asyncio.shield(task)
 
     async def _close(self) -> None:
+        child_errors = []
+        if self._pump_task is not None:
+            self._pump_task.cancel()
+            try:
+                await self._pump_task
+            except asyncio.CancelledError:
+                pass
+        opening = tuple(self._child_open_tasks)
+        for task in opening:
+            task.cancel()
+        if opening:
+            await asyncio.gather(*opening, return_exceptions=True)
+        for child in tuple(self._children.values()):
+            try:
+                await child.close()
+            except Exception as error:
+                child_errors.append(error)
         try:
             try:
                 if self._voice is not None:
@@ -539,6 +799,57 @@ class Session:
                 sessions.pop(self.session_id)
             if self._own_host:
                 await self._host.close()
+        if child_errors:
+            raise child_errors[0]
+
+
+class TreeSessionChatService(SessionChatService):
+    """命令网关是同步端口；先持久受理子身份，异步打开由父回合和恢复泵完成。"""
+
+    async def _recover_pending_turns(self) -> None:
+        # 恢复中的模型回合可能马上委派到子，必须先让同步命令看见已有身份。
+        self.session._restore_child_handles()
+        await super()._recover_pending_turns()
+
+    def _command(self, name: str):
+        if name not in {"create_child", "child_send", "child_status"}:
+            return super()._command(name)
+
+        def invoke(arguments, run_id, call_id):
+            session = self.session
+            session._check_open()
+            input_key = session._store.get("run_inputs", run_id)
+            active = None if input_key is None else session._store.get("turns", input_key)
+            if active is None:
+                raise SessionError("permission_denied", "no committed input belongs to this run")
+            command_id = session._model_command_id(name, active["turn_id"], run_id, call_id)
+            if name == "create_child":
+                receipt = session._tree.register(
+                    arguments["child_key"], command_id, arguments.get("purpose", "")
+                )
+                session._checkpoint("child_registered")
+                # 同回合的后续命令需要子账本；聊天执行器在异步恢复时才打开。
+                session._restore_child_handles()
+                return receipt
+            if name == "child_send":
+                return session.child_send(
+                    arguments["child_key"], arguments["text"], command_id=command_id
+                )
+            key = arguments.get("child_key")
+            children = (
+                session.children()
+                if key is None
+                else [row for row in session.children() if row["child_key"] == key]
+            )
+            if key is not None:
+                session.child(key)
+            return {
+                "children": [
+                    {**row, "tasks": session.child(row["child_key"]).tasks()} for row in children
+                ]
+            }
+
+        return invoke
 
 
 __all__ = ("Session", "SessionError", "SessionPolicy")

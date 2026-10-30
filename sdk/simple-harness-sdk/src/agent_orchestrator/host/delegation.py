@@ -16,7 +16,7 @@ TERMINAL = frozenset({"COMPLETED", "FAILED", "CANCELLED"})
 
 
 def normalize_spec(body: Mapping[str, Any]) -> dict[str, Any]:
-    if set(body) - {"goal", "success_criteria", "sources", "reason"}:
+    if set(body) - {"goal", "success_criteria", "sources", "reason", "child_key"}:
         raise SessionError("invalid_arguments", "identity and policy are supplied by the SDK")
     goal, criteria, sources = (
         body.get("goal"),
@@ -85,14 +85,35 @@ class Delegations:
         arguments: Mapping[str, Any],
         *,
         attempt_id: str = "direct",
+        _slot: int | None = None,
     ) -> dict[str, Any]:
-        spec = normalize_spec(arguments)
+        self.session._check_open()
+        child_key = arguments.get("child_key")
+        child = None
+        if child_key is not None:
+            if not isinstance(child_key, str):
+                raise SessionError("invalid_argument", "child_key must be text")
+            child = self.session.child(child_key)
+        spec = normalize_spec({k: v for k, v in arguments.items() if k != "child_key"})
+        if self.session.parent is None:
+            # 槽位属于父回合，不能换一个子账本就把原调用变成新的业务效果。
+            _slot = self._route(turn_id, attempt_id, call_id, child_key)
+        if child is not None:
+            return child._delegations.delegate(
+                turn_id,
+                call_id,
+                {k: v for k, v in arguments.items() if k != "child_key"},
+                attempt_id=attempt_id,
+                _slot=_slot,
+            )
         fingerprint = digest(spec)
         binding_key = digest([turn_id, attempt_id, call_id])
         with self.store.transaction():
             binding = self.store.get("delegation_calls", binding_key)
-            if binding is None:
-                # A continuing Agent keeps its ordinal; a replacement Agent replays from zero.
+            if _slot is not None:
+                slot = _slot
+            elif binding is None:
+                # 连续调用沿用序号；换执行者后仍从原回合的第一个槽位重放。
                 slot = sum(
                     r["turn_id"] == turn_id and r["attempt_id"] == attempt_id
                     for r in self.store.rows("delegation_calls")
@@ -128,6 +149,10 @@ class Delegations:
                     "request": request,
                     "sources": spec["sources"],
                     "reason": arguments.get("reason", ""),
+                    "goal_ref": None,
+                    "child_key": None
+                    if self.session.parent is None
+                    else self.session.parent["child_key"],
                     "mission_id": None,
                     "cancel_requested": False,
                 }
@@ -170,11 +195,40 @@ class Delegations:
             "spec_drift": bool(drifted),
         }
 
+    def _route(self, turn_id: str, attempt_id: str, call_id: str, child_key: str | None) -> int:
+        binding_key = digest([turn_id, attempt_id, call_id])
+        with self.store.transaction():
+            binding = self.store.get("delegation_routes", binding_key)
+            slot = (
+                binding["slot"]
+                if binding is not None
+                else sum(
+                    row["turn_id"] == turn_id and row["attempt_id"] == attempt_id
+                    for row in self.store.rows("delegation_routes")
+                )
+            )
+            key = digest([turn_id, slot])
+            destination = self.store.get("delegation_destinations", key)
+            if destination is not None and destination["child_key"] != child_key:
+                raise SessionError("idempotency_conflict", "delegation destination changed")
+            self.store.put("delegation_destinations", key, {"child_key": child_key})
+            self.store.put(
+                "delegation_routes",
+                binding_key,
+                {
+                    "turn_id": turn_id,
+                    "attempt_id": attempt_id,
+                    "call_id": call_id,
+                    "slot": slot,
+                },
+            )
+        return slot
+
     def receipts(self, turn_id: str) -> list[dict[str, Any]]:
         bindings = {
             r["slot"]: r for r in self.store.rows("delegation_calls") if r["turn_id"] == turn_id
         }
-        return [
+        own = [
             {
                 **row["receipt"],
                 "slot": row["slot"],
@@ -184,6 +238,9 @@ class Delegations:
             for row in self.store.rows("delegations")
             if row["turn_id"] == turn_id and row.get("receipt")
         ]
+        for child in self.session._children.values():
+            own.extend(child._delegations.receipts(turn_id))
+        return own
 
     def _create(self, row: dict[str, Any]) -> dict[str, Any]:
         if row.get("error"):
@@ -227,6 +284,8 @@ class Delegations:
                 "delegation_id": row["delegation_id"],
                 "mission_id": row["mission_id"],
                 "created": True,
+                "goal_ref": row.get("goal_ref"),
+                "child_key": row.get("child_key"),
             }
             self.store.put("delegations", row["key"], row)
             self.store.event(

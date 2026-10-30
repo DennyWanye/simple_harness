@@ -108,6 +108,37 @@ class SessionInbox:
                     break
             if str(mission["status"]) not in TERMINAL:
                 self._requests(mid, snapshot)
+        self._mirror_children()
+
+    def _mirror_children(self) -> None:
+        """子会话的终态通知镜像进父 inbox：同一个 event_id，带 child_key。
+        父下一次输入把它当资料附上；人只在父这里点已收到。"""
+
+        for key, child in self.session._children.items():
+            child._inbox.catch_up()
+            for notice in child.inbox():
+                if self.store.get("inbox", notice["event_id"]) is not None:
+                    continue
+                mirrored = {
+                    **notice,
+                    "child_key": key,
+                    "child_session_id": child.session_id,
+                    "source": "child_result",
+                    "instruction": False,
+                    "acked": False,
+                    "applied_turn_id": None,
+                }
+                with self.store.transaction():
+                    self.store.put("inbox", notice["event_id"], mirrored)
+                    self.store.event(
+                        "result_ready",
+                        key=f"result:{notice['event_id']}",
+                        mission_id=notice["mission_id"],
+                        delegation_id=notice["delegation_id"],
+                        child_key=key,
+                        payload=mirrored,
+                    )
+                self.session._checkpoint("inbox_written")
 
     def _requests(self, mid: str, snapshot: Mapping[str, Any]) -> None:
         candidates = [("planning", r) for r in snapshot["snapshot"].get("planning_questions", [])]
@@ -151,6 +182,8 @@ class SessionInbox:
                 )
 
     def ack(self, event_id: str) -> dict[str, Any]:
+        if self.session.parent is not None:
+            raise SessionError("notice_not_found")
         if self.host.principal.kind != "human":
             raise SessionError(
                 "permission_denied", "only the authenticated person can acknowledge results"
