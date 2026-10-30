@@ -273,7 +273,7 @@ def assemble_runtime(
         empty_response_retries=ports.empty_response_retries,
         max_output_tokens_ceiling=ports.max_output_tokens_ceiling,
         continuation_capability=continuation_capability,
-        always_exposed_tools=ports.always_exposed_tools,
+        tool_exposure_policy=ports.tool_exposure_policy,
     )
     runtime = build_runtime(
         uow=uow,  # type: ignore[arg-type]

@@ -27,6 +27,7 @@ from simple_harness.agents.context.budget import ContextPolicy
 from simple_harness.agents.context.tokenizer import TokenizerPort, UpperBoundTokenizer
 from simple_harness.agents.ports import AgentRuntimePorts
 from simple_harness.agents.runtime import AgentRuntime
+from simple_harness.tools.runtime_catalog import ToolExposurePolicy
 from simple_harness.contracts import canonical_json
 from simple_harness.execution.provider_admission import LocalProviderAdmission, ProviderHandoffFence
 from simple_harness.runtime.consumer_adapter import ConsumerRuntimePolicies
@@ -116,7 +117,7 @@ class OrchestratorConfig:
     domain_tools: Mapping[str, DomainTool] = field(
         default_factory=dict, kw_only=True, repr=False, compare=False
     )
-    always_exposed_tools: frozenset[str] | None = field(
+    tool_exposure_policy: ToolExposurePolicy | None = field(
         default=None, kw_only=True, repr=False, compare=False
     )
     control_commands: Mapping[str, ControlCommand] = field(
@@ -542,7 +543,7 @@ def assemble_orchestrator_runtime(
             authorization=native.authorization,
             database_path=str(database),
             tool_executor=gateway,
-            always_exposed_tools=config.always_exposed_tools,
+            tool_exposure_policy=config.tool_exposure_policy,
             tool_names=(*TOOL_NAMES, *config.domain_tools, *config.control_commands),
             tool_schemas={
                 **read_tool_schemas(large=profile.context_policy is not None),

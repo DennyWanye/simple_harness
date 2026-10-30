@@ -24,6 +24,7 @@ from simple_harness.runtime.ports import (
     ToolExecutorPort,
 )
 from simple_harness.runtime.termination import TerminationLimits
+from simple_harness.tools.runtime_catalog import ToolExposurePolicy
 
 from .context.budget import ContextPolicy
 from .context.tokenizer import TokenizerPort
@@ -88,7 +89,7 @@ class AgentRuntimePorts:
     # Deployment-only local slot accounting; never external token authority.
     local_provider_admission: LocalProviderAdmission | None = None
     # 说明可见性由宿主目录提供，不参与工具调用许可；None 表示全量说明。
-    always_exposed_tools: frozenset[str] | None = None
+    tool_exposure_policy: ToolExposurePolicy | None = None
 
     def __post_init__(self) -> None:
         if self.local_provider_admission is not None:

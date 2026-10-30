@@ -175,7 +175,7 @@ class ChatService:
     def _configuration(self, config: Any) -> Any:
         from ..runtime.control_commands import ControlCommand
         from ..runtime.sandbox_run import sandbox_run_tool
-        from ..runtime.tool_catalog import META_SCHEMAS, catalog_for, invoke_meta
+        from ..runtime.tool_catalog import META_SCHEMAS, catalog_for, exposure_policy, invoke_meta
 
         role = "child" if getattr(getattr(self, "session", None), "parent", None) else "main"
         self._tool_role = role
@@ -214,9 +214,7 @@ class ChatService:
             config,
             domain_tools=tools,
             control_commands=commands,
-            always_exposed_tools=frozenset(
-                entry.name for entry in self._tool_catalog.entries if entry.always_exposed
-            )
+            tool_exposure_policy=exposure_policy(self._tool_catalog)
             if self._host.settings.tool_search
             else None,
         )

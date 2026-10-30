@@ -69,6 +69,7 @@ from ..runtime.tool_catalog import (
     META_SCHEMAS,
     catalog_for,
     checked_roles,
+    exposure_policy,
     invoke_meta,
 )
 from ..runtime.tool_gateway import ASSURANCE_REVIEWER_TOOLS, TOOL_NAMES
@@ -783,9 +784,7 @@ class OrchestrationHost:
             deployment_policy=self.policy,
             sandbox_executor=self.executor,
             domain_tools=task_tools,
-            always_exposed_tools=frozenset(
-                entry.name for entry in self.tool_catalog.entries if entry.always_exposed
-            )
+            tool_exposure_policy=exposure_policy(self.tool_catalog)
             if self.settings.tool_search
             else None,
             tool_call_tenant_id=self.tenant_id,

@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from simple_harness.contracts import freeze_json, thaw_json
+from simple_harness.tools.runtime_catalog import ToolExposurePolicy
 
 from .domain_tools import DomainTool
 
@@ -121,6 +122,15 @@ class ToolCatalog:
     def narrowed(self, role: str, names: Iterable[str]) -> ToolCatalog:
         allowed = set(names)
         return ToolCatalog(e for e in self.visible(role) if e.name in allowed)
+
+
+def exposure_policy(catalog: ToolCatalog) -> ToolExposurePolicy:
+    """始终暴露的说明来自目录条目；加载入口就是两个元工具。没有元工具的回合执行层会全量下发。"""
+
+    return ToolExposurePolicy(
+        always_exposed=frozenset(e.name for e in catalog.entries if e.always_exposed),
+        loaders=frozenset(META_SCHEMAS),
+    )
 
 
 def catalog_for(

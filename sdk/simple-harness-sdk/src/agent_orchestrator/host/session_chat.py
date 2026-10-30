@@ -250,7 +250,7 @@ class SessionChatService(ChatService):
                 "invalid_request", "application tool conflicts with a session command"
             )
         config = replace(config, control_commands={**config.control_commands, **commands})
-        from ..runtime.tool_catalog import catalog_for
+        from ..runtime.tool_catalog import catalog_for, exposure_policy
 
         self._tool_catalog = catalog_for(
             config.domain_tools,
@@ -258,9 +258,7 @@ class SessionChatService(ChatService):
         )
         return replace(
             config,
-            always_exposed_tools=frozenset(
-                entry.name for entry in self._tool_catalog.entries if entry.always_exposed
-            )
+            tool_exposure_policy=exposure_policy(self._tool_catalog)
             if self._host.settings.tool_search
             else None,
         )

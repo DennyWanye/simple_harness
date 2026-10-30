@@ -73,7 +73,7 @@ from simple_harness.runtime.termination import (
 from simple_harness.tools.contracts import CancellationToken
 from simple_harness.tools.errors import MalformedToolArgumentsError, UnknownToolError
 from simple_harness.tools.executor import ToolAuthorizationPending
-from simple_harness.tools.runtime_catalog import RunToolExposurePort
+from simple_harness.tools.runtime_catalog import RunToolExposurePort, ToolExposurePolicy
 
 from .completion import committed_outcome, failed_outcome
 from .contracts import _message_from_json
@@ -92,12 +92,12 @@ class TurnToolExposure:
         specs: tuple[ProviderToolSpec, ...],
         *,
         turn_id: str,
-        always_exposed: frozenset[str],
+        policy: ToolExposurePolicy,
     ) -> None:
         self._specs = specs
         self._by_name = {spec.name: spec for spec in self._specs}
         self._turn_id = turn_id
-        self._always_exposed = always_exposed
+        self._always_exposed = policy.always_exposed
         self._loaded: set[str] = set()
 
     def restore(self, run_id: RunId, checkpoint: JsonValue | None) -> None:
@@ -201,7 +201,7 @@ class AgentExecutionDriver:
         policy_fingerprint: str | None = None,
         provider_budget_fingerprint: str | None = None,
         tool_exposure_resolver: Callable[[RunId], RunToolExposurePort | None] | None = None,
-        always_exposed_tools: frozenset[str] | None = None,
+        tool_exposure_policy: ToolExposurePolicy | None = None,
         delegation_counter: Callable[[str], int] | None = None,
         turn_cancellations: MutableMapping[str, CancellationToken] | None = None,
         empty_response_retries: int = 2,
@@ -228,7 +228,7 @@ class AgentExecutionDriver:
         self.policy_fingerprint = policy_fingerprint
         self.provider_budget_fingerprint = provider_budget_fingerprint
         self._tool_exposure_resolver = tool_exposure_resolver
-        self._always_exposed_tools = always_exposed_tools
+        self._tool_exposure_policy = tool_exposure_policy
         self._delegation_counter = delegation_counter
 
     async def start(  # type: ignore[no-untyped-def]
@@ -812,10 +812,13 @@ class AgentExecutionDriver:
         tool_exposure = (
             None if self._tool_exposure_resolver is None else self._tool_exposure_resolver(run_id)
         )
-        if tool_exposure is None and self._always_exposed_tools is not None:
-            tool_exposure = TurnToolExposure(
-                tools, turn_id=turn_id, always_exposed=self._always_exposed_tools
-            )
+        policy = self._tool_exposure_policy
+        if (
+            tool_exposure is None
+            and policy is not None
+            and policy.applies_to({spec.name for spec in tools})
+        ):
+            tool_exposure = TurnToolExposure(tools, turn_id=turn_id, policy=policy)
         prepare = getattr(invocation.services.context, "prepare", None)
         if callable(prepare):
             # Slice 4: pre-embed the recall query off the loop thread (review S4-04).
@@ -1326,7 +1329,7 @@ def build_agent_execution_driver(
     estimator: FrozenPriceEstimator | None,
     effects: EffectBatchExecutor | None = None,
     tool_exposure_resolver: Callable[[RunId], RunToolExposurePort | None] | None = None,
-    always_exposed_tools: frozenset[str] | None = None,
+    tool_exposure_policy: ToolExposurePolicy | None = None,
     continuation_capability: ProviderContinuationCapability = ProviderContinuationCapability(),
     delegation_counter: Callable[[str], int] | None = None,
     clock: Callable[[], float] = time.time,
@@ -1364,7 +1367,7 @@ def build_agent_execution_driver(
         policy_fingerprint=policy_fingerprint,
         provider_budget_fingerprint=provider_fingerprint,
         tool_exposure_resolver=tool_exposure_resolver,
-        always_exposed_tools=always_exposed_tools,
+        tool_exposure_policy=tool_exposure_policy,
         delegation_counter=delegation_counter,
         turn_cancellations=turn_cancellations,
         empty_response_retries=empty_response_retries,
