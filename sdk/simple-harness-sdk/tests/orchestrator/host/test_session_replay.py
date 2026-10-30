@@ -355,7 +355,7 @@ def test_old_configuration_requires_new_data_root(tmp_path):
         configuration["version"] = 1
         session._store.put("meta", "configuration", configuration)
     session._store.connection.close()
-    with pytest.raises(Exception, match="session_config_frozen"):
+    with pytest.raises(Exception, match="incompatible_store_version"):
         Session(host, session_id="s")
 
 

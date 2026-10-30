@@ -311,7 +311,7 @@ def test_real_v2_pool_tools_history_budget_and_restore(tmp_path):
             reply = await session.send("Which device?", idempotency_key="k")
             assert reply["state"] == "committed" and seen
             assert session.tasks() == []
-            assert "-chat-v2-" in session._chat.profile_id
+            assert "-chat-v3-" in session._chat.profile_id
             assert session._host.chat_service.profile_id.endswith("-chat-v1")
             assert await session.send("Which device?", idempotency_key="k") == reply
             budget = session.budget()
