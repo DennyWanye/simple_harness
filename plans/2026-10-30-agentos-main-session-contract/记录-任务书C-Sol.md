@@ -197,3 +197,199 @@ Ruff 命令：对本次修改的 14 个 Python 文件逐个传路径运行
 - 不生成机器 receipt；完成度以任务书和本记录逐条对账，不声称 100%。
 
 VERDICT: BLOCKED — 车道内实现已提交并经 212 条专项/指定测试核验；三处禁改位置契约冲突与基线 Ruff 未闭合 — 2026-10-31 — 96733cee3
+
+## C2 补修
+
+日期：2026-10-31。依据主树 `任务书-给Sol-C2-补修.md` 的明确裁定继续。
+本节记录取代上文 C 时点的未完成结论；上文保留作为过程历史。
+最终状态：**C2 补修完成；本任务书指定范围全部核验通过，未推送、未合并、未发版。**
+
+### 范围、提交与基线
+
+- 按要求先切到 `/Users/taiwan/PROJECTS/SimplaHarness/simple_harness-sol-C/sdk/simple-harness-sdk`。
+  同一工作树、同一分支 `sol/C-tool-catalog`，基线 `f386650d3`。
+- 开工时唯一已有改动是审核重生成的部署清单，先保存其原始字节到本机证据目录；不将其纳入提交。
+- `912c33668`：先提交 C2 红测试（同号 Session、身份、目录配置、语音、精确恢复和 schema 2 消费者）。
+- `4493e32cb`：补修实现、旧测试夹具同步、文档。
+- `23d965643`：修复本轮完整指定核验发现的两处既有测试预期（不改生产代码）。
+  本节记录另作提交，不改变被测源码。
+- C 已核验基线（212 条专项/指定测试）和审核结论沿用；本轮先跑新增预期为红，未将旧失败约束
+  测试的 PASS 当成 C2 功能通过。原记录两处“最终结果下补”在 C 交付时已填为 170/42，通过数已复核。
+
+### 按裁定补了什么
+
+1. Session 账本配置只保留 version/policy，取消应用工具名冻结；策略变化仍拒绝。
+   `capabilities()` 返回宿主目录的 catalog_version，没有目录时为 None。
+   正向测试覆盖：同号 Session 新注册工具后重开、旧 Agent 继续、目录版本更新；原策略/父子身份
+   不可重绑测试保持原样。
+2. 池身份 schema 升 2，tool_names_hash 只哈希排序后的内置工具名。
+   改内置说明后同数据根、同池号、持久意图校验与旧 Agent 继续均通过；新增内置名会改变身份并拒开。
+   **身份 schema 1 的旧数据根不能再打开，开发期需新根；不加兼容分支，不新增池编号。**
+3. 主/子会话移除知识两工具，任务继续保留。会话知识作用域作为当前不支持项写入接入文档，
+   这是本轮批准的范围裁定，不再作为未修缺口。
+4. 始终暴露规则只有目录一处：commands + HISTORY_TOOLS。宿主从目录条目生成 frozenset，
+   经 OrchestratorConfig → AgentRuntimePorts → runtime → driver 传递；False 传 None，全量下发。
+   Session 补齐最终控制命令后重算。新任意控制命令自动可见，无硬编码名字与 schema title 标记。
+   显式收窄名单不含元工具时不再保留 C 的特殊全量分支；集合仍只决定说明，直接调用允许工具照常执行。
+5. ToolSearch 的 execution_policy 返回 None，不再伪造非项目效果策略；授权仍走原注册表与执行器。
+   新字段在政策快照中明确 excluded（非授权合同），字段分类测试同步。
+6. 恢复测试加允许但未加载的 other_status，逐次精确比较恢复前后完整工具说明名字 tuple，
+   既证明 device_status 仍在，也证明 other_status 仍不在。
+7. 语音目录只包含实际支持的 delegate_task/task_status/task_cancel，以及 main 可见的只读应用工具。
+   通过 catalog_for(host.tools).visible("main") 正常构建目录，排除所有内置/元工具；
+   无 tool_catalog 的测试宿主也走同一目录规则。已有用户响应绑定下调用 create_child 返回
+   permission_denied，非 KeyError，未创建子会话。
+8. 元工具越界都抛异常走原有失败回执，任务不再把 {error: ...} 包进成功结果。
+   原任务测试同步检查既有 domain 工具失败封套的 tool_failed；聊天仍走既有控制命令错误回执。
+9. 整体格式化 host/chat.py、host/host.py，三处 E501 与原 formatter 问题全部修复；没有新增 ignore/noqa。
+
+### 调查发现的两处必要同步（按“不停下问”处理）
+
+- 任务书称 react_loop 已支持 None，实际 `_preflight_tool_batch` 会无条件读 None.effect_class。
+  在 `simple_harness/runtime/drivers/react_loop.py` 加 6 行必要分支：无强制上下文授权时跳过额外策略；
+  authority_required=True 时仍按原规则硬拒绝。两条决定性测试先红 AttributeError，修后通过。
+  不在执行层伪造策略，也不绕过授权。
+- 改为 schema 2 后，除了获准修改的 assembly 读取器，`runtime/first_request_budget.py` 仍只认 1，
+  会让真实新任务的首请求预算退为 runtime_context_schema_unknown。仅同步该读器为 2，
+  同步 `tests/orchestrator/p35/test_first_request_budget.py` 的身份 fixture/预期，保留预算 cap 协议
+  自己的 schema_version=1。该测试额外纳入本轮指定范围。
+
+这两处是兑现已批准 None/schema 2 语义所必需的最小生产接线修复；未改任务层、连接器、委派、
+收件箱、会话树、并发默认值或现有工具说明文字。独立 reviewer 确认必要性和最小范围。
+
+### 测试准备与先红后绿
+
+证据均在本机 ignored 目录 `.local-test-evidence/2026-10-31/sol-C2/`，不提交原始日志。
+
+- 宿主新增预期先红：6 failed / 1 passed（red-host.log）；说明搜索允许名单强测在旧实现上原已通过。
+- 新执行层/None 预检四条先红：4 failed；schema 2 首请求/快照分类先红：6 failed / 6 passed
+  （red-contract.log）。然后才进入实现提交。
+- 首轮定向 94 passed / 4 failed（focused-first.log）。除旧 task 错误封套预期外，另修两处旧测试夹具：
+  语音历史注入测试用 __new__ 跳过构造，缺已存在的完成结果读取端口；补齐 uow/turn_id_for 测试端口，
+  原历史注入与相同输入断言不变。首请求 fixture 的 context-v2 输出预期同步，cap schema_version 不变。
+- 语音 Service SDK 合同测试需已锁定的 realtime extra。用 `uv run --frozen --extra realtime` 安装/运行
+  锁中的 Service SDK 0.3.20，没有改 pyproject/lock，也没有替换成伪 SDK；所有调用仍是离线脚本/测试客户端。
+- 修后夹具/Service 合同/首请求专项 9 passed（fixed-focused.log）；任务、语音与执行层决定性复验
+  13 passed（decisive.log）。
+- 实现提交后价值冒烟 16 passed / 27.28 秒（committed-smoke.log），覆盖同号重开、池身份稳定、任意新
+  控制命令、搜索允许名单、语音拒绝以及全部执行层曝光/恢复测试。
+- 恢复后全量下发的进程内变异：1 failed，严格 tuple 相等断言捕获多出的 other_status，符合预期
+  （exposure-recovery-full-mutation.log）。没有修改源码文件。
+- 去掉 narrowed 的进程内变异：1 failed，搜索结果泄出 device_status 被集成断言捕获，符合预期
+  （search-allowlist-mutation.log）。没有源码变异遗留。
+- 全部 22 个修改的 Python 文件 Ruff check 与 format --check 均 exit 0；包含本轮允许整理的
+  host/chat.py、host/host.py。证据 ruff-check.log、ruff-format.log；git diff --check 通过。
+
+### 完整指定核验与交付
+
+工作目录：`sdk/simple-harness-sdk/`。源码变更后已先重生成清单：
+
+```bash
+uv run --frozen python scripts/build/taskgraph_manifest.py generate --upstream /Users/taiwan/PROJECTS/SimplaHarness/simple_harness/.local-test-evidence/2026-10-05/f2-upstream/evidence.json
+```
+
+本轮运行 21 个指定/相关文件；由任务书必跑文件、`rg -l model_router tests` 的十文件去重，
+再加必要首请求预算测试组成，没有跑全量回归。精确命令（提供已核对 SHA-256 的本机固定分词器）：
+
+```bash
+SH_TOKENIZER_PATH=/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/.local-test-evidence/2026-10-26/session-real-click/models-opt219/deepseek-v41/tokenizer.json \
+uv run --frozen --extra realtime python -m pytest \
+  tests/agents/arp/test_arp_orchestrator_pool.py \
+  tests/agents/test_tool_exposure.py \
+  tests/orchestrator/full_target/test_progress_idle_verdict.py \
+  tests/orchestrator/host/test_chat.py \
+  tests/orchestrator/host/test_custom_tools.py \
+  tests/orchestrator/host/test_domain_tool_runner.py \
+  tests/orchestrator/host/test_planner_sees_capabilities.py \
+  tests/orchestrator/host/test_realtime_bridge.py \
+  tests/orchestrator/host/test_sandbox_run.py \
+  tests/orchestrator/host/test_session.py \
+  tests/orchestrator/host/test_session_tree.py \
+  tests/orchestrator/host/test_tool_catalog.py \
+  tests/orchestrator/p33/test_g_large_read_context.py \
+  tests/orchestrator/p34/test_strict_runtime_profile.py \
+  tests/orchestrator/p35/test_first_request_budget.py \
+  tests/orchestrator/p35/test_multi_profile_load.py \
+  tests/orchestrator/step06/test_model_router.py \
+  tests/orchestrator/step06/test_step06_review_fixes.py \
+  tests/orchestrator/step08/test_policy_snapshot.py \
+  tests/orchestrator/step09/test_policy_library.py \
+  tests/test_public_api.py \
+  -q -p no:cacheprovider --tb=short
+```
+
+Ruff 精确输入另存 `changed-python.txt`（22 项），运行
+`uv run --frozen ruff check <这22个文件>` / `uv run --frozen ruff format --check <这22个文件>`；
+两者 exit 0。
+
+首轮完整指定核验：**388 passed / 1 failed / 3 skipped，263.19 秒**（all-selected.log）。
+唯一失败为政策测试的固定调用次数断言；三个 skip 为未提供固定分词器。均已调查，不算通过。
+
+补充处理的既有测试预期（均属本任务书要求运行的 model_router 相关文件）：
+
+- `test_policy_library.py` 原先要求模板调用恰好一次，但基线 f386 和本轮 HEAD 中，准入和执行两处
+  均已通过 Mission 模板选择器。只读复制基线测试重跑也红：1 failed（policy-baseline-repro.log）。
+  没有将 1 改成 2，而改为 AST 逐一要求所有 role_for_task 调用都被 self._template(..., mission.id)
+  包裹且集合非空；原配置白名单、router 与共享 selector 断言保留。移除任一处绑定的变异都会红，
+  独立 reviewer 还分别验证了两个分支。任务层源码未改。
+- 供应固定分词器后，`test_strict_runtime_profile.py` 又暴露一个基线错误：它把旧 0f06… 指纹和
+  prior-output=True 断言放在当前类上。独立构造 f386 与 HEAD 两类，实测当前类均为 f29fec… /
+  wire-only-v2 / False，显式 Legacy 类均为 0f06… / plus-prior-v1 / True；生产计数器文件逐字节相同。
+  这源自 2026-09-24 的既有实现，非 C2 改变。测试保留原历史指纹常量并绑定显式 Legacy 类，
+  另精确固定当前类指纹及当前/strict 的 False；原严格 HTTP/计数一致、roundtrip 和 mismatch 拒绝
+  断言全部保留。没有改计数器源码、指纹算法、分词器 SHA 或资产。
+- 上述两文件 **11 passed，2.84 秒**（baseline-oracles-fixed.log）。证据还包括
+  counter-baseline-identities.log、strict-profile.log 与 policy-binding-mutation.log。
+  独立终审和最小化审查通过，无 P0/P1，结论 ALREADY_MINIMAL。
+
+最终从提交态 `23d965643` 重跑：**392 passed / 0 failed / 0 skipped，292.54 秒**，exit 0
+（all-selected-final.log）。另有 1 个原有 RuntimeWarning：test_domain_tool_runner.py 的无效返回值
+测试创建的 sleep 协程未 await；基线已存在，非本轮引入，不扩大修改范围。
+392 为本次 21 文件的去重用例数，不叠加前述冒烟、专项或预期失败变异。
+
+| C2 要求 | 最终证据 | 结论 |
+|---|---|---|
+| Session 工具目录变化可重开，策略/父子身份不放宽 | 真实 Session 正向测试；原 identity_and_parent_cannot_be_rebound 原样通过 | PASS |
+| 身份只固定内置名，说明变化不换池，名字变化拒开 | 同数据根/持久意图/旧 Agent 集成测试；schema 2 两个读取入口 | PASS |
+| 会话移除知识、任务保留 | 实际可见集合、父子收窄与任务名单 | PASS |
+| 始终集合唯一来源、显式配置接线、False 全量 | 任意新控制命令自动暴露、开关、完整冻结许可和直接调用测试 | PASS |
+| 恢复前后完整集合相等、未加载工具仍隐藏 | other_status 负向断言；恢复全量变异捕获 | PASS |
+| 语音只暴露可执行命令与 main 应用工具 | 精确目录断言；create_child 由有效响应上下文调用仍 permission_denied | PASS |
+| 元工具异常失败路径、搜索不能越过冻结名单 | 真实 task/chat 回执、去掉 narrowed 的变异捕获 | PASS |
+| 指定全部文件、相关 model_router 文件、Ruff | 21 文件 392 通过，无 skip；22 Python 文件 check/format 通过 | PASS |
+
+### C2 最终证据索引
+
+以下 SHA-256 对应本机 ignored 目录 `.local-test-evidence/2026-10-31/sol-C2/`，
+原始日志、分词器与生成清单均不提交。
+
+| 文件 | SHA-256 |
+|---|---|
+| `red-host.log` | `cd5afbe7c4a2b73ca64836a040b5ab0c744b971a1bce5873b08e39fa6746c066` |
+| `red-contract.log` | `5d537c2a15caecc3776c6b036cded50253a645447f98e68308448f8bca38e3ed` |
+| `all-selected.log` | `da523540b11687feb622e30bcb0ec0d5079b9a03f992c49a1204752ec129c35f` |
+| `all-selected-final.log` | `abeca76c96a301c194681415da8fa1abbbb49f1ec5438da345815a361209c488` |
+| `selected-tests.txt` | `e2e8ec5f7a7eb6a0d069e9457cee428a50beff8ebefec7e93a6e501245cb2194` |
+| `committed-smoke.log` | `0c3d7f197a75bc7a5395d757fd94a836915f91217a8b2e9e8c44fddfcff59c2c` |
+| `ruff-check.log` | `82b3e6a6c090a57601d22943bd23fca9218d1031dbe5a7b754092f9a156b4f18` |
+| `ruff-format.log` | `7b4549ac2e9820f695aa60c4695796689a11c0dce1a49f0b01a6250eca9f55aa` |
+| `changed-python.txt` | `e945b9d11636d332570f9a7e4bb3e00c3cac7d91443b7f433375142e53767cb1` |
+| `exposure-recovery-full-mutation.log` | `14fd4ec9f1b6723a06a81e7d73b4b3f6e1a6f5007877ed691280848b98a0ebfc` |
+| `search-allowlist-mutation.log` | `2b35cf8188bdaa9313c24bfa2e07a8c745ade50b056fc6346f43cd2925f514b1` |
+| `policy-baseline-repro.log` | `584710026879de6266688f04a935d4faf135a010c7219b7661c69a23f8c27fbd` |
+| `policy-binding-mutation.log` | `d3ebcfb24d835d737247483d805eec7c9b6fd706cdcc7572a77433475042252a` |
+| `counter-baseline-identities.log` | `cf8993b117b2332a1a910f020e1f229856e213c940ecfbb1ef43e3859fe93537` |
+| `baseline-oracles-fixed.log` | `8dec04d853636d40b4718089f90d3ddd7ed7eda1090b7aeecea0e7732fdfde42` |
+| `generated-manifest.json` | `aee54c61fb15171e9879b237d7305179a42a8e05aee9cf4b069c86dd2f85c5e3` |
+| `initial-manifest.json` | `55d25c1cc5190c29250746d9ad692d8aca71a98437a1df3a0e204e04642eacf4` |
+
+最终生成清单与被测源码匹配，仍未提交；开工前审核清单的原始字节另存 initial-manifest.json。
+清单是工作树唯一预期保留的未提交生成产物。原记录前 199 行逐字节保留，本节为追加。
+独立正确性审查、测试合同审查和最小化审查通过，无待修 P0/P1；结论 ALREADY_MINIMAL。
+没有改任务层、连接器、delegation/inbox/session_tree、计数器源码/固定资产或池编号；未推送/合并。
+会话知识作用域、动作工具与热注册为批准范围外；没有未完成的 C2 MUST。
+
+自我批评：应在整组核验前先供应固定分词器，避免 skip 遮住历史测试预期错误；本轮通过
+基线字节核对、独立历史身份实测和变异检查修正测试合同，没有为绿色修改生产语义。
+
+VERDICT: SHIPPED — 任务书 C2 指定源码补修与 21 文件/392 项核验完成，无机器 receipt，未发版 — 2026-10-31 — 23d965643
