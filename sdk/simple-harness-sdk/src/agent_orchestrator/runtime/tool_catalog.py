@@ -168,7 +168,8 @@ def catalog_for(
 
     from .tool_gateway import read_tool_schemas
 
-    always_exposed = set(commands or {}) | set(HISTORY_TOOLS)
+    # 会话始终看得见：控制命令、历史回读、读任务产物（结果通知里就指着它，不该还要先搜）
+    always_exposed = set(commands or {}) | set(HISTORY_TOOLS) | {"task_artifact_read"}
     entries = []
     for name, schema in read_tool_schemas(large=True).items():
         roles = ROLES if name in MAIN_READ_TOOLS else ("task",)

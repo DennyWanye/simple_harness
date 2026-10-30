@@ -1,6 +1,6 @@
 {
   "acceptance_evidence": null,
-  "deployment_id": "5434b0ce96b934db2182ba130414a15e2ffd12e4ab775a453e67f5c6e3964928",
+  "deployment_id": "b55d65139bd3442ce00dd20e8c82500d09e4b558d26b3ad48bee6882aedc6bdc",
   "schema": "taskgraph-htn-wiring-derivation-v1",
   "source_files": {
     "agent_orchestrator/__init__.py": "eb50152258b356bc7866e55823fc45c7209cb6150efe205dd03c40c33beedbc2",
@@ -167,7 +167,7 @@
     "agent_orchestrator/host/delegation.py": "422b825cebef3c91347bd78af36d79e24eb536269f5633bf037d0027acd096e4",
     "agent_orchestrator/host/embedding.py": "ac37172e30842aec43c0af0ac81a4a7b35094fadda0c5fcae8f8efddcef22d48",
     "agent_orchestrator/host/host.py": "3e320bb282dadfb5f431342d09039f295d2e0528dfbd06546917835de08024ab",
-    "agent_orchestrator/host/inbox.py": "3ed30f623fb2c577767699362faf94bf13aee2e1f26b4da6698f2bf0bf0effcd",
+    "agent_orchestrator/host/inbox.py": "febff762d8c60dbe118ca298ca93dd0ba4ea3a6a4757fc8b7b69c8996d71b91b",
     "agent_orchestrator/host/instance_lock.py": "de30c4b0c87ac371fdf200f14a9f2e519efbf9194249743e128e3e0cd34d03d9",
     "agent_orchestrator/host/offline.py": "28cb5277259b6fcbc4f7c9155a4cfd2862a8a50a637d68b9e994d766bb77d02a",
     "agent_orchestrator/host/provider.py": "c30023cdbbd2559edc036bbf8aa03ab7961ff9846655b9dc6eaa50f81df11714",
@@ -463,7 +463,7 @@
     "agent_orchestrator/runtime/sandbox_run.py": "88e8be2ef531e7eccf8347efd3a0fba9e3bdfe39a280fac3ac787930d0d18c1c",
     "agent_orchestrator/runtime/taskgraph_local_work.py": "b5c76926ec37f3762c7ab839c37bedca4c00bdab5bc2a549eea529af5283a3c6",
     "agent_orchestrator/runtime/taskgraph_operation_sources.py": "77cf3a968bb78617d4ec758901f84cc0b23729d3b3908e173593cb851d19c743",
-    "agent_orchestrator/runtime/tool_catalog.py": "dda90ed871bf40714564b6678b324d429b55638f8bcdcf5002d24a8c4410b41f",
+    "agent_orchestrator/runtime/tool_catalog.py": "b81e8cefa3a3b6ec23518cda6f85ece4543674d24bed1cf64db1f23a36d3347e",
     "agent_orchestrator/runtime/tool_gateway.py": "d05e1b7da25a7e65980a38d778cd454f65f6c433fc6321cbe8e05a0d30caab03",
     "agent_orchestrator/scheduling/__init__.py": "3119afdfd9b30ef3ba26e597ff8d8c980c22ca3e2540b1eadd844ac380047815",
     "agent_orchestrator/scheduling/allocator.py": "10673c09d6e783935107ef25d9e0832cfe018f0c259ca87aaab35686a8790c96",

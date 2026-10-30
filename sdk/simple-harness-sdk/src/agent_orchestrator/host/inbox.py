@@ -91,6 +91,8 @@ class SessionInbox:
                                         }
                                         for a in snapshot["snapshot"].get("artifacts", [])
                                     ],
+                                    # 告诉模型正文从哪取：这是事实（有这个工具），不是指令
+                                    "artifacts_read_with": "task_artifact_read",
                                 }
                                 self.store.put("inbox", final_id, notice)
                                 self.store.event(
