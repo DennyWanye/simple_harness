@@ -10,11 +10,44 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
+#: 合同里稳定暴露的错误码（AgentOS 合同 5.4）。其余码是本 SDK 原有的，保持不变。
+ERROR_CODES = (
+    "not_found_or_forbidden",
+    "invalid_argument",
+    "idempotency_conflict",
+    "stale_version",
+    "session_busy",
+    "capacity_exceeded",
+    "budget_exhausted",
+    "authorization_required",
+    "authorization_revoked",
+    "request_expired",
+    "cancelled",
+    "active_work",
+    "unsupported_capability",
+    "incompatible_store_version",
+    "owner_conflict",
+    "cursor_expired",
+    "effect_unknown",
+    "provider_unavailable",
+)
+
+#: 同身份重试可能成功的码；其余码换 command_id 重试也不会变成功。
+RETRYABLE_CODES = frozenset({"session_busy", "busy", "capacity_exceeded", "provider_unavailable"})
+
 
 class SessionError(RuntimeError):
-    def __init__(self, code: str, message: str = "") -> None:
+    """一个被拒绝的会话请求：``code`` 稳定；``safe_message`` 不含密钥与别人的内容。"""
+
+    def __init__(self, code: str, message: str = "", *, retryable: bool | None = None) -> None:
         super().__init__(f"{code}: {message}")
         self.code = code
+        # 公开错误只使用稳定码，避免供应商响应或其他会话正文随异常穿透。
+        self.safe_message = code
+        self.retryable = (code in RETRYABLE_CODES) if retryable is None else retryable
+
+    def public(self) -> dict[str, Any]:
+        return {"code": self.code, "retryable": self.retryable, "safe_message": self.safe_message}
 
 
 def encoded(value: Any) -> str:
@@ -113,4 +146,4 @@ class SessionLedger:
         ]
 
 
-__all__ = ("SessionError", "SessionLedger")
+__all__ = ("ERROR_CODES", "SessionError", "SessionLedger")

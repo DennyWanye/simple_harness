@@ -31,6 +31,7 @@ from .host import (
 )
 from .realtime_bridge import AudioIO, SpeechHandle, VoiceBinding, VoiceProfile
 from .session import Session, SessionError, SessionPolicy
+from .session_ledger import ERROR_CODES
 from .settings import (
     CONTEXT_INPUT_CHOICES,
     NO_COUNTER_REASON,
@@ -41,6 +42,7 @@ from .settings import (
 )
 
 __all__ = (
+    "ERROR_CODES",
     "AudioIO",
     "CONTEXT_INPUT_CHOICES",
     "NO_COUNTER_REASON",

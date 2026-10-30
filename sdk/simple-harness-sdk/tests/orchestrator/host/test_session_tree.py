@@ -262,18 +262,26 @@ def test_capabilities_are_local_and_errors_do_not_disclose_details(tmp_path, mon
     caps = parent.capabilities()
     assert caps["session_config_version"] == 3 and caps["role"] == "root"
     assert parent.child("a").capabilities()["role"] == "child"
-    assert caps["limits"] == {"max_depth": 1, "delegations_in_flight_per_session": 1,
-                               "policy": parent.policy.public()}
-    assert set(caps["unsupported"]) == {"goals", "continuation_policy", "authorization_port",
-                                        "steer_running_mission"}
+    assert caps["limits"] == {
+        "max_depth": 1,
+        "delegations_in_flight_per_session": 1,
+        "policy": parent.policy.public(),
+    }
+    assert set(caps["unsupported"]) == {
+        "goals",
+        "continuation_policy",
+        "authorization_port",
+        "steer_running_mission",
+    }
     assert len(ERROR_CODES) == 18
     for code in (*ERROR_CODES, "busy", "permission_denied"):
         error = SessionError(code, "private provider response secret")
         public = error.public()
         assert public["code"] == code and public["safe_message"]
         assert "secret" not in public["safe_message"]
-        assert public["retryable"] == (code in {"busy", "session_busy", "capacity_exceeded",
-                                               "provider_unavailable"})
+        assert public["retryable"] == (
+            code in {"busy", "session_busy", "capacity_exceeded", "provider_unavailable"}
+        )
 
 
 def test_identity_and_parent_cannot_be_rebound(tmp_path):
@@ -321,13 +329,16 @@ def test_real_model_commands_create_queue_query_and_delegate(tmp_path):
     from test_host_sessions import running_host
 
     async def case():
-        host = await running_host(tmp_path, [
-            ("create_child", {"child_key": "a", "purpose": "独立主题"}),
-            ("child_send", {"child_key": "a", "text": "追加细节"}),
-            ("child_status", {"child_key": "a"}),
-            ("delegate_task", {**SPEC, "child_key": "a"}),
-            "已受理",
-        ])
+        host = await running_host(
+            tmp_path,
+            [
+                ("create_child", {"child_key": "a", "purpose": "独立主题"}),
+                ("child_send", {"child_key": "a", "text": "追加细节"}),
+                ("child_status", {"child_key": "a"}),
+                ("delegate_task", {**SPEC, "child_key": "a"}),
+                "已受理",
+            ],
+        )
         try:
             parent = await host.open_session("main")
             receipt = await parent.send("请建立工作会话并做报告", key="one")
@@ -341,3 +352,211 @@ def test_real_model_commands_create_queue_query_and_delegate(tmp_path):
             await host.close()
 
     run(case())
+
+
+def test_existing_root_cannot_be_adopted_as_child(tmp_path):
+    host, parent = make(tmp_path)
+    root = Session(host, session_id="main_c_a")
+    root._commit_input("根会话的私有内容", "root")
+    with pytest.raises(SessionError, match="permission_denied"):
+        run(parent.create_child("a", command_id="create"))
+    assert root._store.get("meta", "parent") is None
+    assert parent.children() == [] and parent._store.rows("commands") == []
+    assert Session(host, session_id="main_c_a").parent is None
+
+
+def test_parent_identity_requires_registered_relation(tmp_path):
+    host, _ = make(tmp_path)
+    with pytest.raises(SessionError, match="permission_denied"):
+        Session(host, session_id="main_c_a", parent=("main", "a"))
+
+
+def test_registered_child_cannot_be_claimed_as_root_before_open(tmp_path, monkeypatch):
+    from test_session import Crash
+
+    host, parent = make(tmp_path)
+
+    def crash(point):
+        if point == "child_registered":
+            raise Crash()
+
+    monkeypatch.setattr(parent, "_checkpoint", crash)
+    with pytest.raises(Crash):
+        run(parent.create_child("a", command_id="create"))
+    with pytest.raises(SessionError, match="permission_denied"):
+        Session(host, session_id="main_c_a")
+
+
+def test_child_id_length_is_bounded(tmp_path):
+    host = FakeHost(tmp_path)
+    parent = Session(host, session_id="p" * 125)
+    with pytest.raises(SessionError, match="invalid_argument"):
+        run(parent.create_child("a", command_id="create"))
+    assert parent.children() == []
+
+
+def test_concurrent_create_uses_one_handle_and_close_prevents_recover(tmp_path):
+    from test_host_sessions import running_host
+
+    async def case():
+        host = await running_host(tmp_path, [])
+        try:
+            parent = await host.open_session("main")
+            receipts = await asyncio.gather(
+                *[parent.create_child("a", command_id="create") for _ in range(3)]
+            )
+            assert receipts[0] == receipts[1] == receipts[2]
+            assert host._sessions["main_c_a"] is parent.child("a")
+            await parent.close()
+            with pytest.raises(SessionError, match="session_closed"):
+                await parent.recover()
+            assert host._sessions == {}
+        finally:
+            await host.close()
+
+    run(case())
+
+
+def test_chat_recovery_sees_child_handles_before_replaying_commands(tmp_path, monkeypatch):
+    from test_host_sessions import running_host
+
+    from agent_orchestrator.host.session_chat import SessionChatService
+
+    async def case():
+        host = await running_host(tmp_path, ["先前回复"])
+        parent = await host.open_session("main")
+        await parent.create_child("a", command_id="create")
+        await parent.send("先前输入", key="one")
+        await host.close()
+        replayed = []
+        original = SessionChatService._recover_pending_turns
+
+        async def replay(self):
+            if self.session.session_id == "main":
+                assert self.session.child("a").session_id == "main_c_a"
+                [(run_id,)] = self.session._store.connection.execute(
+                    "SELECT key FROM records WHERE namespace='run_inputs'"
+                ).fetchall()
+                receipt = self._command("child_send")(
+                    {"child_key": "a", "text": "恢复中的追加输入"}, run_id, "recovered-call"
+                )
+                replayed.append(receipt)
+            await original(self)
+
+        monkeypatch.setattr(SessionChatService, "_recover_pending_turns", replay)
+        host = await running_host(tmp_path, [])
+        try:
+            parent = await host.open_session("main")
+            assert len(replayed) == 1
+            assert parent.child("a").queued_inputs()[0]["text"] == "恢复中的追加输入"
+            assert parent.child("a")._chat.available
+        finally:
+            await host.close()
+
+    run(case())
+
+
+@pytest.mark.parametrize("first_key,second_key", [("a", "b"), (None, "a"), ("a", None)])
+@pytest.mark.parametrize("restart", [False, True])
+def test_parent_call_slot_freezes_destination(tmp_path, first_key, second_key, restart):
+    _, parent = make(tmp_path)
+    run(parent.create_child("a", command_id="a"))
+    run(parent.create_child("b", command_id="b"))
+    turn = parent._commit_input("去做", "one")["turn_id"]
+    first = {**SPEC, **({"child_key": first_key} if first_key else {})}
+    second = {**SPEC, **({"child_key": second_key} if second_key else {})}
+    receipt = parent._delegations.delegate(turn, "call-one", first, attempt_id="run-one")
+    with pytest.raises(SessionError, match="idempotency_conflict"):
+        parent._delegations.delegate(
+            turn,
+            "new-call" if restart else "call-one",
+            second,
+            attempt_id="run-two" if restart else "run-one",
+        )
+    assert len(parent._host.made) == 1
+    replay = parent._delegations.delegate(
+        turn,
+        "replay-call" if restart else "call-one",
+        first,
+        attempt_id="run-two" if restart else "run-one",
+    )
+    assert replay["mission_id"] == receipt["mission_id"]
+
+
+def test_unopened_child_cannot_be_claimed_by_another_principal(tmp_path, monkeypatch):
+    from test_session import Crash
+
+    from agent_orchestrator.host import Principal
+
+    host, parent = make(tmp_path)
+
+    def crash(point):
+        if point == "child_registered":
+            raise Crash()
+
+    monkeypatch.setattr(parent, "_checkpoint", crash)
+    with pytest.raises(Crash):
+        run(parent.create_child("a", command_id="create"))
+    host.principal = Principal("other", "Other")
+    with pytest.raises(SessionError, match="permission_denied"):
+        Session(host, session_id="main_c_a", parent=("main", "a"))
+    host.principal = Principal("u", "User")
+    reopened = Session(host, session_id="main")
+    run(reopened.recover())
+    assert reopened.child("a").parent["parent_session_id"] == "main"
+
+
+def test_parent_close_joins_child_open_in_flight(tmp_path, monkeypatch):
+    from test_host_sessions import running_host
+
+    from agent_orchestrator.host.session import TreeSessionChatService
+
+    async def case():
+        host = await running_host(tmp_path, [])
+        parent = await host.open_session("main")
+        entered, release = asyncio.Event(), asyncio.Event()
+        original = TreeSessionChatService.open
+
+        async def held(self):
+            if self.session.parent is not None:
+                entered.set()
+                await release.wait()
+            await original(self)
+
+        monkeypatch.setattr(TreeSessionChatService, "open", held)
+        job = asyncio.create_task(parent.create_child("a", command_id="create"))
+        try:
+            await asyncio.wait_for(entered.wait(), 5)
+            await asyncio.wait_for(parent.close(), 5)
+            assert job.done()
+            assert "main_c_a" not in host._sessions
+        finally:
+            release.set()
+            await asyncio.gather(job, return_exceptions=True)
+            await host.close()
+
+    run(case())
+
+
+def test_recover_finishes_child_delegation_recorded_before_mission_creation(tmp_path, monkeypatch):
+    from test_session import Crash
+
+    host, parent = make(tmp_path)
+    run(parent.create_child("a", command_id="create"))
+    child = parent.child("a")
+    turn = parent._commit_input("做报告", "one")["turn_id"]
+
+    def crash(point):
+        if point == "delegation_recorded":
+            raise Crash()
+
+    monkeypatch.setattr(child, "_checkpoint", crash)
+    with pytest.raises(Crash):
+        parent._delegations.delegate(turn, "call", {**SPEC, "child_key": "a"})
+    assert host.made == {}
+    reopened = Session(host, session_id="main")
+    run(reopened.recover())
+    [task] = reopened.tasks()
+    assert task["mission_id"] is not None and len(host.made) == 1
+    replay = reopened._delegations.delegate(turn, "call", {**SPEC, "child_key": "a"})
+    assert replay["mission_id"] == task["mission_id"] and len(host.made) == 1

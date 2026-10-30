@@ -259,7 +259,7 @@ async def run(root, principal, model, tools, render, last_seen=0):
 
 委派参数只有 `goal/success_criteria/sources/reason`；成功条件 1～12 条、资料最多 8 份（各含
 `path/content`），网关另有整体参数大小限制。SDK 统一规范化 Unicode、目标空白和资料路径，
-用“会话号 + 已持久提交的输入回合号 + 规范化目标哈希”派生幂等键；完整规范另算哈希。
+用“会话号 + 已持久提交的输入回合号 + 调用槽位”派生幂等键；完整规范另算哈希。
 同意图换 `call_id` 仍回原任务，成功条件或资料变了则拒绝；新输入回合同目标可建新任务。
 默认同时只有一个在途任务。创建走现有 `door/create_mission[_with_sources]`，自动授权和审批
 由原有 Host 职责处理，委派回执不等任务完成。
@@ -312,6 +312,50 @@ async def run(root, principal, model, tools, render, last_seen=0):
 审批的 `version` 由 SDK 对当前审批内容计算，规划问题沿用原有版本号。接入方原样回传事件中的
 版本，不自行生成。版本核对与 `decide/answer_planning_question` 在同一任务库写事务内完成，
 身份和请求绑定字段不能由调用参数覆盖。
+
+### 子会话
+
+主会话可持有一层长期工作会话。同一持续主题复用同一个 `child_key`；父和每个子会话
+各允许一个在途委派，共享 Host 的任务执行与预算。子会话不能再创建子会话。
+
+```python
+parent = await host.open_session("main")
+created = await parent.create_child("photos", command_id="create-photos", purpose="整理照片")
+child = parent.child("photos")
+queued = parent.child_send("photos", "也算上视频", command_id="photos-input-1")
+assert queued["status"] == "accepted"
+assert child.queued_inputs()[0]["directive"] == "next_turn"
+receipt = parent.command_receipt("create-photos")
+capabilities = parent.capabilities()
+```
+
+`create_child` 的 `child_key` 只接受 1～64 位英数、下划线或连字符；子身份为
+`<parent_session_id>_c_<child_key>`，总长不超过 128。子身份只能经父会话打开，不能当根会话
+使用，也不能收养已有根会话。`children()` 列持久关系，`child(key)` 取已打开对象；不存在
+返回 `not_found_or_forbidden`。重新打开父会话会恢复子关系与历史，父关闭先关闭子。
+
+写命令的 `command_id` 为非空且最多 256 字符的字符串。同 ID 同参数返回持久原回执，
+不同参数返回 `idempotency_conflict`；同一个 `child_key` 换命令 ID 仍返回原子身份和
+`created=False`。回执含 `command_id/request_hash/status/session_id/event_seq`，可在重开后
+通过该命令所属会话的 `command_receipt(id)` 查询。`child_send` 的命令与排队输入保存在
+子账本，查询使用 `child.command_receipt(id)`；它仅登记 `next_turn`，本阶段不执行排队输入。
+
+模型可调用 `create_child(child_key, purpose?)`、`child_send(child_key, text)`、
+`child_status(child_key?)`；`delegate_task` 可选传 `child_key`，其余身份与命令 ID 由运行时
+注入。命令网关同步受理子关系及子账本，同回合可继续委派；父回合返回前及恢复泵会异步
+打开子执行器。父 `tasks()/task(id)/cancel_task(id)` 覆盖自己及子任务，每条任务带
+`child_key` 和预留的 `goal_ref=None`；其他根会话不能查询或取消这些任务。
+
+子结果按同一个 `event_id` 镜像到父 inbox，附 `child_key/child_session_id` 和
+`source="child_result"`，始终 `instruction=False`。父下一次输入把结果附成“不是指令”的资料，
+不会自动启动模型。重复补读不会重复镜像或发 `result_ready`。结果由人在父会话 `ack()`；
+子会话不能确认父消费的结果，已读也不替代业务消费。
+
+`capabilities()` 本地返回协议版本 2、配置版本 3、根/子角色、能力列表和策略限制，
+不调用模型或查询任务。当前不支持 Goal、自动续办策略、授权回调或运行中 steer。
+旧版本状态库返回 `incompatible_store_version`，同版本策略或工具目录冲突仍返回
+`session_config_frozen`；公开错误 `SessionError.public()` 含 `code/retryable/safe_message`。
+本阶段不迁移旧数据，请使用新数据根。
 
 ## 2e. 语音绑定（`[realtime]` 可选扩展，opt.218）
 
