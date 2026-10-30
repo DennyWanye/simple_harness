@@ -752,3 +752,49 @@ async def process_worker(root, point, resume):
 
 if __name__ == "__main__":
     asyncio.run(process_worker(Path(sys.argv[1]), sys.argv[2], len(sys.argv) > 3))
+
+
+def test_inbox_cursor_covers_hidden_internal_events_and_stops_polling(tmp_path):
+    """任务库里有对外不展示的内部事件（RowsWritten 之类）：游标必须追到原始事件尾，
+    否则每一拍都重读任务快照，三个子会话空闲时 CPU 常年 30%。"""
+
+    class Tail:
+        def __init__(self, host):
+            self.host = host
+
+        def fetchone(self):
+            mid = self.mid
+            return (len(self.host.event_rows[mid]) + 1,)  # 多一条隐藏的内部事件
+
+    class Connection:
+        def __init__(self, host):
+            self.host = host
+
+        def execute(self, _sql, params):
+            tail = Tail(self.host)
+            tail.mid = params[0]
+            return tail
+
+    class MissionStore:
+        def __init__(self, host):
+            self.connection = Connection(host)
+
+        def read_view(self):
+            from contextlib import nullcontext
+
+            return nullcontext()
+
+    host, session = make_session(tmp_path)
+    host.store = MissionStore(host)
+    snapshots = []
+    original = host.snapshot
+    host.snapshot = lambda mid: (snapshots.append(mid), original(mid))[1]
+    asyncio.run(session._delegations.delegate("turn-1", "call-1", SPEC))
+    host.finish("mission-1")
+    session._inbox.catch_up()
+    assert [n["status"] for n in session.inbox()] == ["COMPLETED"]
+    assert session._store.get("cursors", "mission-1") == 2
+    before = len(snapshots)
+    for _ in range(5):
+        session._inbox.catch_up()
+    assert len(snapshots) == before

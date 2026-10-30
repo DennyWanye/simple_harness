@@ -37,12 +37,15 @@ class SessionInbox:
                 continue
             cursor = int(self.store.get("cursors", mid) or 0)
             mission_store = getattr(self.host, "store", None)
+            tail = None
             if mission_store is not None:
                 with mission_store.read_view():
-                    tail = mission_store.connection.execute(
-                        "SELECT COALESCE(MAX(seq),0) FROM events WHERE mission_id=?", (mid,)
-                    ).fetchone()[0]
-                if int(tail) <= cursor:
+                    tail = int(
+                        mission_store.connection.execute(
+                            "SELECT COALESCE(MAX(seq),0) FROM events WHERE mission_id=?", (mid,)
+                        ).fetchone()[0]
+                    )
+                if tail <= cursor:
                     continue
             while True:
                 page = self.host.events(mid, after_seq=cursor, limit=100)
@@ -105,6 +108,10 @@ class SessionInbox:
                                 )
                                 added = True
                         cursor = max(cursor, seq)
+                    if tail is not None and not page.get("has_more"):
+                        # 对外事件页会隐去内部事件（RowsWritten 等），游标只按可见事件走
+                        # 永远追不上原始事件尾，每一拍都会重读快照；最后一页读完就补到尾。
+                        cursor = max(cursor, tail)
                     self.store.put("cursors", mid, cursor)
                 if added:
                     self.session._checkpoint("inbox_written")
