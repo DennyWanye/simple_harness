@@ -98,3 +98,48 @@ uv run --frozen ruff format --check src/agent_orchestrator/host/{authorization,g
 `regression.log`：**255 passed /35 failed，274.68s**。33项直接在无参数close清理时报active_work；另1项是旧cancel_task要求“尚未派发也先创建Mission再取消”，与新屏障禁止取消后派发相冲突；最后1项发现child_send重复查询已终态历史，是实际性能/行为回归，已修。
 
 另外由独立复现实锤修正：用户已成功消费结果，但continuation_results残留pending会使close永久拒活，hold/deny也会在恢复报告误报责任。现在用户提交消费事实时，同事务把相应续办标applied并绑定实际回合，已完全消费的未执行批次同步done。追加enqueue/hold/deny三条决定性测试；child_send追加已终态不轮询测试。未放宽关闭门或修改旧测试清理调用。将对新HEAD重新生成清单并跑全部指定文件。
+
+## 最终验收结论
+
+被测源码HEAD：`7f859c1ce`；该提交经独立diff复查，无新P0/P1。重生成清单deployment_id：`cc3e95680f0281da0915b2cbc460eff5bea568141fe4952e3b6c1e222c562a62`（855项源码）。
+
+在该已提交HEAD把新增四文件与指定八文件合为一次pytest调用，附`--junitxml=../../.local-test-evidence/2026-10-31/sol-E/final.xml`：**363 passed /35 failed，311.00s，exit 1**。没有全量回归或缩减指定范围。
+
+| 文件 | 通过 | 失败 |
+|---|---:|---:|
+| test_authorization_port.py | 44 | 0 |
+| test_cancel_scope.py | 20 | 0 |
+| test_goals.py | 27 | 0 |
+| test_owner_and_close.py | 17 | 0 |
+| test_session_tree.py | 41 | 0 |
+| test_continuation.py | 18 | 29 |
+| test_session.py | 25 | 4 |
+| test_session_replay.py | 30 | 2 |
+| test_host_sessions.py | 15 | 0 |
+| test_host_connectors.py | 11 | 0 |
+| test_host_recovery.py | 4 | 0 |
+| tests/test_public_api.py | 111 | 0 |
+
+新增四文件 **108/108通过**；指定八文件 **255通过/35失败**。失败分类由JUnit逐条核对：
+
+1. **34项 `active_work`**：29项续办、3项Session、2项Session重放在有未消费结果/在途委派/排队责任时调用无参数`close()`。全部是新关闭合同与旧清理方式冲突；未把未消费或unknown伪作已完成，未放宽关闭条件。首轮重复轮询缺陷已修，原用例现在通过“不重复轮询”的断言，随后仍在其关闭清理处报active_work。
+2. **1项旧取消语义冲突**：`test_session.py::test_cancel_creation_then_recover_and_completed_is_immutable` 期望取消尚未派发的委派后，恢复仍创建Mission再cancel。新实现保留`mission_id=None`、零派发、终态CANCELLED；故其`assert host.cancelled == [task['mission_id']]`得到`[] != [None]`。不能为绿测在屏障后创建任务，也不能按§3修改该非新字段断言。
+
+失败完整case ID与堆栈在final.log/final.xml；没有其他异常类别。依§9不等确认，完成车道内实现、审查、验证、提交并明确保留冲突；**§7全绿要求尚未满足，整体交付状态BLOCKED，不宣称任务书全部完成**。要使这些既有测试按新合同验收，需要任务书允许调整其清理调用与旧取消预期；本轮没有擅自修改。
+
+最终改动21个Python文件：`ruff check`、`ruff format --check`全绿，`git diff --check`全绿。部署清单已在ignored证据目录保留副本，随后还原工作树生成文件，不提交。没有改其他车道文件，也未更新ARCHITECTURE（任务书明确只许§3车道与本记录，优先于通用规则）。
+
+原始证据索引与SHA-256（都不提交Git）：
+
+| 本地相对文件 | SHA-256 |
+|---|---|
+| final.log | `33df702d388f9e901b3b28787cd8b6c2293e040db3d121b8d4f6e7f60617eebf` |
+| final.xml | `bad7c84fd357dc4d67b7d7715bbc0712af834d27eccf113c986595a961781aeb` |
+| final-ruff.log | `262887bcddce8fc713c09ef19481b9154a72bc9e5bcc64b0e3514ebb374ef6ca` |
+| final-manifest.json | `3aa4a4f56d4823d80b1c1d135d8aa65ea895df115d056bac96a05076e099019c` |
+| new-head.log（6a4e65af0的104条提交态复验） | `0150d246efa5731f4aac84b2fadea67f71c9ecc9a7b3d5d2d605b6df69eb4121` |
+| lock-regression.log | `61ea2449edda8352eb1232e017da985775bda60a8bb9deecc1680212cb026f26` |
+
+分支：`sol/E-authorization-goal`。源码与测试提交：红`4a06b5b47`、实现`6a4e65af0`、消费收敛修复`7f859c1ce`；最终记录单独提交。未push、未merge、未发版。
+
+VERDICT: BLOCKED — 任务书E实现及108项新增测试通过；指定旧回归35项与新关闭/取消合同冲突 — 2026-10-31 — 7f859c1ce
