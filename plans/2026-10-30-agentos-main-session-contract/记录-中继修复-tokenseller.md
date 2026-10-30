@@ -17,5 +17,6 @@
 
 ## 状态
 
-- 代码在中继仓库分支 `fix/realtime-orphan-terminal-20261030`（提交 `bedd04c`，已推送到 origin；未合 main），**尚未部署**：本机没有 Vercel 登录（团队 horizonnowhere-6068s-projects，项目 chinzy-maas），也没有 Supabase 凭据。部署流程、回滚目标、部署后冒烟步骤写在中继 README 第 7 节。
-- 给 AIPhone 的一句话：中继修复上线后，重跑 A09/A10/A11 三个场景，预期四条无 `response_id` 的 `*.done` 之后不再出现 `tokenseller.error`，正常走到 `response.done completed`；A10-voice-task（工具续答）仍会终止，但错误会带 `related_event_id`，留到协议协商后再验。
+- **代码已推分支、部署交另一台电脑、待部署后复验。** 分支 `fix/realtime-orphan-terminal-20261030` 已推 origin；2026-10-31 用户在修复会话里直接要求推主分支，已快进合入 `main` 并推送（origin/main = origin/分支 = `cbace05`；修复本体 `bedd04c`，其后两个提交只改记录并随附冒烟用 PCM）。推送内容做过密钥字样扫描，干净。
+- 本机未部署（没有 Vercel 登录与 Supabase 凭据）。另一台电脑按中继 README 第 7 节清单做：取码校验 → 候选 `--skip-domain` → 候选上 `context`/`plain` 两场景真实语音冒烟 → promote → 正式域名再跑两场景 → 补 README 第 8 节。回滚目标 dpl_6nM9SBTFUqq689tyvPQ4EZG4NQmA。
+- 部署后复验：重跑 A09/A10/A11 三个场景，预期四条无 `response_id` 的 `*.done` 之后不再出现 `tokenseller.error`，正常走到 `response.done completed`；A10-voice-task（工具续答）仍会终止，但错误会带 `related_event_id`，留到协议协商后再验。
