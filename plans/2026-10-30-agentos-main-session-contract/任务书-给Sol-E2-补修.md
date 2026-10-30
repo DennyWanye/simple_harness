@@ -25,10 +25,35 @@
 
 非阻断一起做：`archive()` 的三条拒绝路径（未终态委派 / 未消费结果 / 排队输入）各补一条测试（C1 迁过来时顺手）；`InstanceLock.held` 每次 fstat + 读代次文件 + 另开 fd 试锁，挂在每个 `_check_open` 上开销偏大——同一进程内把探测结果缓存 0.5 秒（失锁最多晚 0.5 秒发现，记录里写明取舍）。
 
-## 2. 一起改的
+## 2. 规范轴审阅的阻断级（必须）
 
-1. `host/authorization.py` 的 `ensure_sync`：同步命令路径里的授权要么只允许默认 `AutoModeAuthorization`（宿主自定义端口一律走异步 `ensure`），要么把等待上限收到 1 秒并在记录里写明"同步路径会阻塞事件循环"——按审阅结论定，默认选前者。
-2. 记录末尾追加一节"E2 补修"：改了什么、测试命令与通过数（指定八文件 + 四个新文件全绿）、提交号。中文。拿不准的按最合理做法做完，不停下问。
+### 2.1 授权只留异步一条路，删掉 `ensure_sync`
+
+现状：`ensure_sync` 在新线程里 `asyncio.run` 跑宿主端口，再 `queue.get(timeout)` 阻塞主事件循环（实测端口耗时 2 秒就卡循环 2 秒；端口若用宿主循环上的对象——等卡片回答的 future、`httpx.AsyncClient`——在另一个线程的新循环里直接失败，同步路径立刻返回 `authorization_required`）。pump 每 0.25 秒经 `recover() → _create` 再问一次，会反复卡顿。同一个端口两种调用方式，是"同一件事两条路"。
+
+改法：
+- `runtime/tool_gateway.py` 两个调用控制命令的地方（`execute` 约 767 行、`observe` 约 603 行）：`command.invoke(...)` 的返回值若可等待就 `await`（它们本身已是 async）。**本任务书放宽车道允许改这两处。**
+- `Delegations.delegate / _create / recover`、`Session.child_send`、模型发起的 `create_child` 改成 async，统一走 `ensure`；调用方（`_pump`、`_send`、`realtime_bridge._dispatch`、命令处理函数、测试里直接调 `session._delegations.delegate(...)` 的地方如 `test_chat_cancel_recovery.py`）跟着 `await`。
+- **删掉 `ensure_sync`**。文档里"端口不应依赖宿主事件循环绑定的对象"那句删掉——现在可以依赖了。
+- 测试：用一个"等 0.1 秒后在宿主循环上放行"的端口（future）跑模型发起的 `delegate_task`，断言放行且事件循环最大阻塞 < 50 毫秒（可用监控协程打点）。
+
+### 2.2 取消屏障收不了口时不许每轮重写落盘
+
+现状：屏障停在 `cancel_requested`（如交接结果未知）时，`_converge_cancellations` 每轮无条件重写同一行（实测每秒 28 次落盘，永不停止）；`continuation.py` 对每条"取消后迟到的结果"每轮也重写一次。改法：状态没变就不写；`_converge_cancellations` 被 pump、各会话 `recover`、`_send` 重复调用——合并为每个根会话每轮最多跑一次。测试：一条交接未知的委派，闲置 3 秒内账本写入次数 ≤ 2。
+
+### 2.3 三条一起改
+
+- **恢复顺序**：`dispatch_state="claimed"` 的行恢复时先只读 `find_mission` 一次，查到就直接关联（不再问授权），查不到才走授权再建。
+- **`create_child` 两条入口的授权口径统一**：模型路径与公开接口都用 `{"child_key","purpose"}` 算参数摘要、都取根 Goal 当前 ref 并冻结进 `children` 行；一边批准另一边有效。
+- **`_root_session()` 不得悄悄新建根 Session**：找不到根句柄或根已关闭时抛 `SessionError("session_closed")`（或 `not_found_or_forbidden`），不开新账本连接；`_session_handles` 在会话关闭时清理。加测试：根关闭后子会话操作报错而不是多出一个连接。
+
+欠账（本轮不做，记录里写）：`session.py` 新增 500 多行、`_converge_cancellations` 约 120 行把匹配/审批/委派/语音/效果/收口混在一起，后续拆成独立的取消模块。
+
+## 2b. 完成标准与记录
+
+- 以下文件全绿（改源码后先重生成清单；语音文件要 `--extra realtime`）：四个新文件 + `test_session_tree.py`、`test_continuation.py`、`test_session.py`、`test_session_replay.py`、`test_host_sessions.py`、`test_host_connectors.py`、`test_host_recovery.py`、`test_session_async.py`、`test_realtime_bridge.py`、`test_chat.py`、`test_chat_cancel_recovery.py`、`test_tool_catalog.py`、`test_orchestration_host.py`、`tests/test_public_api.py`、`tests/orchestrator/step08/test_policy_snapshot.py`。
+- 改到的文件 `ruff check` / `ruff format --check` 绿。
+- 记录末尾追加一节"E2 补修"：改了什么、测试命令与通过数、提交号。中文。拿不准的按最合理做法做完，不停下问。
 
 ## 3. 不动的
 
