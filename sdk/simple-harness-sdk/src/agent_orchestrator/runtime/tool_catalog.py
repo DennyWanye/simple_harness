@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from typing import Any
@@ -24,7 +25,11 @@ MAIN_READ_TOOLS = (
 META_SCHEMAS = {
     "tool_search": {
         "type": "object",
-        "description": "在当前允许范围内按名字或说明搜索工具。",
+        "description": (
+            "按关键词搜索你现在可以用的工具（名字或说明里含关键词的优先；没命中就列出全部可用工具）。"
+            "凡是要查设备、文件、数据、历史以外的信息，先用它看看有没有工具，"
+            "再用 tool_schema 加载说明后调用。"
+        ),
         "properties": {
             "query": {"type": "string"},
             "limit": {"type": "integer", "minimum": 1, "maximum": 256},
@@ -96,14 +101,23 @@ class ToolCatalog:
         )
 
     def search(self, role: str, query: str, limit: int = 8) -> tuple[CatalogEntry, ...]:
+        """按词匹配名字与说明，命中词多的排前面。
+
+        模型给的查询常是"查设备状态"这类短语，整句做子串匹配几乎永远落空，所以拆成词（空白、
+        标点分隔）再匹配；中文没有空格，连续的中文串再拆成两字片段。这里只做字面匹配，
+        判断"哪一个才是要用的工具"留给模型：没命中时调用方把可见工具全列出来即可。
+        """
+
         if not isinstance(query, str) or type(limit) is not int or not 1 <= limit <= 256:
             raise ValueError("query must be text and limit must be between 1 and 256")
-        needle = query.casefold()
-        return tuple(
-            e
-            for e in self.visible(role)
-            if needle in e.name.casefold() or needle in e.description.casefold()
-        )[:limit]
+        terms = _search_terms(query)
+        scored = []
+        for entry in self.visible(role):
+            haystack = f"{entry.name} {entry.description}".casefold()
+            hits = sum(1 for term in terms if term in haystack)
+            if hits:
+                scored.append((-hits, entry.name, entry))
+        return tuple(entry for _, _, entry in sorted(scored))[:limit]
 
     def schemas(self, role: str, names: Iterable[str]) -> list[dict[str, Any]]:
         visible = {e.name: e for e in self.visible(role)}
@@ -122,6 +136,17 @@ class ToolCatalog:
     def narrowed(self, role: str, names: Iterable[str]) -> ToolCatalog:
         allowed = set(names)
         return ToolCatalog(e for e in self.visible(role) if e.name in allowed)
+
+
+def _search_terms(query: str) -> set[str]:
+    terms: set[str] = set()
+    for token in re.split(r"[\s,，。、;；:：/|()（）\[\]【】\"'“”‘’?？!！]+", query.casefold()):
+        if not token:
+            continue
+        terms.add(token)
+        for run in re.findall(r"[\u3400-\u9fff]{2,}", token):
+            terms.update(run[i : i + 2] for i in range(len(run) - 1))
+    return terms
 
 
 def exposure_policy(catalog: ToolCatalog) -> ToolExposurePolicy:
@@ -201,10 +226,14 @@ def invoke_meta(
 ) -> dict[str, Any]:
     scoped = catalog.narrowed(role, allowed)
     if name == "tool_search":
+        limit = arguments.get("limit", 8)
+        found = scoped.search(role, arguments["query"], limit)
+        # 没命中就把可见的全列出来：工具通常不多，列全了让模型自己判断，比"没找到"有用
+        listed = found or scoped.visible(role)[:limit]
         return {
+            "matched": bool(found),
             "tools": [
-                {"name": e.name, "description": e.description, "source": e.source}
-                for e in scoped.search(role, arguments["query"], arguments.get("limit", 8))
+                {"name": e.name, "description": e.description, "source": e.source} for e in listed
             ],
             "catalog_version": catalog.catalog_version,
         }

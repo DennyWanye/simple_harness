@@ -37,7 +37,8 @@ SESSION_INSTRUCTIONS = (
     "\n一个持续主题或独立工作开一个工作会话，用 create_child 创建；"
     "同一主题追问用 child_send 排入下一回合；复杂工作在工作会话里用 "
     "delegate_task(child_key=…) 交给后台。用 child_status 查询工作会话与任务。"
-    "\n你直接看到的只有常用命令。要用别的工具先 tool_search 找，再 tool_schema 拿到说明后调用。"
+    "\n你直接看到的只有常用命令，还有别的工具没列出来。用户问到设备、文件、数据等你手头没有的信息时，"
+    "先调用 tool_search 看有没有能查的工具（不要先说做不到），再用 tool_schema 拿到说明后调用。"
     "小而简单的事自己做；需要时间、多步骤、要审阅的交给 delegate_task。"
 )
 

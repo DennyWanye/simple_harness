@@ -37,6 +37,13 @@ def test_catalog_roles_only_narrow_and_search_is_scoped():
     assert {t.name for t in catalog.visible("task")} == {"public_status", "task_only"}
     assert [t.name for t in catalog.search("main", "PUBLIC")] == ["public_status"]
     assert [t.name for t in catalog.search("child", "查询")] == ["public_status"]
+    # 模型给的常是短语：拆词再匹配，整句不是子串也能命中
+    both = ["main_only", "public_status"]
+    assert sorted(t.name for t in catalog.search("main", "查设备状态的工具")) == both
+    # 命中词多的排前面；一个词都不沾的不出现
+    assert [t.name for t in catalog.search("main", "public 设备")] == ["public_status", "main_only"]
+    assert [t.name for t in catalog.search("main", "public status")] == ["public_status"]
+    assert catalog.search("main", "完全不相干") == ()
     with pytest.raises(ValueError, match="not_found_or_forbidden"):
         catalog.schemas("main", ["task_only"])
     with pytest.raises(ValueError, match="role"):
@@ -486,3 +493,19 @@ def test_arbitrary_new_control_command_is_always_exposed(tmp_path, monkeypatch):
             await session.close()
 
     asyncio.run(case())
+
+
+def test_search_without_match_lists_every_visible_tool_for_the_model_to_judge():
+    from agent_orchestrator.runtime.tool_catalog import invoke_meta
+
+    catalog = ToolCatalog((entry("public_status"), entry("main_only", ("main",))))
+    allowed = ["public_status", "main_only"]
+    result = invoke_meta(catalog, "main", allowed, "tool_search", {"query": "完全不相干"})
+    assert result["matched"] is False
+    assert [t["name"] for t in result["tools"]] == ["main_only", "public_status"]
+    hit = invoke_meta(catalog, "main", allowed, "tool_search", {"query": "public"})
+    assert hit["matched"] is True and [t["name"] for t in hit["tools"]] == ["public_status"]
+    # 名单外的即使没命中也不会被"全列"带出来
+    miss = {"query": "完全不相干"}
+    narrowed = invoke_meta(catalog, "main", ["public_status"], "tool_search", miss)
+    assert [t["name"] for t in narrowed["tools"]] == ["public_status"]
