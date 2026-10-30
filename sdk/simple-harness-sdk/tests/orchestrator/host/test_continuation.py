@@ -321,6 +321,9 @@ def test_real_host_continuation_model_call_limit(tmp_path):
             assert len(script.asked) == 2
             [usage] = parent._store.rows("continuation_usage")
             assert usage["model_calls"] == 2
+            assert any(
+                e["kind"] == "continuation_budget_exhausted" for e in parent._store.events(0)
+            )
             await asyncio.sleep(0.4)
             assert len(script.asked) == 2
             assert parent.inbox()[0]["applied_turn_id"] is None

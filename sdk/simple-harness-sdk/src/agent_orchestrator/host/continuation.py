@@ -258,7 +258,8 @@ class Continuation:
         if receipt["state"] == "committed":
             self.apply(queued, receipt["turn_id"])
         else:
-            self.fail(queued, (receipt.get("error") or {}).get("code", "turn_failed"))
+            error = receipt.get("error") or {}
+            self.fail(queued, error.get("code") or error.get("error_code") or "turn_failed")
 
     def apply(self, queued: dict[str, Any], turn_id: str) -> None:
         input_id = queued["input_id"]
@@ -291,6 +292,14 @@ class Continuation:
 
     def fail(self, queued: dict[str, Any], reason: str) -> None:
         with self.store.transaction():
+            if reason in {"budget_exhausted", "react_max_turns_exceeded"}:
+                self.store.event(
+                    "continuation_budget_exhausted",
+                    key=f"call-budget:{queued['input_id']}",
+                    input_id=queued["input_id"],
+                    reason="model_calls" if reason == "react_max_turns_exceeded" else "budget",
+                )
+                reason = "budget_exhausted"
             queued.update(state="failed", waiting=True, reason=reason)
             self.store.put("queued_inputs", queued["input_id"], queued)
             for event_id in queued["payload"]:

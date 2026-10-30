@@ -423,7 +423,7 @@ class Session:
                         payload=receipt["error"],
                     )
                 if queued["kind"] == "result_event":
-                    self._continuation.fail(queued, "turn_failed")
+                    self._continuation.fail(queued, getattr(error, "code", "turn_failed"))
 
     async def _send(
         self,
