@@ -691,6 +691,7 @@ host = await OrchestrationHost.open(root, principal=..., model=..., tools=[tool]
 主会话和子会话默认有工作区读/列、两个历史回读工具及对应角色的应用只读工具。
 工作区读/列作用于本会话的 `chat-<会话号>` 工作区；不会得到工作区写或 `run_tests`。
 知识列/读仅供任务使用；主/子会话尚无知识作用域，暂不暴露这两个工具。
+主/子会话另有 `task_artifact_read`：按结果通知里 `artifacts` 的 id 读后台任务产物正文（哈希校验、过长截断），任务步骤不需要它。
 
 `HostSettings.tool_search=True` 默认启用按需说明：模型先调用
 `tool_search({"query": "设备", "limit": 8})` 搜名字或说明，再调用

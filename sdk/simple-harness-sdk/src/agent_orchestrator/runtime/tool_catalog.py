@@ -17,6 +17,8 @@ from .domain_tools import DomainTool
 
 ROLES = ("task", "main", "child")
 HISTORY_TOOLS = ("session_history_read", "session_history_search")
+# SDK 自己装配、不属于网关内置 schema 的工具（沙箱命令行、读任务产物）
+SDK_TOOLS = ("sandbox_run", "task_artifact_read")
 MAIN_READ_TOOLS = (
     "workspace_read_file",
     "workspace_list",
@@ -200,7 +202,7 @@ def catalog_for(
             name,
             str(tool.schema.get("description", "")),
             tool.schema,
-            "builtin" if name in (commands or {}) or name == "sandbox_run" else "application",
+            "builtin" if name in (commands or {}) or name in SDK_TOOLS else "application",
             tool.roles,
             name in always_exposed,
         )

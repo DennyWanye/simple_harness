@@ -117,6 +117,18 @@ class HostUnavailable(RuntimeError):
     """宿主没有起来（没有模型、没有认证计数器、目录被占、验收门没过……）。"""
 
 
+TASK_ARTIFACT_READ_SCHEMA = {
+    "type": "object",
+    "description": (
+        "读取后台任务产出的文件（产物）正文：报告、文档、结果文件等。"
+        "任务结果通知里的 artifacts 带 id，用它取正文；内容按哈希校验，过长会截断。"
+    ),
+    "properties": {"artifact_id": {"type": "string", "description": "结果通知里产物的 id"}},
+    "required": ["artifact_id"],
+    "additionalProperties": False,
+}
+
+
 def _checked_tools(tools: Sequence[DomainTool]) -> dict[str, DomainTool]:
     """注册时就把能拒的拒掉：类型、重名、与内置/技能工具同名、副作用。"""
 
@@ -126,7 +138,7 @@ def _checked_tools(tools: Sequence[DomainTool]) -> dict[str, DomainTool]:
         | set(SKILL_TOOL_NAMES)
         | set(ASSURANCE_REVIEWER_TOOLS)
         | set(META_SCHEMAS)
-        | {"sandbox_run"}
+        | {"sandbox_run", "task_artifact_read"}
     )
     for tool in tools:
         if not isinstance(tool, DomainTool):
@@ -749,6 +761,21 @@ class OrchestrationHost:
                 schema=schema,
                 invoke=meta_invoke(name),
             )
+
+        # 主/子会话读后台任务产物的正文：结果通知只带产物名与哈希，
+        # 没有这个工具主会话答不出"结论是什么"。
+        def read_artifact(arguments, context):
+            artifact_id = arguments.get("artifact_id")
+            if not isinstance(artifact_id, str) or not artifact_id.strip():
+                raise ValueError("artifact_id must be a nonempty string")
+            return self.artifact_read(artifact_id.strip())
+
+        runtime_tools["task_artifact_read"] = DomainTool(
+            name="task_artifact_read",
+            schema=TASK_ARTIFACT_READ_SCHEMA,
+            invoke=read_artifact,
+            roles=("main", "child"),
+        )
         self.tool_catalog = catalog_for(runtime_tools, commands=META_SCHEMAS)
         self._runtime_tools = runtime_tools
         task_tools = {name: tool for name, tool in runtime_tools.items() if "task" in tool.roles}

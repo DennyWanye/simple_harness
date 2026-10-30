@@ -101,8 +101,10 @@ def test_main_has_reads_and_role_tools_but_no_task_writes(tmp_path):
                 "session_history_search",
                 "tool_search",
                 "tool_schema",
+                "task_artifact_read",
             } <= names
             assert not {"workspace_write_file", "run_tests", "sandbox_run", "device_status"} & names
+            assert "task_artifact_read" not in {e.name for e in host.tool_catalog.visible("task")}
             reply = await host.chat(
                 {"session_id": "reads", "text": "列工作区", "idempotency_key": "r1"}
             )
@@ -509,3 +511,34 @@ def test_search_without_match_lists_every_visible_tool_for_the_model_to_judge():
     miss = {"query": "完全不相干"}
     narrowed = invoke_meta(catalog, "main", ["public_status"], "tool_search", miss)
     assert [t["name"] for t in narrowed["tools"]] == ["public_status"]
+
+
+def test_main_reads_task_artifacts_through_the_host(tmp_path, monkeypatch):
+    """主会话靠这个工具拿到后台任务产物的正文；任务步骤看不到它（任务自己有工作区）。"""
+
+    async def case():
+        script = _chat_script([("task_artifact_read", {"artifact_id": "art-1"}), "读到了"])
+        host = await _open(tmp_path, chat=script)
+        try:
+            seen = []
+
+            def fake_read(artifact_id):
+                seen.append(artifact_id)
+                return {"artifact_id": artifact_id, "content": "指南正文", "truncated": False}
+
+            monkeypatch.setattr(host, "artifact_read", fake_read)
+            request = {"session_id": "art", "text": "读产物", "idempotency_key": "a1"}
+            reply = await host.chat(request)
+            assert reply["state"] == "committed"
+            assert reply["tool_calls"][0]["outcome"] == "succeeded" and seen == ["art-1"]
+            tool_messages = [
+                str(m.content)
+                for request in script.asked
+                for m in request.messages
+                if str(m.role) == "tool"
+            ]
+            assert any("指南正文" in m for m in tool_messages)
+        finally:
+            await host.close()
+
+    asyncio.run(case())
