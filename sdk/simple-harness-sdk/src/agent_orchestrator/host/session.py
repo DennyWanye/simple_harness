@@ -202,6 +202,12 @@ class Session:
         if self._store.get("meta", "archived"):
             raise SessionError("not_found_or_forbidden", "session is archived")
 
+    def _root_closed(self) -> bool:
+        try:
+            return self._root_session()._closed
+        except SessionError:
+            return True
+
     def _root_session(self) -> Session:
         if self.parent is None:
             if self._closed:
@@ -927,7 +933,11 @@ class Session:
             except asyncio.CancelledError:
                 raise
             except BaseException as error:
-                if self._closed or getattr(error, "code", None) == "session_closed":
+                # 只有本会话或根真的关了才算"放手"；别处抛出的同名错误码仍按失败落账，
+                # 不能让等待者悬着。
+                if self._closed or (
+                    getattr(error, "code", None) == "session_closed" and self._root_closed()
+                ):
                     return
                 if input_id in self._input_waiters:
                     self._input_errors[input_id] = error
