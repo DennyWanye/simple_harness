@@ -56,7 +56,7 @@ from ..orchestrator.commit_service import GLOBAL_ACCOUNT_PREFIX, global_account_
 from ..orchestrator.taskgraph_deployment import InstalledHtnWiringAcceptance
 from ..runtime import sandbox
 from ..runtime.assembly import OrchestratorConfig
-from ..runtime.connectors import OperationSpec
+from ..runtime.connectors import OperationSpec, level_rank
 from ..runtime.connectors_publish import FilePublishConnector
 from ..runtime.deepseek_meter import deepseek_meter_binding
 from ..runtime.delta_router import OutputStream
@@ -790,6 +790,21 @@ class OrchestrationHost:
             invoke=read_artifact,
             roles=("main", "child"),
         )
+        from ..runtime.action_tools import action_tool
+
+        for connector in self._app_connectors.values():
+            for operation, spec in connector.operations.items():
+                checked_roles(spec.tool_roles)
+                if "task" in spec.tool_roles:
+                    raise ValueError("action tool_roles may only contain main and child")
+                if not spec.tool_roles or level_rank(spec.level) > level_rank(
+                    self.settings.max_action_level
+                ):
+                    continue
+                tool = action_tool(connector, operation, host=self)
+                if tool.name in runtime_tools:
+                    raise ValueError(f"action tool {tool.name!r} is registered twice")
+                runtime_tools[tool.name] = tool
         self.tool_catalog = catalog_for(runtime_tools, commands=META_SCHEMAS)
         self._runtime_tools = runtime_tools
         task_tools = {name: tool for name, tool in runtime_tools.items() if "task" in tool.roles}

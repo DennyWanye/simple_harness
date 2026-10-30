@@ -12,6 +12,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
+from ..runtime.action_tools import ActionTools
 from .authorization import EffectLedger, SessionAuthorization
 from .continuation import Continuation, ContinuationPolicy
 from .delegation import TERMINAL, Delegations
@@ -24,6 +25,11 @@ from .session_ledger import SessionError, SessionLedger, digest, encoded
 from .session_tree import CONFIG_VERSION, PROTOCOL_VERSION, Children, Commands, registered_parent
 
 _UNSET = object()
+
+
+class ActionAuthorization(SessionAuthorization):
+    def _apply(self, request, decision):
+        return self.session._actions.apply_authorization(request, decision, super()._apply)
 
 
 @dataclass(frozen=True)
@@ -122,7 +128,8 @@ class Session:
         host._session_handles[session_id] = self
         self._commands, self._tree = Commands(self), Children(self)
         self._goals = Goals(self)
-        self._authorization = SessionAuthorization(self)
+        self._actions = ActionTools(self)
+        self._authorization = ActionAuthorization(self)
         self._effects = EffectLedger(self)
         self._delegations, self._inbox = Delegations(self), SessionInbox(self)
         self._closed = False
@@ -680,7 +687,7 @@ class Session:
                 "source_input_id": None if queued is None else queued["input_id"],
             }
             for notice in notices:
-                if row["result_subject"] is None:
+                if row["result_subject"] is None and notice.get("delegation_id") is not None:
                     row["result_subject"] = self._result_subject(notice["delegation_id"])
             if row["source"] == "user" and queued is None:
                 self._continuation.user_input_accepted()
@@ -891,6 +898,9 @@ class Session:
                         continue
                     if self._input_cancelled(queued):
                         self._cancel_input(queued)
+                        continue
+                    if queued["kind"] == "action_followup":
+                        await self._actions.followup(queued)
                         continue
                     if (
                         queued["kind"] == "directive"
@@ -1506,6 +1516,7 @@ class Session:
                 "cancel_scope",
                 "recovery_report",
                 "archive",
+                "action_tools",
             ],
             "limits": {
                 "max_depth": 1,
@@ -1522,7 +1533,16 @@ class Session:
     ) -> dict[str, Any]:
         self._check_open()
         if self._root_session()._store.get("authorization_requests", request_id) is not None:
-            return self._authorization.respond(request_id, decision, version, fields)
+            receipt = self._authorization.respond(request_id, decision, version, fields)
+            row = self._root_session()._store.get("authorization_requests", request_id)
+            owner = next(
+                s
+                for s in self._root_session()._tree_sessions()
+                if s.session_id == row["request"]["session_id"]
+            )
+            owner._actions.responded(row)
+            owner._wake_inputs()
+            return receipt
         store = getattr(self._host, "store", None)
         with store.transaction() if store is not None else nullcontext():
             return self._respond_locked(request_id, decision, version, fields)
@@ -1665,6 +1685,8 @@ class Session:
     def _release_result_allowances(self, row: Mapping[str, Any]) -> None:
         for event_id in row["inbox_ids"]:
             notice = self._store.get("inbox", event_id)
+            if notice.get("delegation_id") is None:
+                continue
             subject = self._result_subject(notice["delegation_id"])
             # Settlement is idempotent; only the selected allowance imports usage.
             self._chat._settle(subject, [], False, 0)

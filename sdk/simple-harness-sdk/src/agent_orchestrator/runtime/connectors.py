@@ -57,6 +57,7 @@ class OperationSpec:
     param_schema: Mapping[str, Any] | None = None
     #: "总要人批"（用户 2026-10-20）：自动模式也不代批，至少等一个人点批准。
     always_needs_approval: bool = False
+    tool_roles: tuple[str, ...] = ()
 
     def to_json(self) -> dict[str, Any]:
         return {

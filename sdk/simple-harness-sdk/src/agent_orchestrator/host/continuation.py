@@ -125,7 +125,7 @@ class Continuation:
             notices = [
                 n
                 for n in self.session.inbox()
-                if n.get("child_key")
+                if (n.get("child_key") or n.get("source") == "action_result")
                 and n["applied_turn_id"] is None
                 and self.session._root_session()._store.get("result_exclusions", n["event_id"])
                 is None
