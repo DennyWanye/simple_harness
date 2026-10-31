@@ -362,7 +362,7 @@ capabilities = parent.capabilities()
 子会话不能确认父消费的结果，已读也不替代业务消费。
 
 `capabilities()` 本地返回协议版本 2、配置版本 3、根/子角色、能力列表和策略限制，
-不调用模型或查询任务。返回键：`owner_generation / catalog_version / protocol_version / session_config_version / role / capabilities / unsupported / action_tools / policy`。`unsupported` 只有 `steer_running_mission`；Goal、自动汇总、授权回调、取消范围、恢复报告、归档见后文各节。
+不调用模型或查询任务。返回键：`owner_generation / catalog_version / protocol_version / session_config_version / role / capabilities / limits / unsupported`；`limits` 里是 `max_depth / delegations_in_flight_per_session / policy`（策略公开字段），动作工具是 `capabilities` 列表里的 `action_tools` 一项，没有单独顶层键。`unsupported` 只有 `steer_running_mission`；Goal、自动汇总、授权回调、取消范围、恢复报告、归档见后文各节。
 旧版本状态库返回 `incompatible_store_version`，同版本策略或工具目录冲突仍返回
 `session_config_frozen`；公开错误 `SessionError.public()` 含 `code/retryable/safe_message`。
 本阶段不迁移旧数据，请使用新数据根。
@@ -1031,7 +1031,7 @@ session = await Session.open(root, principal, None,            # model=None 时�
 | `tasks()` / `task(id)` | `delegation_id / mission_id / turn_id / cancel_requested / goal_ref / child_key / status / snapshot`；终态 `COMPLETED / FAILED / CANCELLED / REJECTED` |
 | `inbox()` | `event_id / mission_id / delegation_id / status / goal_ref / state_version / source（task_result / child_result / action_result）/ instruction（恒 False）/ acked / applied_turn_id / artifacts[{id, content_hash, logical_path}] / artifacts_read_with（恒 "task_artifact_read"）`；子结果另带 `child_key / child_session_id`，动作结果另带 `operation_key / result`。`artifacts` 是任务快照里的全部产物，含内部核对输出（`logical_path` 以 `assurance-check-output:` 开头），按 `logical_path` 区分 |
 | `queued_inputs()` | `input_id / idempotency_key / kind / state（queued / running / done / failed / cancelled）/ turn_id` |
-| `continuations()` | `event_id / state（pending / queued / reserved / applied / hold / deny / cancelled / failed）/ reason` |
+| `continuations()` | `event_id / state（pending / queued / hold / deny / waiting / applied / cancelled）/ reason`；`waiting` 是额度用尽或回合失败后等下一拍重试，`reason` 写原因 |
 
 ## 授权回调、取消范围、Goal、恢复报告
 

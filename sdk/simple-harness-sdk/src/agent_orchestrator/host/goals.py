@@ -214,8 +214,11 @@ class Goals:
                     if row.get("terminal_status") not in TERMINAL:
                         reasons.add(f"active_delegation:{ref}")
                     continue
-                if row.get("terminal_status") in TERMINAL:
-                    # 终态任务没有在途工作、也不会再有待答请求，不必读快照。
+                if row.get("terminal_status") in TERMINAL and not row.get(
+                    "terminal_actions_unresolved"
+                ):
+                    # 终态任务没有在途工作、不会再有待答请求；记终态时核过快照里没有结果不明的
+                    # 动作，不必再读快照。记了不明动作的终态任务（少数）照常读，这里只读不写。
                     continue
                 snapshot = owner._host.snapshot(mid)["snapshot"]
                 if snapshot["mission"]["status"] not in TERMINAL:
@@ -233,9 +236,13 @@ class Goals:
                             or ref
                         )
                         reasons.add(f"pending_request:{request_id}")
-                for effect in snapshot.get("actions", []):
-                    if str(effect.get("state", "")).upper() in {"UNKNOWN", "HANDED_OFF"}:
-                        reasons.add(f"unknown_effect:{effect.get('action_key', ref)}")
+                unresolved = [
+                    effect
+                    for effect in snapshot.get("actions", [])
+                    if str(effect.get("state", "")).upper() in {"UNKNOWN", "HANDED_OFF"}
+                ]
+                for effect in unresolved:
+                    reasons.add(f"unknown_effect:{effect.get('action_key', ref)}")
             for row in owner._store.rows("effects"):
                 if goal_matches(row, goal_id) and row["state"] in {"claimed", "pending", "unknown"}:
                     reasons.add(f"unknown_effect:{row['operation_key']}")

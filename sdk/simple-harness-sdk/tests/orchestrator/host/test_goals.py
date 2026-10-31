@@ -210,6 +210,33 @@ def test_goal_unknown_and_pending_requests_in_task_store_block_finish(tmp_path):
         session.finish_goal("g", "succeeded", command_id="finish", expected_version=1, basis="看过")
 
 
+def test_a_terminal_task_with_an_unknown_action_still_blocks_goal_finish(tmp_path):
+    """取消时刚交接出去的连接器动作结果不明：任务虽到终态，Goal 不能判成功。
+
+    改坏检验：Goal 结构检查对记了终态的委派一律跳过快照 → 第一个 raises 变红。"""
+    host, session = make(tmp_path)
+    put(session)
+    task = asyncio.run(session._delegations.delegate("turn", "call", SPEC))
+    mid = task["mission_id"]
+    original = host.snapshot
+
+    def with_unknown_action(mission_id):
+        detail = original(mission_id)
+        detail["snapshot"]["actions"] = [{"action_key": "move-photo", "state": "HANDED_OFF"}]
+        return detail
+
+    host.snapshot = with_unknown_action
+    host.cancel(mid)
+    assert session._delegations.has_in_flight() is False
+    [row] = [r for r in session._store.rows("delegations") if r.get("mission_id") == mid]
+    assert row["terminal_status"] == "CANCELLED" and row["terminal_actions_unresolved"] is True
+    with pytest.raises(SessionError, match="active_work"):
+        session.finish_goal("g", "succeeded", command_id="finish", expected_version=1, basis="看过")
+    # 动作有了结果：放行
+    host.snapshot = original
+    session.finish_goal("g", "succeeded", command_id="finish-2", expected_version=1, basis="看过")
+
+
 def test_recovery_report_has_durable_facts_without_model_calls(tmp_path):
     from agent_orchestrator.host.recovery_report import build_recovery_report
 

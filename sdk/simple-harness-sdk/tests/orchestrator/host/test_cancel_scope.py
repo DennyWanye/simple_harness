@@ -590,8 +590,11 @@ def test_unconverged_barrier_does_not_reread_terminal_delegations_each_tick(tmp_
         parent._checkpoint = lambda point: None
         parent.cancel("session_tree", "main", command_id="stop")
         reads = []
-        original = parent._delegations.status
-        parent._delegations.status = lambda row: (reads.append(row["mission_id"]), original(row))[1]
+        original = parent._delegations._mission_facts
+        parent._delegations._mission_facts = lambda row: (
+            reads.append(row["mission_id"]),
+            original(row),
+        )[1]
         parent._pump_task = asyncio.create_task(parent._pump())
         try:
             await asyncio.sleep(1.05)

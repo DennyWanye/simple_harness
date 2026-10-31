@@ -426,8 +426,26 @@ class Delegations:
         return row["receipt"]
 
     def status(self, row: Mapping[str, Any]) -> str:
-        detail = self.host.snapshot(str(row["mission_id"]))
-        return str(detail["snapshot"]["mission"]["status"])
+        return self._mission_facts(row)[0]
+
+    def _mission_facts(self, row: Mapping[str, Any]) -> tuple[str, bool]:
+        """读一次任务快照：任务状态，以及快照里是否还有结果不明 / 已交接的动作。"""
+        snapshot = self.host.snapshot(str(row["mission_id"]))["snapshot"]
+        unresolved = any(
+            str(effect.get("state", "")).upper() in {"UNKNOWN", "HANDED_OFF"}
+            for effect in snapshot.get("actions", [])
+        )
+        return str(snapshot["mission"]["status"]), unresolved
+
+    def _record_terminal(self, row: dict[str, Any], status: str, unresolved: bool) -> None:
+        """任务到终态后记在委派行上，之后不必再读快照判断在途。
+
+        同时记下"快照里还有没有结果不明的动作"：终态任务不会再有在途工作和待答请求，但取消时
+        刚交接出去的连接器动作可能结果不明，Goal 结构检查还得看它。"""
+        with self.store.transaction():
+            row["terminal_status"] = status
+            row["terminal_actions_unresolved"] = unresolved
+            self.store.put("delegations", row["key"], row)
 
     def has_in_flight(self) -> bool:
         results = {notice["delegation_id"] for notice in self.store.rows("inbox")}
@@ -440,12 +458,10 @@ class Delegations:
                 continue
             if row["mission_id"] is None:
                 return True
-            status = self.status(row)
+            status, unresolved = self._mission_facts(row)
             if status not in TERMINAL:
                 return True
-            with self.store.transaction():
-                row["terminal_status"] = status
-                self.store.put("delegations", row["key"], row)
+            self._record_terminal(row, status, unresolved)
         return False
 
     def _creation_absent(self, row: Mapping[str, Any]) -> bool:
@@ -532,12 +548,10 @@ class Delegations:
         if row.get("terminal_status") in TERMINAL:
             status = row["terminal_status"]
         else:
-            status = self.status(row)
+            status, unresolved = self._mission_facts(row)
             if status in TERMINAL:
                 # 终态不会再变：记下来，屏障收不了口时每拍收敛不必再读任务快照。
-                with self.store.transaction():
-                    row["terminal_status"] = status
-                    self.store.put("delegations", row["key"], row)
+                self._record_terminal(row, status, unresolved)
         if row["cancel_requested"]:
             result = (
                 self.host.cancel(row["mission_id"])
