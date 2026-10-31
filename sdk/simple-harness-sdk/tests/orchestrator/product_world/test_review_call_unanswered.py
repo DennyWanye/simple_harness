@@ -8,12 +8,17 @@
 之后完全交给现有路径——第二次调用在新会话里重开；第二次也没回来，做法审阅出"没有结论"
 （原因如实写"调用没拿到回复"），根终审重切新包。
 
-**改坏检验**：主循环收集审阅意图时不再计时（改回当作规划轮）→ 第一条超时变红。
+2026-10-27 起单轮时限由回合自己执行：调用停在半路时，回合到点打断这次调用，按"回合失败（单轮
+时限）"自己收口，普通收集路径照样记分类"回合失败"与打断回执，之后的路径不变。主循环的计时只剩
+回合不在本进程（重启）和提供方阻塞两种形状兜底（第三条测着）。
+
+**改坏检验**：回合到点不再打断停在半路的调用 → 前两条的打断原因变成主循环兜底作废，断言变红。
 """
 
 from __future__ import annotations
 
 import asyncio
+import json
 from typing import Any
 
 import pytest
@@ -72,6 +77,19 @@ def _abandoned(store, mission_id: str) -> list[dict[str, Any]]:
     ]
 
 
+def _interrupted(store, mission_id: str) -> list[dict[str, Any]]:
+    """本任务每次被打断的审阅调用（打断回执），按调用序号排。"""
+    rows = store.connection.execute(
+        "SELECT receipt_json FROM commit_receipts WHERE commit_id LIKE ?",
+        ("assurance-review-interrupted:%",),
+    ).fetchall()
+    bodies = [json.loads(row[0]) for row in rows]
+    return sorted(
+        (body for body in bodies if body["mission_id"] == mission_id),
+        key=lambda body: body["invocation_ordinal"],
+    )
+
+
 async def _drive_until(world, predicate, *, timeout: float) -> None:
     async def loop() -> None:
         while not predicate():
@@ -96,18 +114,14 @@ def test_a_root_review_that_never_answers_is_reopened(tmp_path):
                     timeout=120,
                 )
                 assert str(store.get_mission(mission_id).status.value) == "COMPLETED"
-                [abandoned] = _abandoned(store, mission_id)
-                assert (
-                    abandoned["invocation_ordinal"] == 1
-                    and abandoned["abandoned"]["shape"] == "running"
-                )
+                # 回合到点自己打断了这次调用：打断原因是单轮时限，不是主循环兜底作废
+                [interrupted] = _interrupted(store, mission_id)
+                assert interrupted["invocation_ordinal"] == 1
+                assert interrupted["error_code"] == "react_wall_clock_exceeded"
+                assert _abandoned(store, mission_id) == []
                 assert provider.purpose_calls == 2  # the second call, in a fresh session, answered
-                intent = store.get_intent(abandoned["intent_id"])
+                intent = store.get_intent(interrupted["intent_id"])
                 assert intent.state == "FAILED"
-                assert (
-                    store.get_receipt("assurance-review-interrupted:" + abandoned["intent_id"])
-                    is not None
-                )
                 # 阶段 G 第 5 批：打断回执与它的事件同一事务，点名归本任务；整个任务重建一致
                 named = [
                     item["key"]["commit_id"]
@@ -115,7 +129,7 @@ def test_a_root_review_that_never_answers_is_reopened(tmp_path):
                     for item in event.payload["named"]
                     if item["table"] == "commit_receipts"
                 ]
-                assert named.count("assurance-review-interrupted:" + abandoned["intent_id"]) == 1
+                assert named.count("assurance-review-interrupted:" + interrupted["intent_id"]) == 1
                 assert verify_mission(store, mission_id)["status"] == CONSISTENT
                 assert verify_library(store)["status"] == CONSISTENT
         finally:
@@ -125,7 +139,8 @@ def test_a_root_review_that_never_answers_is_reopened(tmp_path):
 
 
 def test_a_review_that_never_answers_twice_is_recut_not_left_hanging(tmp_path):
-    """两次调用都没回来：现有路径接手（根终审重切新包、新包的调用回来了），任务完成。
+    """两次调用都没回来：两次都被回合自己的单轮时限打断，现有路径接手（根终审重切新包、新包的调用
+    回来了），任务完成。
 
     两次都收口之后才放行那两次被扣的调用（脚本模型的并发槽位被它们占着；真实调用会自己超时）：
     迟到的回复不被当成结论——新包的结论来自新包自己的调用。"""
@@ -139,7 +154,7 @@ def test_a_review_that_never_answers_twice_is_recut_not_left_hanging(tmp_path):
                 store = world.store
                 mission_id = world.create(_notes("root-held-twice"))["mission_id"]
                 await _drive_until(
-                    world, lambda: len(_abandoned(store, mission_id)) == 2, timeout=120
+                    world, lambda: len(_interrupted(store, mission_id)) == 2, timeout=120
                 )
                 provider.let_go.set()
                 await _drive_until(
@@ -148,10 +163,9 @@ def test_a_review_that_never_answers_twice_is_recut_not_left_hanging(tmp_path):
                     timeout=120,
                 )
                 assert str(store.get_mission(mission_id).status.value) == "COMPLETED"
-                assert [item["invocation_ordinal"] for item in _abandoned(store, mission_id)] == [
-                    1,
-                    2,
-                ]
+                interrupted = _interrupted(store, mission_id)
+                assert [item["invocation_ordinal"] for item in interrupted] == [1, 2]
+                assert {item["error_code"] for item in interrupted} == {"react_wall_clock_exceeded"}
                 assert provider.purpose_calls == 3
         finally:
             provider.let_go.set()

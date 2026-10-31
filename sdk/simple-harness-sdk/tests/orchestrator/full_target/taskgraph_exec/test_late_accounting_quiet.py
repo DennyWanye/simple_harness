@@ -87,6 +87,8 @@ def test_ended_mission_holds_are_rechecked_every_five_minutes(monkeypatch):
     monkeypatch.setattr(taskgraph_action_settlement, "settle_resolved_actions", lambda orch: False)
     # 到期按上限结清另有产品同形用例（p35 test_provider_accounting_loop），这里只看重核节奏
     monkeypatch.setattr(accounting_recovery, "_settle_expired_ended_holds", lambda orch: False)
+    # 已取消尝试的未知用量当场按上限计，另有产品同形用例（test_h4_retained_completion）
+    monkeypatch.setattr(accounting_recovery, "_settle_cancelled_attempt_holds", lambda orch: False)
 
     def run(*, write: bool, after: float = 0.0):
         clock[0] += after
