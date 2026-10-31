@@ -1031,7 +1031,7 @@ session = await Session.open(root, principal, None,            # model=None 时�
 | `tasks()` / `task(id)` | `delegation_id / mission_id / turn_id / cancel_requested / goal_ref / child_key / status / snapshot`；终态 `COMPLETED / FAILED / CANCELLED / REJECTED` |
 | `inbox()` | `event_id / mission_id / delegation_id / status / goal_ref / state_version / source（task_result / child_result / action_result）/ instruction（恒 False）/ acked / applied_turn_id / artifacts[{id, content_hash, logical_path}] / artifacts_read_with（恒 "task_artifact_read"）`；子结果另带 `child_key / child_session_id`，动作结果另带 `operation_key / result`。`artifacts` 是任务快照里的全部产物，含内部核对输出（`logical_path` 以 `assurance-check-output:` 开头），按 `logical_path` 区分 |
 | `queued_inputs()` | `input_id / idempotency_key / kind / state（queued / running / done / failed / cancelled）/ turn_id` |
-| `continuations()` | `event_id / state（pending / queued / hold / deny / waiting / applied / cancelled）/ reason`；`waiting` 是额度用尽或回合失败后等下一拍重试，`reason` 写原因 |
+| `continuations()` | `event_id / state（pending / queued / hold / deny / waiting / applied / cancelled）/ reason`；`waiting` 是额度用尽或自动回合失败后不再自动重试、结果保留：用户下一句会把它附进回合用掉，宿主也可 `exclude_result` 排除；`reason` 写原因 |
 
 ## 授权回调、取消范围、Goal、恢复报告
 
