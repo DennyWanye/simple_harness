@@ -237,8 +237,42 @@ def import_late_accounting(orch) -> bool:
         orch._late_accounting_full_quiet = unchanged
     if full:
         progressed = _settle_expired_ended_holds(orch) or progressed
+    progressed = _settle_cancelled_attempt_holds(orch) or progressed
 
     return taskgraph_action_settlement.settle_resolved_actions(orch) or progressed
+
+
+def _settle_cancelled_attempt_holds(orch) -> bool:
+    """被系统取消的尝试，回合已结束、用量未知的那笔预留，当场按上限计。
+
+    2026-10-27 起取消会打断停在半路的模型调用：被打断的调用没有回执，用量只能记"未知"，
+    这笔预留永远等不来真实用量。尝试已取消、不会再跑，等下去只会让执行图收敛（换掉在跑的
+    步骤时要等它安静）白停一整轮以上。多算不少算、不冻结：按预留与已知用量的较大者结清，
+    事件写明原因。仍在跑的回合（意图未结束）不碰；用量都知道的留给上面的导入路径。
+    每轮都核：只读"已取消尝试 + 未结清预留"这一小撮行。
+    """
+
+    store = orch.store
+    rows = store.connection.execute(
+        "SELECT i.subject_id, i.mission_id FROM dispatch_intents i"
+        " JOIN budget_reservations r ON r.subject_id=i.subject_id"
+        " JOIN attempts a ON a.attempt_id=i.subject_id"
+        " WHERE r.state='RESERVED' AND i.kind='attempt' AND i.state IN ('SETTLED','FAILED')"
+        " AND a.status='CANCELLED'"
+    ).fetchall()
+    progressed = False
+    for subject_id, mission_id in rows:
+        progressed = (
+            _count_at_upper_bound(
+                orch,
+                subject_id,
+                mission_id,
+                "attempt_cancelled_usage_unknown",
+                needs_unknown=True,
+            )
+            or progressed
+        )
+    return progressed
 
 
 def _settle_expired_ended_holds(orch) -> bool:
@@ -285,27 +319,42 @@ def _settle_expired_ended_holds(orch) -> bool:
     ).fetchall()
     progressed = False
     for subject_id, mission_id, reason in rows:
-        with store.transaction():
-            reservation = orch.commit.ledger.reservation(subject_id)
-            if reservation is None or reservation["state"] == "SETTLED":
-                continue
-            if reason == "turn_ended_usage_unknown" and not orch.commit.ledger.has_unknown_usage(
-                subject_id
-            ):
-                continue
-            settled = orch.commit.ledger.settle_at_upper_bound(subject_id=subject_id)
-            orch.commit._emit(
-                UPPER_BOUND_EVENT,
+        progressed = (
+            _count_at_upper_bound(
+                orch,
+                subject_id,
                 mission_id,
-                key="upper-bound:" + subject_id,
-                payload={
-                    "subject_id": subject_id,
-                    "reason": reason,
-                    "counted_tokens": settled["settled_tokens"],
-                },
+                reason,
+                needs_unknown=reason == "turn_ended_usage_unknown",
             )
-        progressed = True
+            or progressed
+        )
     return progressed
+
+
+def _count_at_upper_bound(
+    orch, subject_id: str, mission_id: str, reason: str, *, needs_unknown: bool
+) -> bool:
+    """一笔未结清的预留按上限结清并记事件（写明原因）；已结清、或要求用量未知而没有未知的不动。"""
+
+    with orch.store.transaction():
+        reservation = orch.commit.ledger.reservation(subject_id)
+        if reservation is None or reservation["state"] == "SETTLED":
+            return False
+        if needs_unknown and not orch.commit.ledger.has_unknown_usage(subject_id):
+            return False
+        settled = orch.commit.ledger.settle_at_upper_bound(subject_id=subject_id)
+        orch.commit._emit(
+            UPPER_BOUND_EVENT,
+            mission_id,
+            key="upper-bound:" + subject_id,
+            payload={
+                "subject_id": subject_id,
+                "reason": reason,
+                "counted_tokens": settled["settled_tokens"],
+            },
+        )
+    return True
 
 
 def _import_hold(orch, intent_id: str) -> bool:

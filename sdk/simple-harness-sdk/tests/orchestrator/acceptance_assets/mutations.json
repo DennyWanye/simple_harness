@@ -72,8 +72,8 @@
       "id": "F1-01",
       "source": "F1 新用例 1",
       "file": "src/agent_orchestrator/orchestrator/accounting_recovery.py",
-      "original": "            orch.commit._emit(\n",
-      "replacement": "            (lambda *a, **k: None)(\n",
+      "original": "        orch.commit._emit(\n",
+      "replacement": "        (lambda *a, **k: None)(\n",
       "tests": [
         "tests/orchestrator/product_world/test_round_faults.py::test_an_ended_missions_collection_that_keeps_failing_is_closed_and_settled"
       ],
