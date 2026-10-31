@@ -1,7 +1,7 @@
 """Desktop Session integration prerequisites and retired protocol boundaries."""
 
 import pytest
-from agent_orchestrator.host import HostUnavailable, OrchestrationHost, Session
+from agent_orchestrator.host import OrchestrationHost, Session, SessionError
 
 from deskpet.orchestration.handlers import MESSAGE_TYPES
 from deskpet.orchestration.projection import CONTRACT_VERBS
@@ -18,8 +18,10 @@ async def test_public_session_open_rejects_the_task_page_host_directory_lock(tmp
     host = OrchestrationHost(tmp_path, principal=principal)
     assert host.lock.acquire()
     try:
-        with pytest.raises(HostUnavailable, match="另一个实例正在使用编排目录"):
+        # opt.224 起目录被另一个实例占用在公开入口报 owner_conflict（带当前代次），不再是宿主不可用
+        with pytest.raises(SessionError) as caught:
             await Session.open(tmp_path, principal=principal, session_id="desktop-main")
+        assert caught.value.code == "owner_conflict"
         assert host.lock.held
     finally:
         await host.close()
