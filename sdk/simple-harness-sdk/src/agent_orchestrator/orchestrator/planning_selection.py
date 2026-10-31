@@ -23,6 +23,7 @@ from ..storage import planning_decision_store
 from ..storage.planning_admission_store import PlanningAdmissionStore
 from .hierarchical_dispatch import append_hierarchical_event
 from .method_plan_reviews import adoption_refusal
+from .planning_repair_requests import request_concerns, subject_targets
 
 SYSTEM_RETRY_ORIGIN = "system_infrastructure_retry"
 
@@ -145,6 +146,18 @@ def _runtime_lost_retry(package: Mapping[str, Any]) -> dict[str, Any] | None:
         (s for s in package.get("planning_subjects", ()) if s.get("task_id") == task_id), None
     )
     if subject is None:
+        return None
+    # 同一步还有要规划器判断的请求（例如改了要求）：原样重做会把它一并算作已处理，规划器就再也
+    # 看不到它。系统不代答，整包交给规划器。
+    targets = subject_targets(subject)
+    if any(
+        entry is not item
+        and not _not_models_fault(
+            (entry.get("request") or {}), ((entry.get("request") or {}).get("context") or {})
+        )
+        and request_concerns(entry, targets)
+        for entry in package.get("repair_requests") or ()
+    ):
         return None
     occurrence = subject["occurrence_id"]
     instance_ids = {

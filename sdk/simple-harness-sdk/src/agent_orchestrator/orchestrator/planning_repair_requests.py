@@ -1069,6 +1069,33 @@ def repair_goal_occurrences(store: Any, network: Any) -> tuple[str, ...]:
     )
 
 
+def subject_targets(subject: Mapping[str, Any]) -> set[str]:
+    """规划对象指向的那一步（出现、任务、义务三种编号）。"""
+    return {
+        str(subject[k]) for k in ("occurrence_id", "task_id", "obligation_id") if subject.get(k)
+    }
+
+
+def request_concerns(request: Mapping[str, Any], targets: set[str]) -> bool:
+    """包里的一条修复请求是否关于 ``targets`` 指向的那一步。
+
+    对这一步提交的计划改动会把它算作已处理。"""
+    impact = request.get("impact", {})
+    scope = {str(item) for item in request.get("trigger_scope", ())}
+    if scope:
+        # Only a decision on the step the request is about (or a goal above it), or on
+        # work the request itself called for, addresses it.
+        affected = scope | {str(item) for item in impact.get("new_work", ())}
+    else:
+        # A Mission-level trigger (no step named): any affected subject answers it.
+        affected = {
+            str(item)
+            for group in ("revalidate", "supersede", "new_work")
+            for item in impact.get(group, ())
+        }
+    return bool(targets & affected)
+
+
 def address_requests(
     store: Any,
     mission_id: str,
@@ -1096,29 +1123,14 @@ def address_requests(
     )
     if subject is None:
         return
-    targets = {
-        str(subject[k]) for k in ("occurrence_id", "task_id", "obligation_id") if subject.get(k)
-    }
+    targets = subject_targets(subject)
     addressed = []
     for request in package.get("repair_requests", ()):
         if kept and not ((request.get("request") or {}).get("context") or {}).get(
             NO_CHANGE_SETTLES
         ):
             continue
-        impact = request.get("impact", {})
-        scope = {str(item) for item in request.get("trigger_scope", ())}
-        if scope:
-            # Only a decision on the step the request is about (or a goal above it), or on
-            # work the request itself called for, addresses it.
-            affected = scope | {str(item) for item in impact.get("new_work", ())}
-        else:
-            # A Mission-level trigger (no step named): any affected subject answers it.
-            affected = {
-                str(item)
-                for group in ("revalidate", "supersede", "new_work")
-                for item in impact.get(group, ())
-            }
-        if targets & affected:
+        if request_concerns(request, targets):
             addressed.append(request["request_id"])
     if addressed:
         append_hierarchical_event(
