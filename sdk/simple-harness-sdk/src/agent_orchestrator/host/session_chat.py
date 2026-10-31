@@ -220,7 +220,8 @@ class SessionChatService(ChatService):
             baseline = self.session._store.get("invocation_baselines", engine_key)
             if baseline is None:
                 continue
-            seen = set(baseline)
+            cutoff = int(baseline)
+            seen: set[str] = set()
             lower = turn.provider_turn_ordinal_from or 0
             upper = turn.provider_turn_ordinal_to
             if upper is None:
@@ -231,14 +232,12 @@ class SessionChatService(ChatService):
                 ]
                 upper = min(later) if later else None
             prefix = f"{binding.run_id}:provider-turn:"
-            # A baseline alone also includes later turns on the same Agent.
-            for invocation_id, record in self._invocations(pool, binding.run_id).items():
-                if record is None:
-                    continue
-                request_id = record.request_id.value
+            # 回合开始前的调用（rowid 不超过基线水位）不算这回合；同一个 Agent 上更晚的回合也不算。
+            for rowid, invocation_id, request_id, _ in self._invocation_rows(pool, binding.run_id):
                 ordinal = request_id.removeprefix(prefix)
                 if (
-                    not request_id.startswith(prefix)
+                    rowid <= cutoff
+                    or not request_id.startswith(prefix)
                     or not ordinal.isdecimal()
                     or int(ordinal) <= lower
                     or (upper is not None and int(ordinal) > upper)
@@ -396,13 +395,17 @@ class SessionChatService(ChatService):
         return self.session._store.rows("chat_receipts")
 
     def _seen_before(self, pool: Any, agent: Any, input_id: str) -> set[str]:
+        # 基线是回合开始时这个 Agent 调用记录的最大 rowid：之前的调用不算这回合的用量。
+        # 存一个数而不是整份编号清单，历史再长也不涨。
         key = f"{agent.agent_id}:{input_id}"
         with self.session._store.transaction():
-            seen = self.session._store.get("invocation_baselines", key)
-            if seen is None:
-                seen = list(self._invocations(pool, agent.run_id))
-                self.session._store.put("invocation_baselines", key, seen)
-        return set(seen)
+            cutoff = self.session._store.get("invocation_baselines", key)
+            if cutoff is None:
+                cutoff = self._last_invocation_rowid(pool, agent.run_id)
+                self.session._store.put("invocation_baselines", key, cutoff)
+        return {
+            row[1] for row in self._invocation_rows(pool, agent.run_id) if row[0] <= int(cutoff)
+        }
 
     def _budget_subject(self, agent: Any, input_id: str) -> str:
         active = self.session._current_input

@@ -39,9 +39,10 @@ from simple_harness.execution.uow import (
 from simple_harness.providers import ProviderTarget, ProviderToolSpec
 from simple_harness.workflow.lease import WorkflowLease
 
+from ...context_use_requirements import require
+from ...provider_accounting import effective_accounting, needs_accounting
 from .. import context_use
 from ..context_use import prepare, read_grant, require_handoff, verify_terminal, view
-from ...context_use_requirements import require
 from ..provider_accounting import ProviderAccountingMixin
 from .core import ExecutionUnitOfWorkCore
 from .support import _fault, _reconciliation_resolution, _required, _thaw_json, _time
@@ -850,27 +851,45 @@ class ProviderInvocationMixin(ExecutionUnitOfWorkCore, ProviderAccountingMixin):
         )
 
     def _provider_budget(self, connection: sqlite3.Connection, run_id: RunId) -> BudgetSnapshot:
+        """一个 Run 的预算快照。
+
+        每次模型调用前后都要算，而长期会话的 Agent 调用记录只增不减；逐行解码全部记录会让
+        每句话的开销随历史线性涨。所以按行缓存费用：行一改 version 必加一；唯一不经 version
+        的改动是晚到的记账回执，它只落在"还需要记账、回执还没来"的行上，这样的行不进缓存、
+        下次照常重算。缓存只在本进程本对象里，读到的 version 不同就作废。
+        """
         committed = 0
         reserved = 0
         unknown = False
         rows = connection.execute(
-            "SELECT invocation_id FROM provider_invocations WHERE run_id = ?",
+            "SELECT invocation_id, version FROM provider_invocations WHERE run_id = ?",
             (run_id.value,),
         ).fetchall()
+        cache = self._budget_cache.setdefault(run_id.value, {})
         for row in rows:
-            record = self.read_effective_provider_invocation(row["invocation_id"])
-            assert record is not None
-            charge = record.budget_charge
-            state = record.state
-            if charge.amount_micros is None:
-                unknown = True
-            elif state in {
-                ProviderInvocationState.CLAIMED,
-                ProviderInvocationState.HANDED_OFF,
-            }:
-                reserved += charge.amount_micros
+            invocation_id = str(row["invocation_id"])
+            version = int(row["version"])
+            cached = cache.get(invocation_id)
+            if cached is not None and cached[0] == version:
+                _, amount, in_flight = cached
             else:
-                committed += charge.amount_micros
+                original = self.read_provider_invocation(invocation_id)
+                assert original is not None
+                receipt = self.read_provider_accounting_receipt(invocation_id)
+                record = original if receipt is None else effective_accounting(original, receipt)
+                amount = record.budget_charge.amount_micros
+                in_flight = record.state in {
+                    ProviderInvocationState.CLAIMED,
+                    ProviderInvocationState.HANDED_OFF,
+                }
+                if receipt is not None or not needs_accounting(record):
+                    cache[invocation_id] = (version, amount, in_flight)
+            if amount is None:
+                unknown = True
+            elif in_flight:
+                reserved += amount
+            else:
+                committed += amount
         return BudgetSnapshot(committed, reserved, unknown)
 
     def _provider_invocation_by_logical_call(

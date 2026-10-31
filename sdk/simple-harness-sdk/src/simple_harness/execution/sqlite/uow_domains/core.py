@@ -407,13 +407,21 @@ def _continuation_record(row: sqlite3.Row) -> ContinuationRecord:
 class ExecutionUnitOfWorkCore:
     """Connection state and run/start/continuation primitives shared by all domains."""
 
-    __slots__ = ("database", "workflow_fault", "_context_use_scope", "_context_use_configured")
+    __slots__ = (
+        "database",
+        "workflow_fault",
+        "_context_use_scope",
+        "_context_use_configured",
+        "_budget_cache",
+    )
 
     def __init__(self, database: Database, *, workflow_fault: FaultHook | None = None) -> None:
         self.database = database
         self.workflow_fault = workflow_fault
         self._context_use_scope = None
         self._context_use_configured = False
+        # 每个 Run 的预算快照按行缓存：invocation_id -> (version, 费用微元或 None, 是否在途)
+        self._budget_cache: dict[str, dict[str, tuple[int, int | None, bool]]] = {}
 
     def read_child_signal(self, signal_id: str) -> ChildSignalRecord | None:
         row = self.database.connection.execute(

@@ -235,7 +235,7 @@ class ChatService:
         return f"{self.reservation_prefix}{agent.agent_id}:{input_id}"
 
     def _seen_before(self, pool: Any, agent: Any, input_id: str) -> set[str]:
-        return set(self._invocations(pool, agent.run_id))
+        return {row[1] for row in self._invocation_rows(pool, agent.run_id)}
 
     async def close(self) -> None:
         assembled, self._assembled = self._assembled, None
@@ -596,17 +596,30 @@ class ChatService:
     # ---- 用量与预算 ----------------------------------------------------------------------
 
     @staticmethod
-    def _invocations(pool: Any, run_id: str) -> dict[str, Any]:
+    def _invocation_rows(pool: Any, run_id: str) -> list[tuple[int, str, str, int]]:
+        """这个 Agent 全部模型调用的 (rowid, 调用编号, 请求编号, 交付次数)，不解码记录。
+
+        解码一条记录要校验整个 JSON；长期会话的调用记录只增不减，逐条解码会让每句话的开销随
+        历史线性涨。这里只取判定"哪些是本回合新增"要用的几列，解码留给真正要算用量的那几条。"""
         uow = pool.runtime.uow
         with uow.database.transaction(read_only=True) as connection:
             rows = connection.execute(
-                "SELECT invocation_id FROM provider_invocations WHERE run_id=?"
-                " ORDER BY claimed_at, invocation_id",
+                "SELECT rowid, invocation_id, request_id, handoff_attempt FROM provider_invocations"
+                " WHERE run_id=? ORDER BY claimed_at, invocation_id",
                 (run_id,),
             ).fetchall()
-            return {
-                str(row[0]): uow.read_effective_provider_invocation(str(row[0])) for row in rows
-            }
+        return [(int(row[0]), str(row[1]), str(row[2]), int(row[3])) for row in rows]
+
+    @staticmethod
+    def _last_invocation_rowid(pool: Any, run_id: str) -> int:
+        """这个 Agent 目前最后一条调用的 rowid；没有调用过就是 0。"""
+        uow = pool.runtime.uow
+        with uow.database.transaction(read_only=True) as connection:
+            row = connection.execute(
+                "SELECT COALESCE(MAX(rowid), 0) FROM provider_invocations WHERE run_id=?",
+                (run_id,),
+            ).fetchone()
+        return int(row[0])
 
     def _usage(
         self, pool: Any, run_id: str, seen_before: set[str]
@@ -614,8 +627,12 @@ class ChatService:
         facts: list[UsageFact] = []
         unknown = False
         calls = 0
-        for invocation_id, record in self._invocations(pool, run_id).items():
-            if invocation_id in seen_before or record is None or record.handoff_attempt == 0:
+        uow = pool.runtime.uow
+        for _, invocation_id, _, handoff_attempt in self._invocation_rows(pool, run_id):
+            if invocation_id in seen_before or handoff_attempt == 0:
+                continue
+            record = uow.read_effective_provider_invocation(invocation_id)
+            if record is None:
                 continue
             calls += 1
             usage = _usage_of(record)

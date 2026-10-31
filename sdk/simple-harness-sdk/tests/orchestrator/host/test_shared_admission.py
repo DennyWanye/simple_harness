@@ -369,9 +369,9 @@ def test_same_invocation_ids_in_distinct_databases_release_both_slots(tmp_path):
             session_run = next(iter(session._chat._runs))
             chat_run = next(iter(host.chat_service._runs))
             assert session_run == chat_run
-            assert set(session._chat._invocations(session_pool, session_run)) == set(
-                host.chat_service._invocations(chat_pool, chat_run)
-            )
+            assert {
+                row[1] for row in session._chat._invocation_rows(session_pool, session_run)
+            } == {row[1] for row in host.chat_service._invocation_rows(chat_pool, chat_run)}
             provider.release.set()
             replies = await asyncio.wait_for(asyncio.gather(*jobs), 10)
             assert all(reply["state"] == "committed" for reply in replies)
