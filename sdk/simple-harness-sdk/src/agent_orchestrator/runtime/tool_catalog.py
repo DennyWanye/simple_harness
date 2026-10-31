@@ -203,7 +203,11 @@ def catalog_for(
             name,
             str(tool.schema.get("description", "")),
             tool.schema,
-            "builtin" if name in (commands or {}) or name in SDK_TOOLS else "application",
+            "action"
+            if not tool.read_only
+            else "builtin"
+            if name in (commands or {}) or name in SDK_TOOLS
+            else "application",
             tool.roles,
             name in always_exposed,
         )

@@ -184,6 +184,11 @@ stop = host.output_stream.subscribe(lambda event: ...)   # 返回退订函数
 新接入方用 `Session`：同一个对象接收文字、委派后台任务、读取结果和回答人工请求。
 `OrchestrationHost` 的既有方法保留，供高级接入和诊断使用；语音绑定见 §2e。
 
+主会话可以直接做小而简单的事：先用 `tool_search` 找工具、`tool_schema` 加载说明。
+连接器声明的动作工具照常过宿主授权；需要人批时返回 `pending_approval`，对话如实告知。
+需要时间、多步骤、要审阅的工作仍用 `delegate_task`。自动汇总只读取结果资料，不能调用动作工具；
+资料里的“已经批准”“删除”等文字不产生授权。
+
 **已有运行中的 Host（桌面接入）从 opt.218 候选使用 `host.open_session()`。**
 它直接复用该 Host 的数据根、任务执行库、预算账、驱动与 `output_stream`，不会再构造或启动
 另一个 Host，不重新获取根目录实例锁。`Session.open(root, ...)` 继续用于独立程序；
@@ -785,6 +790,43 @@ host.create_mission({
 | 非权威 | 按回执结案 | 等人裁定；这类连接器只能做 L0/L1 |
 
 可运行的例子：`examples/orchestration-host/tools_effect.py`（自动代批执行一次；"总要人批"等人点批准）。
+
+### 暴露成主会话工具
+
+在连接器的操作规格上声明 `tool_roles=("main", "child")`：
+
+```python
+operations = {
+    "move": OperationSpec(
+        "move", "L2", ("to",), description="将 target 照片移动到 to",
+        tool_roles=("main", "child"),
+    ),
+}
+```
+
+`Session.open(..., connectors=[Photos()], settings=HostSettings(max_action_level="L2"))`
+或已有 Host 的 `open_session()` 会把该操作登记为 `source="action"` 的 `photos__move`。
+工具名用双下划线连接，因为领域工具名不允许点号。动作工具按需加载；未声明角色、超过宿主
+风险上限的操作不进入目录。子会话只得到同时声明 `main` 和 `child` 的操作；任务池不直接获得动作工具。
+
+参数为 `{"target": "照片路径", "to": "相册路径"}`：`target` 是必填字符串，其他必填参数来自
+`required_params`，默认是字符串；已有 `param_schema` 可覆盖参数类型并增加可选参数。
+调用的稳定身份来自会话、输入回合与动作调用槽位，执行者换代也不变。同键异参数返回
+`idempotency_conflict`；执行失败且没有匹配回执时为 `effect_unknown`，只做 `lookup` 对账，不自动重做。
+
+每次调用复用 `EffectLedger.execute()` 与 `SessionAuthorization`。自动模式可代签，
+人工模式以及 `always_needs_approval=True` 都发 `request_kind="action"` 的 `needs_response`。
+宿主授权的风险限制、有效期不会因人工确认而放宽。人通过 `session.respond(request_id,
+"approve" 或 "deny", version)` 回答后，动作进入原会话的 `action_followup` 串行队列；批准后执行，
+拒绝后不执行，两者都将通知写到收件箱（`source="action_result"`，`instruction=False`）。
+通知可附在下一句，或沿已有的只读自动汇总回流；排队期间取消与交接前的屏障仍生效。
+
+每回合动作调用上限由 `HostSettings.max_actions_per_turn` 配置（默认 4，正整数），并受
+`SessionPolicy.max_tool_calls` 限制。无效参数不会占用动作槽位；只声明 `child` 的动作不登记进目录。
+批准与权威待执行记录在根库同事务落账；子会话队列是提交后的幂等投影，重开会话可补齐，
+不会把两份 WAL 数据库的独立提交当作跨库原子提交。历史授权单只在首次恢复时扫描。
+任务中的 `action:` 要求与步骤提议继续走原申请单、审阅、批准和回执链；匹配的任务回执在会话
+轮询时记入同一份 `effects` 账本，沿用任务的 `idempotency_key`，不重新执行。
 
 ## 4c. 步骤中途提议动作（执行时才知道要做什么）
 

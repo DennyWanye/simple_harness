@@ -94,6 +94,42 @@ class Crash(BaseException):
     pass
 
 
+class FakeMissionStore:
+    """把替身里直接改动的状态同步成单调事件尾，提供真实宿主已有的执行库约定。"""
+
+    def __init__(self, host):
+        self.host = host
+        self.connection = self
+        self.signatures = {}
+
+    def read_view(self):
+        return nullcontext()
+
+    def transaction(self):
+        return nullcontext()
+
+    def list_actions(self, mission_id):
+        return []
+
+    def execute(self, sql, params):
+        assert "MAX(seq)" in sql
+        mid = params[0]
+        mission = next(r for r in self.host.made.values() if r["mission_id"] == mid)
+        signature = json.dumps([mission["status"], self.host.requests], sort_keys=True)
+        events = self.host.event_rows[mid]
+        if self.signatures.get(mid) != signature:
+            self.signatures[mid] = signature
+            events.append(
+                {
+                    "seq": max((e["seq"] for e in events), default=0) + 1,
+                    "type": "FakeMissionStateChanged",
+                    "payload": {},
+                }
+            )
+        tail = max((e["seq"] for e in events), default=0)
+        return SimpleNamespace(fetchone=lambda: (tail,))
+
+
 class FakeHost:
     def __init__(self, root):
         self.root = root
@@ -105,6 +141,7 @@ class FakeHost:
         self.cancelled = []
         self.requests = []
         self.decisions = []
+        self.store = FakeMissionStore(self)
         self.orchestrator = SimpleNamespace(store=SimpleNamespace(find_mission=self.find_mission))
 
     def find_mission(self, tenant_id, key):
@@ -161,7 +198,7 @@ class FakeHost:
         next(r for r in self.made.values() if r["mission_id"] == mid)["status"] = "COMPLETED"
         self.event_rows[mid].append(
             {
-                "seq": 1,
+                "seq": max((e["seq"] for e in self.event_rows[mid]), default=0) + 1,
                 "id": "final-1",
                 "type": "MissionCompleted",
                 "payload": {"private": "must not escape"},
@@ -645,7 +682,9 @@ def test_polling_unchanged_mission_does_not_reproject_or_write(tmp_path):
     connection = sqlite3.connect(":memory:")
     connection.execute("CREATE TABLE events(mission_id TEXT, seq INTEGER)")
     connection.execute("INSERT INTO events VALUES(?,1)", (mid,))
-    host.store = SimpleNamespace(connection=connection, read_view=nullcontext)
+    host.store = SimpleNamespace(
+        connection=connection, read_view=nullcontext, list_actions=lambda mid: []
+    )
     reads = []
     original = host.events
 
@@ -783,6 +822,9 @@ def test_inbox_cursor_covers_hidden_internal_events_and_stops_polling(tmp_path):
             from contextlib import nullcontext
 
             return nullcontext()
+
+        def list_actions(self, mission_id):
+            return []
 
     host, session = make_session(tmp_path)
     host.store = MissionStore(host)

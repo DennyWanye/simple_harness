@@ -47,6 +47,7 @@ class SessionInbox:
                     )
                 if tail <= cursor:
                     continue
+            self.session._actions.observe_task_actions(mid, row)
             while True:
                 page = self.host.events(mid, after_seq=cursor, limit=100)
                 events = page.get("events", [])
@@ -120,6 +121,30 @@ class SessionInbox:
             if str(mission["status"]) not in TERMINAL:
                 self._requests(mid, snapshot)
         self._mirror_children()
+
+    def action_result(self, intent, result) -> None:
+        """与队列完成同事务落通知，恢复重放不会多一条结果。"""
+        event_id = "action-result-" + digest(intent["operation_key"])
+        if self.store.get("inbox", event_id) is not None:
+            return
+        notice = {
+            "event_id": event_id,
+            "source": "action_result",
+            "instruction": False,
+            "mission_id": None,
+            "delegation_id": None,
+            "child_key": "",
+            "child_session_id": self.session.session_id,
+            "operation_key": intent["operation_key"],
+            "goal_ref": intent["goal_ref"],
+            "status": result["status"],
+            "result": result,
+            "acked": False,
+            "applied_turn_id": None,
+            "artifacts": [],
+        }
+        self.store.put("inbox", event_id, notice)
+        self.store.event("result_ready", key=f"result:{event_id}", payload=notice)
 
     def _mirror_children(self) -> None:
         """子会话的终态通知镜像进父 inbox：同一个 event_id，带 child_key。
