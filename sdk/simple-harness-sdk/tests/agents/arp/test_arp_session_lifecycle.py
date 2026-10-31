@@ -11,10 +11,12 @@ import asyncio
 import json
 import shutil
 import sqlite3
+from dataclasses import replace
 
 import pytest
 from arp_fixture import build, trusted_caller
-from provider_fixture import ScriptedProvider
+from provider_fixture import MODEL, ScriptedProvider
+from simple_harness import Message, MessageRole
 from simple_harness.agents import AgentConfig
 from simple_harness.agents.arp import store
 from simple_harness.agents.arp.creation import MARKER_FILE
@@ -23,6 +25,12 @@ from simple_harness.agents.arp.indexing import VIEW_POLICY_HASH
 from simple_harness.agents.arp.partition import NO_EMBEDDING_FINGERPRINT
 from simple_harness.agents.arp.pins import Pin
 from simple_harness.agents.contracts import AgentTurnState
+from simple_harness.providers import (
+    ProviderReconciliationObservation,
+    ProviderReconciliationState,
+    ProviderResponse,
+)
+from simple_harness.runtime.consumer_adapter import ConsumerRuntimePolicies
 
 CONFIG = AgentConfig(name="w", instructions="你是助手。", model_profile_ref="p")
 
@@ -270,9 +278,34 @@ def test_destroy_waits_for_leased_index_work_and_reports_the_blocker(tmp_path) -
 
 
 def test_destroy_with_an_open_turn_cancels_it_and_waits_for_settlement(tmp_path) -> None:
+    # 取消会打断还在等回复的模型调用：回合在排空时限内以"已取消"结束；
+    # 那次调用已经发出、结果不明，按原账本记为 UNKNOWN 并扣住清除，宿主对账后才继续。
+    class HostReconciliation:
+        settled = False
+
+        async def observe(self, invocation):  # type: ignore[no-untyped-def]
+            evidence = f"host:{invocation.invocation_id}"
+            if not self.settled:
+                return ProviderReconciliationObservation(
+                    ProviderReconciliationState.STILL_UNKNOWN, evidence
+                )
+            response = ProviderResponse(
+                invocation.request_id,
+                Message(MessageRole.ASSISTANT, "迟到的回答。"),
+                model=MODEL,
+                finish_reason="stop",
+            )
+            return ProviderReconciliationObservation(
+                ProviderReconciliationState.COMPLETED, evidence, response
+            )
+
     async def case() -> None:
         provider = ScriptedProvider(["记住了。", "迟到的回答。"], blocked=True)
-        runtime = build(tmp_path, provider)
+        reconciliation = HostReconciliation()
+        policies = replace(
+            ConsumerRuntimePolicies.local_default(), provider_reconciliation=reconciliation
+        )
+        runtime = build(tmp_path, provider, policies=policies)
         async with runtime:
             agent = await runtime.create(CONFIG, creation_key="k1", caller=trusted_caller())
             provider.allow.set()
@@ -289,16 +322,26 @@ def test_destroy_with_an_open_turn_cancels_it_and_waits_for_settlement(tmp_path)
                 command_id="destroy-1",
             )
             assert after.state == "DRAINING"
+            result = await agent.wait_turn(receipt.turn_id, timeout=1)
+            assert result.state is AgentTurnState.FAILED
+            assert result.error["error_code"] == "agent_turn_cancelled"
             disposal = lifecycle.capture_disposal(after)
-            turns = [c for c in disposal.body["collections"] if c["kind"] == "TURNS"][0]
+            collections = {c["kind"]: c for c in disposal.body["collections"]}
+            unknown = runtime.uow.list_incomplete_provider_invocations()
             assert (
-                turns["count"] == 1
-                and turns["refs"][0]["id"] == receipt.turn_id
+                collections["TURNS"]["count"] == 0
+                and len(unknown) == 1
+                and str(unknown[0].state) == "unknown"
+                and collections["UNKNOWN"]["refs"][0]["id"] == unknown[0].invocation_id
                 and not disposal.all_safe
             )
-            provider.allow.set()
-            result = await agent.wait_turn(receipt.turn_id, timeout=10)
-            assert result.state in (AgentTurnState.COMMITTED, AgentTurnState.FAILED)
+            runtime.arp.tick()
+            assert _session(runtime, session.session_id).state == "DRAINING"
+            await runtime.kernel.reconcile()
+            assert _session(runtime, session.session_id).state == "DRAINING"
+            reconciliation.settled = True
+            await runtime.kernel.reconcile()
+            assert runtime.uow.list_incomplete_provider_invocations() == ()
             assert _ticks_until(runtime, session.session_id, "PURGED").state == "PURGED"
 
     asyncio.run(case())
