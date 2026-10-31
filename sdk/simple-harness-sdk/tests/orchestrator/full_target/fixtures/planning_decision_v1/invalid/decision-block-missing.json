@@ -1,4 +1,4 @@
 {
-  "model_reply": "<scenario>the model reply contains no <planning_decision> block</scenario>",
-  "note": "case descriptor for the H1-C block scanner"
+  "model_reply": "<scenario>the model reply contains no planning decision block at all</scenario>",
+  "note": "case descriptor for the H1-C block scanner; the reply must not name the opening tag, which since opt.216 reads as an unclosed block"
 }

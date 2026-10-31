@@ -30,6 +30,7 @@ from typing import Any, NamedTuple
 import pytest
 from agent_orchestrator.contracts import MissionStatus, MissionStopReason
 from agent_orchestrator.contracts.htn import TaskForm
+from agent_orchestrator.orchestrator.orchestrator_domains.planning_waits import PlanningWaitMixin
 from agent_orchestrator.orchestrator.planning_repair_requests import REQUESTED, collect_triggers
 from agent_orchestrator.storage.htn_store import HtnStore
 from agent_orchestrator.testing.fixtures import package_of
@@ -394,7 +395,7 @@ def test_a_restarted_process_does_not_ask_the_same_revision_again(tmp_path) -> N
     ids=["planning", "active"],
 )
 def test_a_refinement_round_that_cannot_be_funded_stops_the_mission_visibly(
-    tmp_path, with_leaf: bool, max_tokens: int, reserve: int
+    tmp_path, monkeypatch, with_leaf: bool, max_tokens: int, reserve: int
 ) -> None:
     """Review P0-1 / verification P2-C: ``BudgetExhausted`` used to escape ``run()`` with a
     traceback.  The round for the unrefined sub-goal is reserved against the Mission account
@@ -407,7 +408,24 @@ def test_a_refinement_round_that_cannot_be_funded_stops_the_mission_visibly(
       19950——经规划失败那条路停下（任务从没进入 ACTIVE）。
     * ``active``：根做法里多一个原子步骤，提交后它先被派发（执行者被扣住，占着它那份额度），任务是
       ACTIVE（M3-r2 的形状）；规划轮预留 500000 付不起——停的是任务、不是规划，在途的工作被停掉。
+
+    opt.221 起模型回合放进子任务、与取消信号赛跑，脚本化的即时回复要晚一轮才收到：中间那一轮
+    没有新事件，任务被记"安静"，收下根计划的那一轮不做派发，下一轮先开子目标规划轮、再派叶子，
+    先后与产品里真实模型一样不固定。``active`` 要守的是"叶子已在途时规划轮付不起"，所以用例
+    在根计划提交后、叶子派出之前先不开规划轮，把这个先后固定下来。
     """
+
+    if with_leaf:
+        resume = PlanningWaitMixin._resume_planning_services
+
+        def resume_after_leaf(loop: Any, mission: Any) -> bool:
+            planned = HtnStore(loop.store).active_plan_revision(mission.id) is not None
+            leaf_out = any(
+                loop.store.list_attempts(task.id) for task in loop.store.list_tasks(mission.id)
+            )
+            return False if planned and not leaf_out else resume(loop, mission)
+
+        monkeypatch.setattr(PlanningWaitMixin, "_resume_planning_services", resume_after_leaf)
 
     async def case():
         async with nested(

@@ -52,8 +52,8 @@ from .core import OrchestratorCore
 from .planning_decisions import (
     PlanningReply,
     _AssuranceReviewUnavailable,
+    _commit_refusal_outcome,
     _commit_rejection_code,
-    _stale_commit_problems,
 )
 
 if TYPE_CHECKING:
@@ -897,18 +897,15 @@ class PlanningDecisionBranchMixin(OrchestratorCore):
         self._release_refused_fence(reply.mission.id, reply.decision_id)
         self._settle_intent(reply.intent, "FAILED")
         self._settle_service_if_known(reply.intent.subject_id, reply.mission.id)
+        named = getattr(error, "reason", None)
+        if named is None and isinstance(error, StoreError):
+            # 存储故障（如同号冲突）不是规划器答错
+            named = PlanningDecisionRejectionCode.INTERNAL_CONTRACT_ERROR
+        reason, extra = _commit_refusal_outcome(named)
         await self._planning_rejected(
             reply.intent,
-            reason=(
-                "planning_source_unavailable"
-                if refusal_code == "INTERNAL_CONTRACT_ERROR"
-                else "proposal_not_grounded"
-            ),
-            detail={
-                "error": refusal_text(error),
-                "rejection_codes": [refusal_code],
-                **_stale_commit_problems(getattr(error, "reason", "")),
-            },
+            reason=reason,
+            detail={"error": refusal_text(error), **extra},
         )
         return
 
@@ -948,18 +945,13 @@ class PlanningDecisionBranchMixin(OrchestratorCore):
         self._release_refused_fence(reply.mission.id, reply.decision_id)
         self._settle_intent(reply.intent, "FAILED")
         self._settle_service_if_known(reply.intent.subject_id, reply.mission.id)
+        reason, extra = _commit_refusal_outcome(
+            plan_outcome.refusals[-1].reason
+            if plan_outcome.refusals
+            else PlanningDecisionRejectionCode.INTERNAL_CONTRACT_ERROR
+        )
         await self._planning_rejected(
             reply.intent,
-            reason=(
-                "planning_source_unavailable"
-                if refusal_code == "INTERNAL_CONTRACT_ERROR"
-                else "proposal_not_grounded"
-            ),
-            detail={
-                "refusals": refusals,
-                "rejection_codes": [refusal_code],
-                **_stale_commit_problems(
-                    plan_outcome.refusals[-1].reason if plan_outcome.refusals else ""
-                ),
-            },
+            reason=reason,
+            detail={"refusals": refusals, **extra},
         )
