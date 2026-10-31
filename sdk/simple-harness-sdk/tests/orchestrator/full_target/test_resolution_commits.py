@@ -52,6 +52,8 @@ from dataclasses import dataclass, field
 from typing import Any
 
 import pytest
+from h1i_seed import CONFIG, CRITERIA, GOAL, root_duty, root_task, run_until, seeded
+
 from agent_orchestrator.contracts import ContractError
 from agent_orchestrator.contracts.evidence_state import Validity
 from agent_orchestrator.contracts.htn import (
@@ -125,7 +127,6 @@ from agent_orchestrator.verification.acceptance_rules import (
     ExecutionPosture,
     IndependenceFacts,
 )
-from h1i_seed import CONFIG, CRITERIA, GOAL, root_duty, root_task, run_until, seeded
 
 HASH_A = "a" * 64
 HASH_B = "b" * 64
@@ -703,10 +704,10 @@ class Guard:
     真实并发写，最后放行真命令；真命令提交后可以再跑 ``after``（重放、换意图等）。之后的递交
     原样放行。
 
-    叶子验收是在 ``_accept_result`` 已打开的事务里调用的（``Store.transaction`` 嵌套时不开保存点）：
-    提交入口被拒时，产品靠外层事务整体回滚。包装器在这里先开一个保存点，量完写入再退回保存点，
-    等价于"这次被拒的递交从没发生过"，真命令照常落在产品自己的事务里。根结论不在外层事务里，
-    被拒的递交由入口自己的事务回滚，量到的就是落库的。
+    叶子验收是在 ``_accept_result`` 已打开的事务里调用的；``Store.transaction`` 嵌套时也开保存点
+    （2026-10-26 起），被拒的入口在自己的保存点里退回写入，包装器量到的就是它留下的。包装器自己
+    再开一个保存点，量完写入退回，等价于"这次被拒的递交从没发生过"，真命令照常落在产品自己的
+    事务里。根结论不在外层事务里，被拒的递交由入口自己的事务回滚，量到的就是落库的。
     """
 
     entry: str
@@ -1167,20 +1168,6 @@ ROOT_VARIANTS = (
     ),
 )
 
-#: 被拒的叶子变体里，这几条拒在"许可证书已在事务里登记"之后（姿态、公式）：产品靠外层事务整体
-#: 回滚，包装器量到的写入只许是这张许可本身（证书、它的提交回执与事件）。
-AFTER_LICENCE = {
-    "independence-defaulted-to-nobody-produced",
-    "reviewer-could-edit-the-candidate",
-    "unowned-critical-operation",
-    "cancellation-pending",
-}
-LICENCE_TABLES = {
-    "assurance_use_certificates",
-    "commit_receipts",
-    "events",
-}
-
 
 def test_tampered_accept_and_root_commands_are_refused_by_name_and_write_nothing(
     tmp_path: Any, monkeypatch: pytest.MonkeyPatch
@@ -1205,17 +1192,9 @@ def test_tampered_accept_and_root_commands_are_refused_by_name_and_write_nothing
     assert root.seen == {item.name: item.expect for item in ROOT_VARIANTS}
     # 根结论不在外层事务里：被拒的递交一行不留。
     assert {name: diff for name, diff in root.writes.items() if diff} == {}
-    # 叶子：拒在许可登记之前的一行不写；之后的只留许可本身（随外层事务回滚）。
-    assert {
-        name: diff for name, diff in accept.writes.items() if diff and name not in AFTER_LICENCE
-    } == {}
-    for name in AFTER_LICENCE:
-        assert set(accept.writes[name]) == LICENCE_TABLES, (name, accept.writes[name])
-        assert (
-            accept.writes[name]["assurance_use_certificates"][1]
-            - accept.writes[name]["assurance_use_certificates"][0]
-            == 1
-        )
+    # 叶子：嵌套事务开保存点后，拒在许可证书登记之后的变体（姿态、公式）也连许可一起退回，
+    # 被拒的递交一行不留（2026-10-26 起；原先只能靠外层事务整体回滚，量到的会剩许可本身）。
+    assert {name: diff for name, diff in accept.writes.items() if diff} == {}
     # 真命令各自只递交了一次就成了。
     assert [type(item[2]).__name__ for item in accept.deliveries] == ["AcceptanceReceipt"]
     assert [type(item[2]).__name__ for item in root.deliveries] == ["GoalResolutionReceipt"]
