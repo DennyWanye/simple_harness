@@ -39,13 +39,19 @@ def run_watched(cmd: list[str], cwd: Path, log: Path, stall_s: int, env: dict | 
     with log.open("w", encoding="utf-8") as fh:
         proc = subprocess.Popen(
             cmd, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-            text=True, errors="replace", start_new_session=True, env=env,
+            start_new_session=True, env=env,
         )
 
         def pump() -> None:
+            # 按字节块读，不按行：pytest -q 一个文件只打点不换行，按行读会让一个跑十几分钟
+            # 的大文件在看门狗眼里"没输出"而被误杀。
             assert proc.stdout is not None
-            for line in proc.stdout:
-                fh.write(line)
+            fd = proc.stdout.fileno()
+            while True:
+                chunk = os.read(fd, 4096)
+                if not chunk:
+                    break
+                fh.write(chunk.decode("utf-8", errors="replace"))
                 fh.flush()
                 last[0] = time.monotonic()
 
@@ -53,7 +59,7 @@ def run_watched(cmd: list[str], cwd: Path, log: Path, stall_s: int, env: dict | 
         t.start()
         while proc.poll() is None:
             time.sleep(5)
-            if time.monotonic() - last[0] > stall_s:
+            if proc.poll() is None and time.monotonic() - last[0] > stall_s:
                 os.killpg(proc.pid, signal.SIGKILL)
                 proc.wait()
                 t.join(timeout=5)

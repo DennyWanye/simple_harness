@@ -348,21 +348,21 @@ capabilities = parent.capabilities()
 不同参数返回 `idempotency_conflict`；同一个 `child_key` 换命令 ID 仍返回原子身份和
 `created=False`。回执含 `command_id/request_hash/status/session_id/event_seq`，可在重开后
 通过该命令所属会话的 `command_receipt(id)` 查询。`child_send` 的命令与排队输入保存在
-子账本，查询使用 `child.command_receipt(id)`；它仅登记 `next_turn`，本阶段不执行排队输入。
+子账本，查询使用 `child.command_receipt(id)`；登记后子会话没有在途委派、没有正在执行的回合时按受理顺序执行（见“异步受理与自动汇总”）。
 
 模型可调用 `create_child(child_key, purpose?)`、`child_send(child_key, text)`、
 `child_status(child_key?)`；`delegate_task` 可选传 `child_key`，其余身份与命令 ID 由运行时
 注入。命令网关同步受理子关系及子账本，同回合可继续委派；父回合返回前及恢复泵会异步
 打开子执行器。父 `tasks()/task(id)/cancel_task(id)` 覆盖自己及子任务，每条任务带
-`child_key` 和预留的 `goal_ref=None`；其他根会话不能查询或取消这些任务。
+`child_key` 与冻结时的 `goal_ref`（没有 Goal 时为 None）；其他根会话不能查询或取消这些任务。
 
 子结果按同一个 `event_id` 镜像到父 inbox，附 `child_key/child_session_id` 和
-`source="child_result"`，始终 `instruction=False`。父下一次输入把结果附成“不是指令”的资料，
-不会自动启动模型。重复补读不会重复镜像或发 `result_ready`。结果由人在父会话 `ack()`；
+`source="child_result"`，始终 `instruction=False`。父下一次输入把结果附成“不是指令”的资料；
+自动汇总默认开着（`continuation_enabled=True`），会起一个只读回合把结果汇总给用户（见“异步受理与自动汇总”）。重复补读不会重复镜像或发 `result_ready`。结果由人在父会话 `ack()`；
 子会话不能确认父消费的结果，已读也不替代业务消费。
 
 `capabilities()` 本地返回协议版本 2、配置版本 3、根/子角色、能力列表和策略限制，
-不调用模型或查询任务。当前不支持 Goal、自动续办策略、授权回调或运行中 steer。
+不调用模型或查询任务。返回键：`owner_generation / catalog_version / protocol_version / session_config_version / role / capabilities / unsupported / action_tools / policy`。`unsupported` 只有 `steer_running_mission`；Goal、自动汇总、授权回调、取消范围、恢复报告、归档见后文各节。
 旧版本状态库返回 `incompatible_store_version`，同版本策略或工具目录冲突仍返回
 `session_config_frozen`；公开错误 `SessionError.public()` 含 `code/retryable/safe_message`。
 本阶段不迁移旧数据，请使用新数据根。
@@ -719,7 +719,7 @@ host = await OrchestrationHost.open(root, principal=..., model=..., tools=[tool]
 以及 `status=exited/timeout/unknown`；`unknown` 的退出码为空，不能算成功。
 `HostSettings.main_session_sandbox_run=True` 才给主/子会话；沙箱检查失败时所有角色均不出现此工具。
 
-当前范围不包含动作工具、宿主运行中热注册或会话知识作用域。语音桥只提供委派、任务查询/取消
+动作工具见 §4b“暴露成主会话工具”；宿主运行中热注册与会话知识作用域不在范围。语音桥只提供委派、任务查询/取消
 与主会话可见的应用只读工具，不提供子会话命令、ToolSearch 或其他内置工具。
 
 聊天池、任务池沿用原编号。身份 schema 2 只哈希内置工具名，不哈希说明或参数 schema；
@@ -997,12 +997,41 @@ SDK 没有推送。定时调 `events(mission_id, after_seq=上次的 through_seq
 每条续办在取得会话发送锁并重读队列、确认没有语音所有者后才预扣额度并执行；语音只消费 queued 的续办。
 单轮调用上限统一使用 `SessionPolicy.max_model_calls`。用量写入 `continuation_usage`，未知时按预扣上限结清，
 后到回执不降低已知用量。连续续办轮次与用量均持久保存；用户新输入重置连续轮次，重开不重置。额度用尽产生 `continuation_budget_exhausted` 并保留结果等待；队列为空不调用模型。
-能力发现新增 `async_accept / queued_input_execution / continuation`，仍不支持 Goal、宿主授权回调及
-修改在跑 Mission。此实现是源码能力，未在此任务中发版或推送。
+能力发现新增 `async_accept / queued_input_execution / continuation`；Goal 与宿主授权回调见下一节；仍不支持修改在跑 Mission（`steer_running_mission`）。
 
 存在未完成文字回合或排队输入时，新输入统一持久排在后面，由会话后台依次恢复执行。
+语音绑定期间排队输入不执行：已批准的动作跟进与子会话指令要等语音断开（`_next_input` 让语音先拿着回合），断开后按受理顺序继续。
 语音播报通过 `VoiceBinding.announce(..., source="task_result", input_id=...)` 与 SpeechHandle 的结构化字段标明来源，
 不解析正文决定信任；普通 needs_response 播报不标 task_result。策略 hold/deny 或关闭自动汇总仍沿原播报队列通知子结果。
+
+## 离线脚本模型与返回结构（接入初期 / CI）
+
+公开模块 `agent_orchestrator.host.offline`：
+
+```python
+from agent_orchestrator.host import Session, SessionError
+from agent_orchestrator.host.offline import FixtureWordCounter, ScriptedProvider
+
+def chat(request):          # 每次模型调用进来一次；request.messages 是对话，request.tools 是本回合工具
+    last = request.messages[-1]
+    role = getattr(last.role, "value", last.role)          # 角色是枚举；工具结果消息的 role 是 "tool"
+    if role == "user":
+        return ("delegate_task", {"spec": {"goal": "写一份报告", "success_criteria": ["file:report.md"]}, "child_key": "a"})
+    return "已经交给后台。"   # 返回字符串 = 文字回复；返回 (工具名, 参数字典) = 一次工具调用
+
+session = await Session.open(root, principal, None,            # model=None 时用 provider/counter
+                             provider=ScriptedProvider(chat=chat), counter=FixtureWordCounter(),
+                             require_acceptance=False)         # 只用于测试，见 §3 部署验收门
+```
+
+`SessionError` 从 `agent_orchestrator.host` 导入，看 `.code`。没有“等任务结束”的接口，轮询 `tasks()`：
+
+| 读接口 | 条目字段 |
+|---|---|
+| `tasks()` / `task(id)` | `delegation_id / mission_id / turn_id / cancel_requested / goal_ref / child_key / status / snapshot`；终态 `COMPLETED / FAILED / CANCELLED / REJECTED` |
+| `inbox()` | `event_id / mission_id / delegation_id / status / goal_ref / state_version / source（task_result / child_result / action_result）/ instruction（恒 False）/ acked / applied_turn_id / artifacts[{id, content_hash, logical_path}] / artifacts_read_with（恒 "task_artifact_read"）`；子结果另带 `child_key / child_session_id`，动作结果另带 `operation_key / result`。`artifacts` 是任务快照里的全部产物，含内部核对输出（`logical_path` 以 `assurance-check-output:` 开头），按 `logical_path` 区分 |
+| `queued_inputs()` | `input_id / idempotency_key / kind / state（queued / running / done / failed / cancelled）/ turn_id` |
+| `continuations()` | `event_id / state（pending / queued / reserved / applied / hold / deny / cancelled / failed）/ reason` |
 
 ## 授权回调、取消范围、Goal、恢复报告
 
@@ -1060,7 +1089,9 @@ Goal 只对可信宿主公开，模型没有登记/完成 Goal 的命令。每�
 `await close()` 只放手：释放资源、取消后台协程，任务、排队输入和未消费结果仍留在账本，
 重开后继续恢复。Host 关闭同样是资源停机。`archive(command_id=...)` 才是收口：
 有未终态委派、未消费且未排除的结果、未收口 Goal、queued/running 输入或 pending/queued
-续办时返回 `active_work`。归档保留数据并禁止重新打开；子会话归档不会使父会话恢复失败。
+续办时返回 `active_work`；子会话里的这些活也算。`archive()` 与 `ack(event_id)` 都是同步调用。
+能归档的最短路径：等任务终态 → 结果被父会话下一个回合用掉（自动汇总或你再发一句）→ 人 `ack()` → 子会话排队输入全部 `done` → `archive(command_id=...)`。
+归档保留数据并禁止重新打开（再开报 `not_found_or_forbidden`）；子会话归档不会使父会话恢复失败。
 根句柄关闭后子操作报 `session_closed`，不会悄悄重建根连接。
 
 `session.capabilities()` 与 `host.status()` 暴露持久单调递增的 `owner_generation`。
@@ -1076,4 +1107,4 @@ Goal 只对可信宿主公开，模型没有登记/完成 Goal 的命令。每�
 
 会话效果预备接口 `session._effects` 使用公开的 `EffectLedger`：执行前持久 claim，执行后 lookup
 权威回执，绑定 `operation_key + params_hash` 与目标身份。同 key 异参数拒绝，未知只对账不盲重放；
-宿主动作等级上限与授权约束同时生效。当前没有把动作工具开放给主会话，工具接入属于后续任务 F。
+宿主动作等级上限与授权约束同时生效。动作工具开放给主会话的做法见 §4b“暴露成主会话工具”。

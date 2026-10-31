@@ -22,7 +22,7 @@ from .budget_accounts import (
     mission_account,
     task_account,
 )
-from .commit_service_domains.accounting import AccountingCommitsMixin
+from .commit_service_domains.accounting import AccountingCommitsMixin, cooldown_started_at
 from .commit_service_domains.attempt_lifecycle import AttemptLifecycleCommitsMixin
 from .commit_service_domains.grading import GradingCommitsMixin
 from .commit_service_domains.installs import InstallCommitsMixin
@@ -80,6 +80,7 @@ __all__ = (
     "NonModelFailuresExhausted",
     "Reservation",
     "SERVICE_INTENT_REHANDED_OFF",
+    "cooldown_started_at",
     "global_account_id",
     "is_global_account",
     "mission_account",

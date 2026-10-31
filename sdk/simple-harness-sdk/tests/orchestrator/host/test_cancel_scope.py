@@ -2,6 +2,7 @@
 """取消以持久屏障为准，不把交接成功写成外部效果撤回。"""
 
 import asyncio
+import contextlib
 
 import pytest
 from test_session import SPEC, FakeHost
@@ -563,3 +564,77 @@ def test_directive_authorization_freezes_goal_while_waiting(tmp_path):
         await parent.close()
 
     asyncio.run(case())
+
+
+def test_unconverged_barrier_does_not_reread_terminal_delegations_each_tick(tmp_path):
+    """屏障因一条交接不明收不了口时，范围里已终态的委派每拍不该再读任务状态。"""
+    from test_session import Crash
+
+    async def case():
+        host, parent = make(tmp_path)
+        host.orchestrator = None
+        finished = []
+        for i in range(5):
+            task = await parent._delegations.delegate(f"turn-{i}", "call", SPEC)
+            host.finish(task["mission_id"])
+            finished.append(task["mission_id"])
+        parent._inbox.catch_up()
+
+        def crash(point):
+            if point == "mission_created":
+                raise Crash()
+
+        parent._checkpoint = crash
+        with pytest.raises(Crash):
+            await parent._delegations.delegate("turn-x", "call", SPEC)
+        parent._checkpoint = lambda point: None
+        parent.cancel("session_tree", "main", command_id="stop")
+        reads = []
+        original = parent._delegations.status
+        parent._delegations.status = lambda row: (reads.append(row["mission_id"]), original(row))[1]
+        parent._pump_task = asyncio.create_task(parent._pump())
+        try:
+            await asyncio.sleep(1.05)
+            assert (
+                parent._store.get("cancellations", "session_tree:main")["state"]
+                == "cancel_requested"
+            )
+            # 第一拍每条终态委派最多读一次并记下终态，之后不再读
+            assert len(reads) <= len(finished), reads
+            assert all(
+                row.get("terminal_status") == "COMPLETED"
+                for row in parent._store.rows("delegations")
+                if row.get("mission_id") in finished
+            )
+        finally:
+            await parent.close()
+
+    asyncio.run(case())
+
+
+def test_received_event_is_not_rewritten_once_recorded(tmp_path):
+    host, parent = make(tmp_path)
+    notice = {
+        "event_id": "result-abc",
+        "child_key": "a",
+        "mission_id": "mission-1",
+        "delegation_id": "d-1",
+        "goal_ref": None,
+    }
+    parent._continuation.received(notice)
+    before = parent._store.connection.total_changes
+    # 账本按键去重，行数本来就不会变；要防的是每拍再开一次写事务（和别的写入争锁）
+    opened: list[int] = []
+    original = parent._store.transaction
+
+    @contextlib.contextmanager
+    def counting():
+        opened.append(1)
+        with original():
+            yield
+
+    parent._store.transaction = counting
+    for _ in range(5):
+        parent._continuation.received(notice)
+    assert parent._store.connection.total_changes == before
+    assert opened == []

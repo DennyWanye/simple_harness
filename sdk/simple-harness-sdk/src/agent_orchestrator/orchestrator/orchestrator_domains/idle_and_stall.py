@@ -39,7 +39,7 @@ from ...storage.store import StoreError
 from .. import planning_repair_requests as repair_requests
 from .._read_set import SemanticReadSetChecker
 from ..action_commits import IN_FLIGHT_ACTION_STATES, OPEN_ACTION_STATES
-from ..commit_service_domains.accounting import cooldown_started_at
+from ..commit_service import cooldown_started_at
 from ..completion_status import read_occurrence_completion
 from ..hierarchical_dispatch import MISSION_STALLED, append_hierarchical_event
 from ..operation_outcomes import outcome_exhaustion_is_final
@@ -721,8 +721,11 @@ class IdleStallMixin(OrchestratorCore):
                     mission, self.store.list_tasks(mission.id), planned
                 )
                 expired = next(
-                    (item for item in cooling
-                     if self.store.now - item[2] > self._config.profile_wait_seconds),
+                    (
+                        item
+                        for item in cooling
+                        if self.store.now - item[2] > self._config.profile_wait_seconds
+                    ),
                     None,
                 )
                 if expired is not None:
@@ -893,7 +896,8 @@ class IdleStallMixin(OrchestratorCore):
                 )
                 if not planner_asked["planner_turn_opened"] or not decided:
                     requested = next(
-                        event for event in events
+                        event
+                        for event in events
                         if event.type == repair_requests.REQUESTED
                         and event.payload.get("request_id") == request_id
                     )

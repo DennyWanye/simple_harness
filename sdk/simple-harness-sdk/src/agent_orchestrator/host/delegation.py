@@ -342,14 +342,7 @@ class Delegations:
         await self.session._authorization.ensure(
             "delegate",
             self.session.session_id,
-            row.get(
-                "authorization_params",
-                {
-                    "goal": row["request"]["goal"],
-                    "success_criteria": row["request"]["success_criteria"],
-                    "sources": row["sources"],
-                },
-            ),
+            row["authorization_params"],
             goal_ref=row.get("goal_ref"),
             delegation_id=row["delegation_id"],
             _guard=lambda: self.session._check_origin(
@@ -536,7 +529,15 @@ class Delegations:
                     "cancel_requested": True,
                     "effect_state": "not_committed" if absent else "unknown",
                 }
-        status = self.status(row)
+        if row.get("terminal_status") in TERMINAL:
+            status = row["terminal_status"]
+        else:
+            status = self.status(row)
+            if status in TERMINAL:
+                # 终态不会再变：记下来，屏障收不了口时每拍收敛不必再读任务快照。
+                with self.store.transaction():
+                    row["terminal_status"] = status
+                    self.store.put("delegations", row["key"], row)
         if row["cancel_requested"]:
             result = (
                 self.host.cancel(row["mission_id"])

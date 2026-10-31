@@ -10,6 +10,7 @@ import copy
 import json
 
 import pytest
+
 from agent_orchestrator.observability import business_replay
 from agent_orchestrator.observability.business_replay import (
     CLASSES,
@@ -108,7 +109,8 @@ def test_inventory_v2_rules(edited):
 def test_a_business_table_without_mission_id_must_name_its_owner(edited):
     """没有 ``mission_id`` 的业务表必须写明经哪张表找到任务（偏差裁决 1 第 3 条：不兜底）。
 
-    **改坏检验**（G-04）：清单不查 ``owner`` → 删掉 ``planning_decisions`` 的 ``owner`` 不报错 → 变红。"""
+    **改坏检验**（G-04）：清单不查 ``owner`` → 删掉 ``planning_decisions`` 的 ``owner``
+    不报错 → 变红。"""
 
     def no_owner(tables):
         del tables["planning_decisions"]["owner"]
@@ -121,7 +123,8 @@ def test_a_business_table_without_mission_id_must_name_its_owner(edited):
 
 
 def test_deployment_identity_never_takes_an_unproven_replay(tmp_path):
-    """部署身份里的重放结论只认 CONSISTENT，并且得带 v3 报告的哈希（裁决 G-9；F2 联测后上游局已跑过 v3）。
+    """部署身份里的重放结论只认 CONSISTENT，并且得带 v3 报告的哈希（裁决 G-9；F2 联测后上游局已跑过
+    v3）。
 
     **改坏检验**（G-15）：读取方接受任意取值 → 说"没跑 / 部分一致"的清单被接受 → 变红。"""
 
@@ -155,6 +158,7 @@ WRITABLE_CONNECTIONS = {
     "observability/taskgraph_replay.py": "执行图历史重建到另一个新库",
     "domains/drone_sim.py": "无人机模拟自己的库",
     "evaluation/appworld_operations.py": "AppWorld 评测自己的库",
+    "host/session_ledger.py": "会话账本自己的库（会话事件与命令回执，不是编排库）",
 }
 
 

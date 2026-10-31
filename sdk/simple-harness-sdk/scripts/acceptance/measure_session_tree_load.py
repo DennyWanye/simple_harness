@@ -27,6 +27,8 @@ from agent_orchestrator.host import OrchestrationHost, Principal
 from agent_orchestrator.host.offline import FixtureWordCounter, ScriptedProvider
 
 OUT = Path(sys.argv[1])
+MAIN_SENDS = int(os.environ.get("MAIN_SENDS", "60"))  # 历史长度可配，阈值复验用 300 以上
+CHILD_SENDS = int(os.environ.get("CHILD_SENDS", "20"))
 OUT.mkdir(parents=True, exist_ok=True)
 
 
@@ -155,13 +157,13 @@ async def main():
 
         monitor.start()
         latencies = []
-        for i in range(60):
+        for i in range(MAIN_SENDS):
             t0 = time.perf_counter()
             await main_session.send(f"主会话第 {i} 句", key=f"m-{i}")
             latencies.append(time.perf_counter() - t0)
         for key in keys:
             child = main_session.child(key)
-            for i in range(20):
+            for i in range(CHILD_SENDS):
                 await child.send(f"{key} 第 {i} 句", key=f"{key}-{i}")
         report["phases"]["long_history"] = {
             "main_send_latency": pct(latencies),

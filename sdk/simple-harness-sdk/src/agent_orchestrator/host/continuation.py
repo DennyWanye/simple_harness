@@ -103,6 +103,8 @@ class Continuation:
 
     def received(self, notice: dict[str, Any]) -> None:
         event_id = notice["event_id"]
+        if self.store.has_event(f"received:{event_id}"):
+            return
         with self.store.transaction():
             self.store.event(
                 "result_received",

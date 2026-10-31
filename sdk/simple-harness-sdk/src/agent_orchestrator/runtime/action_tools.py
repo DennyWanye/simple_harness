@@ -377,6 +377,14 @@ class ActionTools:
                 result = await self.execute(intent)
             except SessionError as error:
                 result = {"status": error.code, "operation_key": queued["operation_key"]}
+            except Exception as error:
+                # 连接器交接前就抛错（超时、协议错）：效果账本没有回执，按结果不明通知。
+                self.session._check_owner()
+                result = {
+                    "status": "effect_unknown",
+                    "reason": type(error).__name__,
+                    "operation_key": queued["operation_key"],
+                }
         with self.store.transaction():
             self.session._inbox.action_result(intent, result)
             queued.update(state="done", receipt=result)

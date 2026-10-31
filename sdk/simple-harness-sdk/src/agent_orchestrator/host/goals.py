@@ -214,6 +214,9 @@ class Goals:
                     if row.get("terminal_status") not in TERMINAL:
                         reasons.add(f"active_delegation:{ref}")
                     continue
+                if row.get("terminal_status") in TERMINAL:
+                    # 终态任务没有在途工作、也不会再有待答请求，不必读快照。
+                    continue
                 snapshot = owner._host.snapshot(mid)["snapshot"]
                 if snapshot["mission"]["status"] not in TERMINAL:
                     reasons.add(f"active_delegation:{ref}")

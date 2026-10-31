@@ -538,3 +538,46 @@ def test_root_close_preserves_child_input_when_authorization_returns_during_clea
             await reopened.close()
 
     asyncio.run(run())
+
+
+def test_archive_refuses_while_a_direct_turn_is_in_flight(tmp_path):
+    """空闲会话 send(wait=True) 走直通路径、不写排队输入；回合在途时归档必须拒绝，
+    否则动作交给连接器后会话就被封死，回执无处对账。"""
+    from test_chat import _chat_script
+
+    from agent_orchestrator.host.offline import FixtureWordCounter, ScriptedProvider
+
+    async def run():
+        session = await Session.open(
+            tmp_path / "host",
+            Principal("u", "User"),
+            provider=ScriptedProvider(chat=_chat_script(["好的。"])),
+            counter=FixtureWordCounter(),
+            require_acceptance=False,
+        )
+        gate = asyncio.Event()
+        original = session._chat.turn
+
+        async def slow_turn(request, **options):
+            await gate.wait()
+            return await original(request, **options)
+
+        session._chat.turn = slow_turn
+        try:
+            sending = asyncio.create_task(session.send("做件小事", key="k1"))
+            async with asyncio.timeout(30):
+                while session._current_input is None:  # 首次回合要先起执行器，等到真正在途
+                    await asyncio.sleep(0.05)
+            with pytest.raises(SessionError, match="active_work"):
+                session.archive(command_id="archive-early")
+            gate.set()
+            assert (await sending)["state"] == "committed"
+            assert session.archive(command_id="archive-late")["archived"] is True
+        finally:
+            # 断言失败时也要放开回合，否则关闭会等在途回合，用例挂死而不是变红
+            gate.set()
+            if not sending.done():
+                sending.cancel()
+            await session.close()
+
+    asyncio.run(asyncio.wait_for(run(), 120))

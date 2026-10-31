@@ -140,6 +140,13 @@ class SessionLedger:
             )
         return event
 
+    def has_event(self, key: str) -> bool:
+        event_id = f"session-event-{digest([self.session_id, key])}"
+        return (
+            self.connection.execute("SELECT 1 FROM events WHERE event_id=?", (event_id,)).fetchone()
+            is not None
+        )
+
     def events(self, after: int) -> list[dict[str, Any]]:
         return [
             json.loads(row[0])

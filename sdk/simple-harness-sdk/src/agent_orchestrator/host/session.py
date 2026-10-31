@@ -144,6 +144,7 @@ class Session:
         self._continuation = Continuation(self, continuation_policy)
         self._subscribers: set[asyncio.Queue[dict[str, Any]]] = set()
         self._pump_task: asyncio.Task[None] | None = None
+        self._archived_children: set[str] = set()
         self._chat = TreeSessionChatService(self) if isinstance(host, OrchestrationHost) else None
 
     @classmethod
@@ -620,6 +621,9 @@ class Session:
         ):
             return True
         for owner in owners:
+            if owner._current_input is not None:
+                # 空闲时 send(wait=True) 走直通路径、不写排队输入；回合在途同样是活。
+                return True
             if any(
                 row["session_id"] == owner.session_id
                 and owner._store.get("queued_inputs", row["input"]["input_id"]) is None
@@ -1242,19 +1246,26 @@ class Session:
 
     def _child_archived(self, row) -> bool:
         child_id = row["child_session_id"]
+        if child_id in self._archived_children:
+            return True
         child = self._host._session_handles.get(child_id)
         if child is not None:
-            return bool(child._store.get("meta", "archived"))
-        path = self._host.root / "sessions" / child_id / "session.sqlite3"
-        if not path.is_file():
-            return False
-        import sqlite3
+            archived = bool(child._store.get("meta", "archived"))
+        else:
+            path = self._host.root / "sessions" / child_id / "session.sqlite3"
+            if not path.is_file():
+                return False
+            import sqlite3
 
-        with sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True) as connection:
-            value = connection.execute(
-                "SELECT body FROM records WHERE namespace='meta' AND key='archived'"
-            ).fetchone()
-        return value is not None and value[0] == "true"
+            with sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True) as connection:
+                value = connection.execute(
+                    "SELECT body FROM records WHERE namespace='meta' AND key='archived'"
+                ).fetchone()
+            archived = value is not None and value[0] == "true"
+        if archived:
+            # 归档不可撤销，记住以后每拍不再另开连接去问。
+            self._archived_children.add(child_id)
+        return archived
 
     async def recover(self) -> None:
         """重开后按父账本把子会话重新打开；子会话自己的账本与任务照旧恢复。"""
