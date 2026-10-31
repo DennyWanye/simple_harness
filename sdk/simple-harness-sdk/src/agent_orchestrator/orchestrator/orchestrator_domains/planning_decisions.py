@@ -115,6 +115,24 @@ def _stale_commit_problems(reason: object) -> dict[str, Any]:
     return {}
 
 
+def _commit_refusal_outcome(reason: object) -> tuple[str, dict[str, Any]]:
+    """提交被拒时，规划拒绝事件的原因与计次用的码。
+
+    只有原因就是内部契约错误（存储故障由调用方折成它）才记"来源不可用"、不扣规划次数。
+    计划本身过不了提交检查——没有具名原因的契约拒绝，或原因不在规划拒绝码表里（如完成范围
+    冻结不了）——仍是规划器答错：记 proposal_not_grounded，事件里不放兜底的内部码，照常计次。"""
+
+    raw = str(reason or "")
+    extra: dict[str, Any] = dict(_stale_commit_problems(raw))
+    code = _commit_rejection_code(raw)
+    if code != raw:
+        return "proposal_not_grounded", extra
+    extra["rejection_codes"] = [code]
+    if code == PlanningDecisionRejectionCode.INTERNAL_CONTRACT_ERROR:
+        return "planning_source_unavailable", extra
+    return "proposal_not_grounded", extra
+
+
 @dataclass(frozen=True, slots=True)
 class PlanningReply:
     """One Planner reply being evaluated: the values fixed before decoding it."""
