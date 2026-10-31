@@ -133,7 +133,10 @@ def test_submit_reschedules_the_run(tmp_path):
             assert receipt.state is AgentTurnState.QUEUED and receipt.seq == 1
             result = await agent.wait_turn(receipt.turn_id, timeout=5)
             assert result.public_output.content == "好"
-            assert wakes.count(agent.run_id) == 1
+            # 提交至少唤醒一次；建档时的那次驱动若还没退出，内核会等它结束再唤醒一次，
+            # 这是允许的。真正要守住的是同一条输入只处理一次（只调一次模型）。
+            assert wakes.count(agent.run_id) >= 1
+            assert provider.calls == 1
             assert schedules.count(agent.run_id) >= 1
             # Same input_id replays the receipt; different content under it conflicts.
             replay = await agent.submit("问", input_id="i1")
