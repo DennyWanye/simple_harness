@@ -45,12 +45,17 @@ async def test_default_deployment_offers_workspace_and_scoped_knowledge_tools(
             if status["native_plane"]["enabled"]
             else []
         )
-        # 2026-10-21：超限工具结果的回读工具（session_history_read）也在部署基础工具里
+        # 超限工具结果的回读工具（session_history_read）也在部署基础工具里；opt.224 起 SDK 运行时
+        # 还自带工具目录的两个元工具（tool_search / tool_schema）与沙箱命令行（sandbox_run，
+        # 任务池默认有、只在沙箱里跑），它们都是 SDK 自己的工具，不是 Host 聊天工具
         expected = sorted(
             [
                 *WORKSPACE_TOOLS,
                 *KNOWLEDGE_TOOLS,
                 "session_history_read",
+                "tool_search",
+                "tool_schema",
+                "sandbox_run",
                 *(["run_tests"] if sandboxed else []),
                 *skills,
             ]
@@ -117,6 +122,9 @@ async def test_no_host_tool_reaches_the_orchestration_runtime(orchestration_root
         assert offered - set(WORKSPACE_TOOLS) <= {
             *KNOWLEDGE_TOOLS,
             "session_history_read",  # 回读超限工具结果（SDK 原生工具，不是 Host 聊天工具）
+            "tool_search",  # 工具目录元工具（SDK 运行时自带，opt.224）
+            "tool_schema",
+            "sandbox_run",  # 沙箱命令行（SDK 运行时自带，只在沙箱里跑）
             "run_tests",
             "skill_discover",
             "skill_load",
