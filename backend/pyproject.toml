@@ -25,7 +25,7 @@ dependencies = [
     # Headless Shell revision 1228 / browser 149.0.7827.55; the build
     # acquisition gate verifies the locked archive and executable hashes and
     # bundles the browser, so production never downloads it on first run.
-    "playwright==1.61.0",
+    "playwright==1.64.1",
     "mss>=9.0",
     "pyautogui>=0.9.54",
     "aiosqlite>=0.22.1",
@@ -115,7 +115,7 @@ dependencies = [
     # deskpet/sdk_adapters/sdk_candidate.py
     "simple-harness-sdk==0.13.0.dev20260925+opt.224",
     # 钉死的 DeepSeek 官方计数配方（SDK opt.195 起也是 SDK 的正式依赖）；分词文件在用户模型目录。
-    "deepseek-recipe==0.1.1",
+    "deepseek-recipe==0.2.0",
 ]
 
 [tool.uv.sources]
