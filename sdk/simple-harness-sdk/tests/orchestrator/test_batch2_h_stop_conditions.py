@@ -22,6 +22,7 @@ for _path in (_FULL_TARGET, _FULL_TARGET / "taskgraph_exec"):
 
 import agent_orchestrator.orchestrator.event_handler as event_handler  # noqa: E402
 from agent_orchestrator.api.missions import MissionRequestError, spec_from_request  # noqa: E402
+from agent_orchestrator.contracts import TaskStatus  # noqa: E402
 from agent_orchestrator.contracts.models import ContractError  # noqa: E402
 from agent_orchestrator.contracts.state_machines import (  # noqa: E402
     MissionStatus,
@@ -247,6 +248,13 @@ def test_a_reached_condition_asks_the_planner_once_and_stops_only_when_the_plan_
         async with enabled_world(tmp_path, key="b2h-stop", hold_worker=True) as world:
             await world.commit_seed()
             loop, store, mission_id = world.loop, world.store, world.mission.id
+            # 等那一步派出去（执行者被扣住）再问：有步骤已放行、还没开工时不问规划器。opt.221 起
+            # 脚本化回复晚一轮收到，收下种子计划的那一轮不一定顺带派发
+            await world.until(
+                lambda: all(
+                    task.status is not TaskStatus.READY for task in store.list_tasks(mission_id)
+                )
+            )
             new_mode = loop._new_mode(store.get_mission(mission_id))
             switch["on"] = True
 
@@ -316,7 +324,6 @@ def test_a_reached_condition_is_not_raised_while_an_admitted_step_waits_to_start
     **Mutation**: drop the READY gate → red."""
     reached = [{"condition": "no_new_knowledge", "rounds_without_new_knowledge": 5, "limit": 5}]
     monkeypatch.setattr(sc, "reached_stop_conditions", lambda *a, **k: list(reached))
-    from agent_orchestrator.contracts import TaskStatus
 
     async def case() -> dict[str, Any]:
         async with enabled_world(tmp_path, key="b2h-stop-ready", hold_worker=True) as world:
