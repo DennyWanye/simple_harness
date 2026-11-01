@@ -88,13 +88,18 @@ def parse_stop_conditions(conditions: Iterable[str], deployment: Any) -> dict[st
 
 #: 系统自己对"非模型原因失败"的原地重试（2026-09-28 用户决定，不计次数）：它不是规划器的一轮。
 SYSTEM_RETRY_ORIGIN = "system_infrastructure_retry"
+#: 用户对失败收场的一步点"带话重试"：系统按人的决定原样重做，同样不是规划器的一轮。
+HUMAN_RETRY_ORIGIN = "human_takeover_retry"
+#: 不经规划器、由系统直接提交进决定管道的两种来源。
+NATIVE_DECISION_ORIGINS = frozenset({SYSTEM_RETRY_ORIGIN, HUMAN_RETRY_ORIGIN})
 
 
 def knowledge_streak(events: Iterable[Any]) -> int:
     """连续多少个已关上的规划轮没有新知识、没有新验收。只数事件，不读内容。
 
-    系统自己做的原地重试决定（``decision_origin == SYSTEM_RETRY_ORIGIN``）不算一轮：既不往上数，
-    也不清零——执行者连续结果不明只走"非模型原因失败到上限"那条路。
+    不经规划器的原地重做决定（``decision_origin`` 在 ``NATIVE_DECISION_ORIGINS`` 里：系统自己的、
+    或按用户接管做的）不算一轮：既不往上数，也不清零——执行者连续结果不明只走
+    "非模型原因失败到上限"那条路。
 
     还没关上的那一轮里已经来了新知识或新验收，连续计数就到此为止（返回 0）：真实模型局里一份
     结果刚被人复核通过（AcceptanceCommitted），同一轮还没关上，旧的连续数仍是 14，任务被按
@@ -108,7 +113,7 @@ def knowledge_streak(events: Iterable[Any]) -> int:
         if (
             kind == ROUND_EVENT
             and event.payload.get("status") == "COMMITTED"
-            and event.payload.get("decision_origin") != SYSTEM_RETRY_ORIGIN
+            and event.payload.get("decision_origin") not in NATIVE_DECISION_ORIGINS
         ):
             if open_round:
                 streak = 0 if fresh else streak + 1
@@ -273,6 +278,8 @@ __all__ = (
     "ROUND_EVENT",
     "AMENDMENT_EVENT",
     "STOP_PREFIX",
+    "HUMAN_RETRY_ORIGIN",
+    "NATIVE_DECISION_ORIGINS",
     "SYSTEM_RETRY_ORIGIN",
     "duplicate_count",
     "knowledge_streak",

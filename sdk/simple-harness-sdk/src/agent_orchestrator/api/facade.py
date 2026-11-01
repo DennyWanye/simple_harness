@@ -54,6 +54,7 @@ from ..orchestrator.operation_completion import OperationCompletionError
 from ..orchestrator.operation_materialization_inputs import OperationMaterializationInputError
 from ..orchestrator.operation_runtime import ensure_operation_runtime
 from ..orchestrator.planner_views import accepted_steps
+from ..orchestrator.planning_runtime_block import waiting_on_rows
 from ..orchestrator.requirements_amendment import RequirementsAmendmentError, amend_requirements
 from ..orchestrator.source_commits import SourceCommitError
 from ..orchestrator.system_operations import effect_operation
@@ -1025,6 +1026,11 @@ class MissionControlV1:
         with store.read_view():  # the snapshot and its cursor come from one read
             mission = self._mission(mission_id)
             snapshot = store.snapshot(mission.id)
+            # 运行阻塞也是任务在等的事：报出阻塞、等什么、人从哪里解
+            snapshot["waiting_on"] = [
+                *snapshot.get("waiting_on", []),
+                *waiting_on_rows(store, mission.id),
+            ]
 
             snapshot["planning_questions"] = planning_human_store.PlanningHumanStore(store).list(
                 mission.id

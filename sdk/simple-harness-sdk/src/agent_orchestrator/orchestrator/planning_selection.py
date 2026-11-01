@@ -4,15 +4,20 @@
 为目标选做法由规划器判断：这里只把每个待定目标的候选如实列出来。程序不再代答（"只有
 一个候选就直接选""这组候选问过一次就回无变更"两条已删）。
 
-唯一由系统自己发起的决定是基础设施重试：上一次失败不是模型自己做错的（格式、服务出错、
-执行或审阅被打断），系统原样重做该步。它走与规划决定相同的准入与提交管道，但来源如实
-记为 ``system_infrastructure_retry``，不是规划器的决定。
+不经规划器、由系统直接提交的决定只有两种，都是"原样重做这一步"，都走与规划决定相同的准入
+与提交管道，来源如实记录、不算规划器的一轮：
+
+- 基础设施重试（``system_infrastructure_retry``）：上一次失败不是模型自己做错的（格式、服务
+  出错、执行或审阅被打断）。规划器此前有回复被拒时让位给规划器。
+- 人工接管重试（``human_takeover_retry``）：用户对失败收场的一步点了"带话重试"。这是人的
+  决定，不让位；但真实外部操作未决仍先核对。每笔接管只提交一次（账本里的
+  ``NativePlanningDecisionPrepared`` 记着接管号），被准入拒了就交回规划器，不每轮反复。
 """
 
 from __future__ import annotations
 
-from collections.abc import Mapping
-from typing import Any
+from collections.abc import Collection, Mapping
+from typing import Any, NamedTuple
 
 from simple_harness.contracts import canonical_json
 
@@ -24,8 +29,15 @@ from ..storage.planning_admission_store import PlanningAdmissionStore
 from .hierarchical_dispatch import append_hierarchical_event
 from .method_plan_reviews import adoption_refusal
 from .planning_repair_requests import request_concerns, subject_targets
+from .stop_conditions import HUMAN_RETRY_ORIGIN, NATIVE_DECISION_ORIGINS, SYSTEM_RETRY_ORIGIN
 
-SYSTEM_RETRY_ORIGIN = "system_infrastructure_retry"
+
+class NativeDecision(NamedTuple):
+    """系统直接提交进决定管道的一份决定及其来源；人工接管重做还带那笔接管的记录号。"""
+
+    document: dict[str, Any]
+    origin: str
+    override_id: str | None = None
 
 
 def candidate_context(dispatch: Any, mission_id: str, reports: Any) -> list[dict[str, Any]]:
@@ -112,30 +124,20 @@ def _not_models_fault(request: Mapping[str, Any], context: Mapping[str, Any]) ->
     )
 
 
-def _runtime_lost_retry(package: Mapping[str, Any]) -> dict[str, Any] | None:
+def _attempt_refs(request: Mapping[str, Any]) -> list[str]:
+    return [str(r) for r in (request.get("trigger_refs") or ()) if ":attempt-" in str(r)]
+
+
+def _retry_document(
+    package: Mapping[str, Any], item: Mapping[str, Any], *, rationale: str
+) -> dict[str, Any] | None:
+    """把一条失败请求编成"原样重做这一步"的决定；拿不准的身份一律不编（交给规划器）。"""
     views = package.get("views") or {}
-    if any(row.get("source") == "planning" for row in views.get("failures", ())):
-        return None
-    # 审阅 2026-09-28：包里是整个任务的全部待处理请求，两步同时失败时不止一条——挑第一条
-    # 非模型原因的原地处理，其余留给后续几轮。
-    item = next(
-        (
-            entry
-            for entry in package.get("repair_requests") or ()
-            if _not_models_fault(
-                (entry.get("request") or {}), ((entry.get("request") or {}).get("context") or {})
-            )
-            and not (entry.get("impact") or {}).get("unresolved_operations")
-        ),
-        None,
-    )
-    if item is None:
-        return None
     request = item.get("request") or {}
     protocol = package.get("planning_protocol") or {}
     if "RETRY_SAME_METHOD" not in (protocol.get("enabled_repair_kinds") or ()):
         return None
-    refs = [str(r) for r in (request.get("trigger_refs") or ()) if ":attempt-" in str(r)]
+    refs = _attempt_refs(request)
     if len(refs) != 1:
         return None
     failed = refs[0]
@@ -186,10 +188,7 @@ def _runtime_lost_retry(package: Mapping[str, Any]) -> dict[str, Any] | None:
         "uncertainties": [],
         "alternatives": [],
         "replan_triggers": [],
-        "rationale": (
-            "上一次失败不是模型自己做错（格式、服务出错或执行/审阅被中断）；"
-            "系统按规则原样重做该步，不扣任务次数，原调用的用量照常记账。"
-        ),
+        "rationale": rationale,
         "payload": {
             "repair_kind": "RETRY_SAME_METHOD",
             "failed_attempt_id": failed,
@@ -199,15 +198,141 @@ def _runtime_lost_retry(package: Mapping[str, Any]) -> dict[str, Any] | None:
     return PlanningDecisionEnvelopeV1.from_json(document).to_json()
 
 
+def _runtime_lost_retry(package: Mapping[str, Any]) -> dict[str, Any] | None:
+    views = package.get("views") or {}
+    if any(row.get("source") == "planning" for row in views.get("failures", ())):
+        return None
+    # 审阅 2026-09-28：包里是整个任务的全部待处理请求，两步同时失败时不止一条——挑第一条
+    # 非模型原因的原地处理，其余留给后续几轮。
+    item = next(
+        (
+            entry
+            for entry in package.get("repair_requests") or ()
+            if _not_models_fault(
+                (entry.get("request") or {}), ((entry.get("request") or {}).get("context") or {})
+            )
+            and not (entry.get("impact") or {}).get("unresolved_operations")
+        ),
+        None,
+    )
+    if item is None:
+        return None
+    return _retry_document(
+        package,
+        item,
+        rationale=(
+            "上一次失败不是模型自己做错（格式、服务出错或执行/审阅被中断）；"
+            "系统按规则原样重做该步，不扣任务次数，原调用的用量照常记账。"
+        ),
+    )
+
+
+def _when(value: Any) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _human_takeover_retry(
+    package: Mapping[str, Any], submitted_takeovers: Collection[str]
+) -> tuple[dict[str, Any], str] | None:
+    """用户对失败收场的一步点了"带话重试"：系统按人的决定原样重做。
+
+    只认"接管晚于这次失败的尝试"的那笔接管（更早的接管说的是上一次）。每笔接管只提交一次：
+    ``submitted_takeovers`` 是账本里已经为之提交过原地重做的接管号，提交过的（不论准入
+    批了还是拒了）不再提交，拒了就交回规划器——不从包里的失败索引推断，那一节会被裁剪。
+    真实外部操作未决（impact.unresolved_operations）仍先核对——人说重做也不能跳过这一条。
+    """
+    views = package.get("views") or {}
+    # 人工接管记录是包的一节（与 repair_requests 同级），不在 views 里
+    takeovers = [
+        row
+        for row in package.get("human_takeovers") or ()
+        if row.get("action") == "takeover_retry_with_note"
+        and str(row.get("override_id") or "") not in submitted_takeovers
+    ]
+    if not takeovers:
+        return None
+    failures = tuple(views.get("failures", ()))
+    for item in package.get("repair_requests") or ():
+        request = item.get("request") or {}
+        if (item.get("impact") or {}).get("unresolved_operations"):
+            continue
+        refs = _attempt_refs(request)
+        if len(refs) != 1:
+            continue
+        failed = refs[0]
+        task_id = failed.rpartition(":attempt-")[0]
+        attempt_row = next(
+            (
+                row
+                for row in failures
+                if row.get("source") == "attempt"
+                and (row.get("attempt_review_ref") or {}).get("id") == failed
+            ),
+            None,
+        )
+        if attempt_row is None:
+            continue
+        failed_at = _when(attempt_row.get("last_seen"))
+        latest = max(
+            (
+                row
+                for row in takeovers
+                if row.get("task_id") == task_id and _when(row.get("at")) > failed_at
+            ),
+            key=lambda row: _when(row.get("at")),
+            default=None,
+        )
+        if latest is None:
+            continue
+        basis = str(latest.get("basis") or "").strip()
+        document = _retry_document(
+            package,
+            item,
+            rationale=(
+                "用户对这一步点了带话重试"
+                + (f"（理由：{basis[:200]}）" if basis else "")
+                + "；系统按人的决定原样重做该步，经同一套准入核对，不扣任务次数，"
+                "原调用的用量按上限保留。"
+            ),
+        )
+        if document is not None:
+            return document, str(latest.get("override_id") or "")
+    return None
+
+
 def infrastructure_retry(package: Mapping[str, Any]) -> dict[str, Any] | None:
     """The system's own in-place redo of a step whose failure was not the model's, or None."""
     return _runtime_lost_retry(package)
+
+
+def native_decision(
+    package: Mapping[str, Any], *, submitted_takeovers: Collection[str] = ()
+) -> NativeDecision | None:
+    """开一轮规划前，系统能不能不问规划器就把这一步原样重做：先看人的接管，再看非模型故障。
+
+    ``submitted_takeovers``：账本里已经提交过原地重做的接管号（``NativePlanningDecisionPrepared``
+    的 ``override_id``），同一笔接管不提交第二次。
+    """
+    human = _human_takeover_retry(package, frozenset(str(x) for x in submitted_takeovers))
+    if human is not None:
+        document, override_id = human
+        return NativeDecision(document, HUMAN_RETRY_ORIGIN, override_id or None)
+    system = _runtime_lost_retry(package)
+    if system is not None:
+        return NativeDecision(system, SYSTEM_RETRY_ORIGIN)
+    return None
 
 
 async def dispatch_local(handler: Any, intent: Any) -> bool:
     document = intent.config.get("native_planning_decision")
     if not isinstance(document, Mapping):
         return False
+    origin = intent.config.get("native_planning_decision_origin")
+    if origin not in NATIVE_DECISION_ORIGINS:
+        raise ContractError("a native planning decision must record its origin")
     mission = handler.store.get_mission(intent.mission_id)
     dispatch = None if mission is None else handler._new_mode(mission)
     if mission is None or dispatch is None or intent.kind != "plan":
@@ -220,7 +345,9 @@ async def dispatch_local(handler: Any, intent: Any) -> bool:
         key=intent.intent_id,
         payload={
             "intent_id": intent.intent_id,
-            "origin": SYSTEM_RETRY_ORIGIN,
+            "origin": str(origin),
+            # 人工接管重做记下那笔接管号：同一笔接管只提交一次（选择器据此跳过）
+            "override_id": intent.config.get("native_planning_decision_takeover"),
             "decision": dict(document),
         },
     )
@@ -253,9 +380,13 @@ def awaits_authority(store: Any, intent: Any) -> bool:
 
 
 __all__ = (
+    "HUMAN_RETRY_ORIGIN",
+    "NATIVE_DECISION_ORIGINS",
     "SYSTEM_RETRY_ORIGIN",
+    "NativeDecision",
     "awaits_authority",
     "candidate_context",
     "dispatch_local",
     "infrastructure_retry",
+    "native_decision",
 )

@@ -69,6 +69,52 @@ def blocks_intent(store: Any, intent: Any) -> bool:
     )
 
 
+def waiting_on_rows(store: Any, mission_id: str) -> list[dict[str, Any]]:
+    """快照 ``waiting_on`` 里的一行：任务被运行阻塞扣住，在等什么，人从哪里解。
+
+    任务状态仍是进行中，但没有新工作会派出去。接入方只看公开状态时要能看到这一行，
+    不必自己猜另一套调度状态；``recovery`` 写明合法的恢复入口。
+    """
+    block = pending_block(store, mission_id)
+    if block is None:
+        return []
+    wake = last_wake(store, mission_id, block)
+    request = next(
+        (
+            row
+            for row in pending_requests(store, mission_id)
+            if row.get("request_id") == block.payload.get("repair_request_id")
+        ),
+        None,
+    )
+    task_ids = sorted(
+        {
+            str(ref).rpartition(":attempt-")[0]
+            for ref in ((request or {}).get("request") or {}).get("trigger_refs", ())
+            if ":attempt-" in str(ref)
+        }
+    )
+    return [
+        {
+            "kind": "runtime_block",
+            "decision_id": str(block.payload["decision_id"]),
+            "blockers": list(block.payload.get("blockers", ())),
+            "resumable_if": list(block.payload.get("resumable_if", ())),
+            "woken": wake is not None,
+            "since": block.created_at,
+            "task_ids": task_ids,
+            "recovery": {
+                "takeover": "retry_with_note",
+                "task_ids": task_ids,
+                "note": (
+                    "对这些步骤点带话重试：系统按人的决定原样重做，经准入核对后开新尝试并解除阻塞；"
+                    "真实外部操作未决时回执为 blocked，先 resolve_unknown。"
+                ),
+            },
+        }
+    ]
+
+
 def resume_source_current(handler: Any, intent: Any, mission: Any) -> bool:
     """Fence a reply when the environment changed after its last wake snapshot."""
     block = pending_block(handler.store, mission.id)
@@ -151,6 +197,13 @@ def runtime_binding(handler: Any, mission: Any, conditions: tuple[str, ...]) -> 
             task.id
             for task in handler.store.list_tasks(mission.id)
             if task.paused and task.pause_reason == "provider_admission:usage_unresolved"
+        ),
+        # 人工接管（带话重试、排前、跳过、停止）是人的决定：不论规划器声明等什么条件，都是
+        # 唤醒来源。否则用户在界面上点了重试，阻塞仍原地不动，执行者与规划器都被门禁拦住。
+        "human_takeovers": sorted(
+            str(row["override_id"])
+            for row in handler.store.list_overrides(mission.id)
+            if str(row.get("action") or "").startswith("takeover_")
         ),
     }
     if "evidence_updated" in conditions:

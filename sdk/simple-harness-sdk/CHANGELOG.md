@@ -1,3 +1,22 @@
+## opt.226 — 人工接管重试能解开运行阻塞（2026-11-02）
+
+AIPhone 11-02 交接单第一件：步骤在交接后断线，尝试记 LOST（用量未知）；规划器此前有回复被拒，系统自己的
+原地重做让位；规划器按过时的说明宣布运行阻塞，等"证据更新 / 计划改版"；用户点"带话重试"只记了一笔接管，
+没有唤醒、没有重试授权，执行者与规划器都被门禁拦住，恢复报告却报"已恢复"。改法：
+
+- 规划器说明与重试准入同口径（planner-hierarchical-v34）：能重试＝调用被打断、线路出错、结果或用量不明；
+  不能重试＝这一步的真实外部操作未核对、结果已被接受；只因用量不明失败的一次调用不算环境坏了。
+- 人工接管（带话重试、排前、跳过、停止）永远是运行阻塞的唤醒来源，不看规划器声明的 `resumable_if`。
+- 用户对失败收场的一步点带话重试：系统以 `human_takeover_retry` 来源直接提交"原样重做"进决定管道，不问规划器，
+  经同一套准入核对（真实外部操作未决仍拒）；每笔接管只提交一次（账本记接管号），被拒就交回规划器，不每轮反复。
+- `takeover()` 回执带 `disposition / blocker / next_step`：`retry_queued`、`attempt_cancelled`、`blocked`
+  （`step_action_unsettled` / `operation_unresolved` / `operation_read:*`，下一步 `resolve_unknown`）等。
+- 快照 `waiting_on` 多一行 `kind="runtime_block"`（decision_id、blockers、resumable_if、woken、task_ids、recovery）；
+  `recovery_report()` 把这类委派记 `held_refs`（`runtime_blocked:<码>`），不再记 `resumed_refs`。
+
+规划器提示词换版（v34），**要用新的数据根**；配置版本与公开方法不变。测试：
+`test_human_retry_wakes_runtime_block.py`（整条链 + 外部动作未决反例 + 选择器反例）、`test_goals.py` 恢复报告一条。
+
 ## opt.225 — 工作会话的提问镜像到主会话（2026-11-01）
 
 父会话按子事件序号游标读工作会话事件流里的 `needs_response`，原样再发到父事件流：顶层与 payload 带

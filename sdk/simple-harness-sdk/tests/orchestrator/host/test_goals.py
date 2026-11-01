@@ -482,3 +482,43 @@ def test_unknown_mission_handoff_keeps_goal_waiting_with_durable_reason(tmp_path
     report = parent.recovery_report()
     assert delegation["delegation_id"] in report["unknown_effect_refs"]
     assert delegation["delegation_id"] not in report["resumed_refs"]
+
+
+def test_recovery_report_reports_a_runtime_blocked_task_as_held_not_resumed(tmp_path):
+    """AIPhone 2026-11-02：任务被运行阻塞扣住、状态仍是进行中，恢复报告原来按"非终态=已恢复"
+    记 resumed；现在以快照 waiting_on 里的 runtime_block 为准记 held，原因带阻塞码。"""
+
+    _, session = make(tmp_path)
+    with session._store.transaction():
+        session._store.put(
+            "delegations",
+            "blocked",
+            {"delegation_id": "blocked", "mission_id": "m-blocked", "key": "blocked"},
+        )
+        session._store.put(
+            "delegations",
+            "running",
+            {"delegation_id": "running", "mission_id": "m-running", "key": "running"},
+        )
+    snapshots = {
+        "m-blocked": {
+            "mission": {"status": "ACTIVE"},
+            "waiting_on": [
+                {
+                    "kind": "runtime_block",
+                    "decision_id": "pd-1",
+                    "blockers": [{"code": "OTHER", "detail": "用量与产出都未确定。"}],
+                    "woken": False,
+                    "task_ids": ["task-1"],
+                    "recovery": {"takeover": "retry_with_note", "task_ids": ["task-1"]},
+                }
+            ],
+            "actions": [],
+        },
+        "m-running": {"mission": {"status": "ACTIVE"}, "waiting_on": [], "actions": []},
+    }
+    session._host.snapshot = lambda mid: {"snapshot": snapshots[mid]}
+    report = session.recovery_report()
+    assert "blocked" in report["held_refs"] and "blocked" not in report["resumed_refs"]
+    assert report["reasons"]["blocked"] == "runtime_blocked:OTHER"
+    assert "running" in report["resumed_refs"] and report["reasons"]["running"] == "ACTIVE"

@@ -105,7 +105,7 @@ def register_template(template: RoleTemplate) -> None:
 #:   审阅员按任务要求判断，这里不写领域补丁。
 #:
 #: 要改就改这一份并换版本号；不保留历史版本，也不从旧版本拼接。
-PLANNER_HIERARCHICAL_VERSION = "planner-hierarchical-v33"
+PLANNER_HIERARCHICAL_VERSION = "planner-hierarchical-v34"
 PLANNER_HIERARCHICAL = RoleTemplate(
     name="planner",
     prompt_version=PLANNER_HIERARCHICAL_VERSION,
@@ -279,7 +279,9 @@ PLANNER_HIERARCHICAL = RoleTemplate(
         "（一个字符串：照抄 views.failures 里这一步最近一次失败那条的 attempt_review_ref.id，"
         "不是整个引用对象）、"
         "method_instance_ref（照抄当前采用的做法实例的引用四元组）。"
-        "subject 是那个失败的步骤；外部效果未决、用量未知、结果已被接受的不能重试。\n"
+        "subject 是那个失败的步骤。能重试：调用被打断、线路出错、结果或用量不明（旧调用按上限记账，"
+        "不会少算；未记录的回复不会执行任何工具）。不能重试：这一步的真实外部操作（连接器动作）结果"
+        "还没核对、结果已被接受。这两条由准入核对，你不必替它判。\n"
         "      PROPOSE_SUCCESSOR：用一个同类型的后继步骤接替旧步骤；payload 为 repair_kind、old_task_ref、"
         "obligation_ref、goal_type_ref（从 successor_types 照抄）、bindings，subject 是旧步骤。"
         "旧步骤已接受的结果和花费保留。读旧步骤产出、还没通过的下游会改读后继步骤的产出重做；"
@@ -296,7 +298,8 @@ PLANNER_HIERARCHICAL = RoleTemplate(
         '{"code":…,"detail":…}，code 为 CAPABILITY_MISSING、AUTHORIZATION_MISSING、'
         "EVIDENCE_INSUFFICIENT、OTHER 等，用 OTHER 时 detail 必须写）、"
         "resumable_if（数组，取 evidence_updated、human_resolved、plan_revision_changed）。"
-        "它暂停新工作、不改做法，环境恢复后重新规划。\n"
+        "它暂停新工作、不改做法，环境恢复后重新规划。只因用量或结果不明而失败的一次调用不算环境坏了，"
+        "用 RETRY_SAME_METHOD；用户对某一步的人工接管总会唤醒阻塞，不必列进 resumable_if。\n"
         "  - 共用已有步骤：REFINE、REFINE_DEEPER、REPLACE_METHOD 的 payload 可以多一个 reuse 对象"
         "{做法里的步骤 local_id: 已有步骤的 occurrence_id}，表示做法里的这一步就是计划里已有的那一步，不再另做一次。"
         "能点名的只有 sharing_candidates 里列出的步骤（在跑的 running、已按现行要求通过验收的 accepted、"

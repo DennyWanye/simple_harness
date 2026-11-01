@@ -21,11 +21,17 @@ from ..assurance.codec import fingerprint
 from ..contracts import AttemptStatus, MissionStatus, MissionStopReason, TaskStatus
 from ..governance.permissions import Principal, decision_receipt_hash
 from ..observability.secrets import find_secrets
+from ..runtime.planning_operations import (
+    SourceUnavailable,
+    StoreOperationReader,
+    build_operation_snapshot,
+)
 from ..scheduling.allocator import OPEN_ATTEMPT_STATES
 from ..storage import htn_store
 from ..verification.human_review import arbitration_request_id, review_request_id
 from .action_commits import ActionCommitError
 from .completion_inputs import frozen_requirements_revision
+from .planning_retry import retry_decision_required
 from .state_machine import next_task
 from .step_actions import pending_step_action
 
@@ -627,6 +633,8 @@ class HumanCommitsMixin:
                 "command_id": command_id,
                 "expected_version": expected_version,
                 "task_version": task.version,
+                # 回执不只说"记下了"：这次接管接下来会发生什么、被什么拦住、下一步做什么
+                **self._takeover_disposition(task, action),
             }
             self._store.insert_override(record)
             self._emit(
@@ -673,6 +681,49 @@ class HumanCommitsMixin:
             if note:
                 self._comment(mission.id, task_id, principal, note, via=override_id)
             return record
+
+    def _takeover_disposition(self, task: Task, action: str) -> dict[str, Any]:
+        """接管回执的处置三字段：``disposition`` / ``blocker`` / ``next_step``。
+
+        带话重试分三种：开着的尝试会被关掉重来（attempt_cancelled）；上一次已经失败收场的，
+        系统按人的决定排队原样重做（retry_queued，不问规划器）；这一步的真实外部操作还没结案
+        或任务的操作账对不上时先核对（blocked，下一步 resolve_unknown）。只记事实，不替规划器
+        判断该不该换做法。
+        """
+        plain = {"blocker": None, "next_step": None}
+        if action == "stop":
+            return {"disposition": "stopped", **plain}
+        if action == "skip":
+            return {"disposition": "skipped", **plain}
+        if action == "run_now":
+            return {"disposition": "prioritized", **plain}
+        if any(a.status in OPEN_ATTEMPT_STATES for a in self._store.list_attempts(task.id)):
+            return {"disposition": "attempt_cancelled", **plain}
+        if not retry_decision_required(self._store, task.mission_id, task.id):
+            return {"disposition": "recorded", **plain}
+        if pending_step_action(self._store, task.id) is not None:
+            return {
+                "disposition": "blocked",
+                "blocker": "step_action_unsettled",
+                "next_step": "resolve_unknown",
+            }
+        try:
+            unresolved = build_operation_snapshot(
+                task.mission_id, reader=StoreOperationReader(self._store)
+            ).unresolved
+        except SourceUnavailable as error:
+            return {
+                "disposition": "blocked",
+                "blocker": f"operation_read:{error.reason}",
+                "next_step": "resolve_unknown",
+            }
+        if unresolved:
+            return {
+                "disposition": "blocked",
+                "blocker": "operation_unresolved",
+                "next_step": "resolve_unknown",
+            }
+        return {"disposition": "retry_queued", **plain}
 
     def _skip_task(
         self, task: Task, override_id: str, basis: str, record: dict[str, Any]

@@ -73,7 +73,6 @@ from ..planning_backend_runtime import bind_deployment
 from ..planning_protocol_binding import current_planning_protocol
 from ..planning_repair_requests import address_requests
 from ..planning_runtime_block import resolve_after_decision
-from ..planning_selection import SYSTEM_RETRY_ORIGIN
 from ..repair_impact import read_repair_impact_indexes
 from ..taskgraph_policy import read_installed_graph_policy
 from .core import OrchestratorCore
@@ -716,11 +715,10 @@ class PlanningDecisionMixin(OrchestratorCore):
             decision_id=reply.decision_id,
         )
 
+        # 不经规划器的决定带着自己的来源进来（系统原地重做 / 人工接管重做）；其余是规划器回复
         payload.setdefault(
             "decision_origin",
-            SYSTEM_RETRY_ORIGIN
-            if reply.intent.config.get("native_planning_decision") is not None
-            else "planner_reply",
+            reply.intent.config.get("native_planning_decision_origin") or "planner_reply",
         )
         payload.setdefault("decision_type", None)
         payload.setdefault("rejection_codes", [])

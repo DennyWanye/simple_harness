@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any, TypedDict
 
 from .delegation import TERMINAL
@@ -59,7 +60,22 @@ def build_recovery_report(session: Any) -> RecoveryReport:
                 continue
             snapshot = owner._host.snapshot(mid)["snapshot"]
             status = snapshot["mission"]["status"]
-            if status not in TERMINAL:
+            blocks = [
+                row for row in snapshot.get("waiting_on", []) if row.get("kind") == "runtime_block"
+            ]
+            if status not in TERMINAL and blocks:
+                # 任务还在进行中，但被运行阻塞扣住、没有新工作会派出去：这不是"已恢复"，
+                # 是"被扣住"，原因与解法以快照里那一行为准
+                codes = sorted(
+                    {
+                        str(blocker.get("code"))
+                        for row in blocks
+                        for blocker in row.get("blockers", ())
+                        if isinstance(blocker, Mapping)
+                    }
+                )
+                add("held_refs", ref, "runtime_blocked:" + ",".join(codes))
+            elif status not in TERMINAL:
                 add("resumed_refs", ref, str(status))
             for request in (
                 list(snapshot.get("planning_questions", []))

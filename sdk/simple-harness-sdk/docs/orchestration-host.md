@@ -893,6 +893,8 @@ host.taskgraph.reads.why_not_ready(mission_id, occurrence_id)   # 没就绪的�
 |---|---|---|
 | `skip` | 步骤记 CANCELLED（**不算成功**），开着的尝试取消；规划器下一轮在 `human_takeovers` 里看到这条记录，剩下的目标怎么办由它判断 | 已完成 / 已失败 / 已取消的；BLOCKED 的（它随上级目标结束）；有已交出、结果未明的外部动作的 |
 | `run_now` | 优先级置顶、解除暂停；调度下一轮先挑它 | 不是 READY 的（原因用 `why_not_ready` 看） |
+| `retry_with_note` | 开着的尝试关掉、带着 `note` 重来；**上一次已经失败收场的（含断线后 LOST、用量未知）**：系统按人的决定排队原样重做，不问规划器，经同一套准入核对后开新尝试；步骤被运行阻塞扣住时这次接管就是唤醒来源，阻塞随新尝试解除 | 已完成 / 已失败 / 已取消的；重试次数已到上限的（接管不加次数） |
+| 回执 `disposition` | 这次接管接下来会发生什么：`stopped` / `skipped` / `prioritized` / `attempt_cancelled`（开着的尝试已关、下一次照常来）/ `retry_queued`（已排队原样重做）/ `recorded`（只记下，无需系统动作）/ **`blocked`**（没能受理重做，`blocker` 写原因：`step_action_unsettled` 这一步的外部动作还没结案、`operation_unresolved` 任务的操作账对不上、`operation_read:*` 账读不出；`next_step` 为 `resolve_unknown`） | |
 | `expected_version` | 看计划时拿到的步骤 `version`；变了就拒（`stale_decision`） | |
 | `command_id` | 同一命令号第二次原样返回第一次的记录，不重复执行 | 同一命令号用在别的步骤或别的动作上会被拒 |
 
@@ -1108,7 +1110,11 @@ Goal 只对可信宿主公开，模型没有登记/完成 Goal 的命令。每�
 `session.recovery_report()` 返回 `store_version`、`owner_generation`、`resumed_refs`、
 `waiting_approval_refs`、`held_refs`、`unknown_effect_refs`、`rejected_refs` 与 `reasons`。
 报告只读取会话账本和任务快照，涵盖队列恢复、续办暂缓、待审批与失去绑定的已提交语音，
-不会请求模型或把恢复等同于任务成功。
+不会请求模型或把恢复等同于任务成功。任务状态仍是进行中、但快照 `waiting_on` 里有
+`kind="runtime_block"`（规划器声明运行阻塞、还没被唤醒解除）的委派记在 `held_refs`，原因
+`runtime_blocked:<阻塞码>`，不记 `resumed_refs`。快照里那一行写明 `decision_id`、`blockers`、
+`resumable_if`、`woken`、受影响的 `task_ids` 与合法恢复入口 `recovery`（对这些步骤
+`takeover(task_id, "retry_with_note", …)`，见 §4d）。
 
 会话效果预备接口 `session._effects` 使用公开的 `EffectLedger`：执行前持久 claim，执行后 lookup
 权威回执，绑定 `operation_key + params_hash` 与目标身份。同 key 异参数拒绝，未知只对账不盲重放；

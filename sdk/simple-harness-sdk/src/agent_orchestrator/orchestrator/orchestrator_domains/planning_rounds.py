@@ -76,7 +76,7 @@ from ..planning_backend_runtime import bind_deployment
 from ..planning_evidence import evidence_authority
 from ..planning_protocol_binding import current_planning_protocol
 from ..planning_runtime_block import planner_binding, resume_source_current
-from ..planning_selection import infrastructure_retry
+from ..planning_selection import native_decision
 from ..taskgraph_epochs import planning_scope_digest
 from .core import OrchestratorCore
 
@@ -1085,7 +1085,16 @@ class PlanningRoundMixin(OrchestratorCore):
                     + "\n按 problems 里的 field_path 改正，重新输出完整的 <planning_decision> 块。"
                 )
 
-        native_decision = infrastructure_retry(package.package)
+        native = native_decision(
+            package.package,
+            submitted_takeovers={
+                str(e.payload["override_id"])
+                for e in self.store.list_events(
+                    mission_id, types=["NativePlanningDecisionPrepared"]
+                )
+                if e.payload.get("override_id")
+            },
+        )
         message = user_message_json(package_text)
         subject = f"{mission_id}:planner:{ordinal}"
 
@@ -1107,8 +1116,16 @@ class PlanningRoundMixin(OrchestratorCore):
                 "planning_decision_attempt_ordinal": 1 if retry_request_id is not None else 0,
                 **planner_binding(self.store, mission_id),
                 **(
-                    {"native_planning_decision": native_decision}
-                    if native_decision is not None
+                    {
+                        "native_planning_decision": native.document,
+                        "native_planning_decision_origin": native.origin,
+                        **(
+                            {"native_planning_decision_takeover": native.override_id}
+                            if native.override_id
+                            else {}
+                        ),
+                    }
+                    if native is not None
                     else {}
                 ),
                 "planning_package": dict(package.package),
@@ -1116,7 +1133,7 @@ class PlanningRoundMixin(OrchestratorCore):
                 **self._service_config(decision),
             },
             reservation=self._reservation(
-                0 if native_decision is not None else self._config.planner_reserve_tokens
+                0 if native is not None else self._config.planner_reserve_tokens
             ),
         )
         self._bind_hierarchical_planning_request(
