@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, Mock
 
 import pytest
 
-from deskpet.orchestration.session_bridge import DesktopSessionBridge, project_session_event
+from deskpet.orchestration.session_bridge import DesktopSessionBridge, _task, project_session_event
 
 
 @pytest.fixture
@@ -173,6 +173,21 @@ async def test_arbitration_fields_reach_the_public_session_without_losing_identi
         "human-arbitration", "arbitrate", 1152921504606846975,
         ruling="accept_worker", basis="Explicit auto acceptance policy", nonce="auto-nonce",
     )
+
+
+def test_child_session_requests_keep_their_worker_and_approval_kind():
+    event = project_session_event({"kind": "needs_response", "request_id": "arb", "child_key": "a",
+        "payload": {"request_id": "arb", "version": 5, "request_kind": "approval",
+                    "kind": "arbitration", "options": ["met", "unmet"], "child_key": "a",
+                    "child_session_id": "desktop-main_c_a", "summary": "两位审阅员都答不上来"}})
+    assert event["payload"]["child_key"] == "a" and event["payload"]["kind"] == "arbitration"
+    assert event["payload"]["options"] == ["met", "unmet"]
+    # 子会话号是宿主内部身份，不交给界面
+    assert "child_session_id" not in event["payload"] and "child_key" not in event
+    assert _task({"delegation_id": "d", "mission_id": "m", "turn_id": "t", "cancel_requested": False,
+                  "status": "ACTIVE", "child_key": "a", "goal_ref": "private"}) == {
+        "delegation_id": "d", "mission_id": "m", "turn_id": "t", "cancel_requested": False,
+        "status": "ACTIVE", "child_key": "a"}
 
 
 def test_sdk_planning_choice_keys_survive_without_legacy_ids():

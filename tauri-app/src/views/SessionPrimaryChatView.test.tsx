@@ -229,6 +229,89 @@ describe("desktop SDK Session", () => {
     fireEvent.click(await screen.findByRole("button", { name: "已收到" }));
     expect(h.sent.find((m) => m.type === "session_ack")?.payload).toEqual({ event_id: "result" });
   });
+  it("a worker session's question says which worker asked and is answered from the main chat", async () => {
+    const h = fixture(
+      [],
+      [
+        {
+          mission_id: "m",
+          status: "ACTIVE",
+          child_key: "report",
+          detail: {
+            planning_questions: [{ decision_id: "q-1", version: 3, state: "PENDING" }],
+          },
+        },
+      ],
+    );
+    render(<PrimaryChatView channel={h.channel} />);
+    await screen.findByText("stored reply");
+    expect(screen.getByText("工作会话：report")).toBeTruthy();
+    h.event(
+      "needs_response",
+      {
+        request_id: "q-1",
+        version: "3",
+        request_kind: "planning",
+        child_key: "report",
+        question: "通过还是打回？",
+        options: [{ key: "pass", label: "通过" }],
+      },
+      12,
+    );
+    expect(await screen.findByText("工作会话「report」的任务在等你裁决")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "通过" }));
+    expect(h.sent.find((m) => m.type === "session_respond")?.payload).toEqual({
+      request_id: "q-1",
+      version: "3",
+      decision: "answer",
+      answer: "pass",
+    });
+  });
+  it("an arbitration request offers the rulings and needs a basis", async () => {
+    const h = fixture();
+    render(<PrimaryChatView channel={h.channel} />);
+    await screen.findByText("stored reply");
+    h.event(
+      "needs_response",
+      {
+        request_id: "arb-1",
+        version: "9",
+        request_kind: "approval",
+        kind: "arbitration",
+        options: ["met", "unmet"],
+        summary: "两位审阅员都答不上来",
+      },
+      13,
+    );
+    const met = await screen.findByRole("button", { name: "裁决：met" });
+    expect(screen.queryByRole("button", { name: "批准" })).toBeNull();
+    expect((met as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.change(screen.getByLabelText("回答或拒绝理由"), { target: { value: "内容齐全" } });
+    fireEvent.click(met);
+    expect(h.sent.find((m) => m.type === "session_respond")?.payload).toEqual({
+      request_id: "arb-1",
+      version: "9",
+      decision: "arbitrate",
+      ruling: "met",
+      basis: "内容齐全",
+    });
+  });
+  it("a review request passes with an optional note", async () => {
+    const h = fixture();
+    render(<PrimaryChatView channel={h.channel} />);
+    await screen.findByText("stored reply");
+    h.event(
+      "needs_response",
+      { request_id: "rev-1", version: "2", request_kind: "approval", kind: "review", summary: "复核" },
+      14,
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "复核通过" }));
+    expect(h.sent.find((m) => m.type === "session_respond")?.payload).toEqual({
+      request_id: "rev-1",
+      version: "2",
+      decision: "review_pass",
+    });
+  });
   it("replaying result_ready never revives an already acknowledged inbox item", async () => {
     const h = fixture([
       { event_id: "received", mission_id: "m", status: "COMPLETED", acked: true },

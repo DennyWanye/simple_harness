@@ -16,6 +16,7 @@ export function ChatMissionCard({
     <section aria-label="后台任务" className="sh-ChatMissionCard-1">
       <strong>{text(mission.goal) || text(task.mission_id) || "任务创建中"}</strong>
       <p>{text(task.status)}</p>
+      {text(task.child_key) && <p>工作会话：{text(task.child_key)}</p>}
       {rows(detail.tasks).map((step) => (
         <p key={text(step.id)}>
           {text(step.title) || text(step.goal)} · {text(step.status)}

@@ -223,6 +223,15 @@ export function PrimaryChatView({ channel, onOpenSettings, active = true }: Prim
       setError(err instanceof Error ? err.message : "操作失败");
     }
   };
+  // 审批类按 kind 走不同裁决字段，与任务编排页同一套：复核带 note、仲裁带 ruling/basis、拒绝带 reason
+  const respondFields = (request: Json, decision: string, answer?: string): Json => {
+    const typed = answers[text(request.request_id)] ?? "";
+    if (request.request_kind === "planning") return { answer: answer ?? typed };
+    if (decision === "arbitrate") return { ruling: answer ?? "", basis: typed };
+    if (decision === "review_pass" || decision === "review_fail")
+      return typed.trim() ? { note: typed.trim() } : {};
+    return decision === "reject" ? { reason: typed } : {};
+  };
   const respond = (request: Json, decision: string, answer?: string) =>
     void perform(
       "respond",
@@ -230,11 +239,7 @@ export function PrimaryChatView({ channel, onOpenSettings, active = true }: Prim
         request_id: request.request_id,
         version: request.version,
         decision,
-        ...(request.request_kind === "planning"
-          ? { answer: answer ?? answers[text(request.request_id)] ?? "" }
-          : decision === "reject"
-            ? { reason: answers[text(request.request_id)] ?? "" }
-            : {}),
+        ...respondFields(request, decision, answer),
       },
       () =>
         setRequests((previous) => {
@@ -325,6 +330,9 @@ export function PrimaryChatView({ channel, onOpenSettings, active = true }: Prim
         <div className="sh-PrimaryChatView-13">
           {pendingRequests.map((request) => (
             <div key={text(request.request_id)} aria-label="需要你回答">
+              {text(request.child_key) && (
+                <p>工作会话「{text(request.child_key)}」的任务在等你裁决</p>
+              )}
               <p>
                 {text(request.question) ||
                   text(request.summary) ||
@@ -353,6 +361,29 @@ export function PrimaryChatView({ channel, onOpenSettings, active = true }: Prim
                 ) : (
                   <button onClick={() => respond(request, "answer")}>提交回答</button>
                 )
+              ) : text(request.kind) === "review" ? (
+                <>
+                  <button onClick={() => respond(request, "review_pass")}>复核通过</button>
+                  <button
+                    onClick={() => respond(request, "review_fail")}
+                    disabled={!answers[text(request.request_id)]?.trim()}
+                  >
+                    复核不通过
+                  </button>
+                </>
+              ) : text(request.kind) === "arbitration" ? (
+                (Array.isArray(request.options) ? request.options : [])
+                  .map((option) => text(option))
+                  .filter((option) => option === "met" || option === "unmet")
+                  .map((option) => (
+                    <button
+                      key={option}
+                      onClick={() => respond(request, "arbitrate", option)}
+                      disabled={!answers[text(request.request_id)]?.trim()}
+                    >
+                      裁决：{option}
+                    </button>
+                  ))
               ) : (
                 <>
                   <button onClick={() => respond(request, "approve")}>批准</button>

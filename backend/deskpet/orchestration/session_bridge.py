@@ -20,8 +20,8 @@ PAYLOAD_FIELDS = {
     "turn_committed": ("turn_id", "state", "text"),
     "delegated": ("delegation_id", "mission_id", "status"),
     "task_progress": ("seq", "type", "created_at", "task_id", "attempt_id", "actor_type", "summary"),
-    "needs_response": ("request_id", "mission_id", "version", "request_kind", "question",
-                       "options", "summary", "reason", "topic"),
+    "needs_response": ("request_id", "mission_id", "version", "request_kind", "kind", "question",
+                       "options", "summary", "reason", "topic", "child_key"),
     "result_ready": ("event_id", "mission_id", "delegation_id", "status", "source", "instruction",
                      "acked", "applied_turn_id"),
     "error": ("code",),
@@ -65,7 +65,8 @@ def project_session_event(event: Mapping[str, Any]) -> dict[str, Any] | None:
 
 
 def _task(value: Mapping[str, Any]) -> dict[str, Any]:
-    result = _pick(value, ("delegation_id", "mission_id", "turn_id", "cancel_requested", "status"))
+    result = _pick(value, ("delegation_id", "mission_id", "turn_id", "cancel_requested", "status",
+                           "child_key"))
     if value.get("snapshot"):
         result["detail"] = project_detail(value["snapshot"])
     return result
