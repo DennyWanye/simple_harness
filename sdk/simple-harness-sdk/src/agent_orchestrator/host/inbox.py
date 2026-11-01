@@ -152,6 +152,7 @@ class SessionInbox:
 
         for key, child in self.session._children.items():
             child._inbox.catch_up()
+            self._mirror_child_requests(key, child)
             for notice in child.inbox():
                 if self.store.get("inbox", notice["event_id"]) is not None:
                     continue
@@ -176,6 +177,53 @@ class SessionInbox:
                     )
                 self.session._continuation.received(mirrored)
                 self.session._checkpoint("inbox_written")
+
+    def _mirror_child_requests(self, key: str, child: Any) -> None:
+        """工作会话的提问（规划问题、审阅裁决、审批）镜像到父事件流，带 child_key。
+        人在父会话 respond 即可，不必找到工作会话。按子事件序号推进游标：子会话先补读、
+        父后镜像（中间崩溃）也不漏；父事件沿用同一个请求键，重复补读与重开都不重复发。"""
+
+        cursor_key = f"child_events:{key}"
+        cursor = int(self.store.get("cursors", cursor_key) or 0)
+        events = child._store.events(cursor)
+        if not events:
+            return
+        with self.store.transaction():
+            for event in events:
+                cursor = event["seq"]
+                if event["kind"] != "needs_response":
+                    continue
+                payload = {
+                    **event["payload"],
+                    "child_key": key,
+                    "child_session_id": child.session_id,
+                }
+                rid = str(event["request_id"])
+                if "request_kind" in payload:
+                    self.store.put(
+                        "requests",
+                        rid,
+                        {
+                            name: payload[name]
+                            for name in (
+                                "request_id",
+                                "mission_id",
+                                "version",
+                                "request_kind",
+                                "child_key",
+                            )
+                            if name in payload
+                        },
+                    )
+                self.store.event(
+                    "needs_response",
+                    key=f"request:{rid}:{payload.get('version')}",
+                    request_id=rid,
+                    mission_id=event.get("mission_id"),
+                    child_key=key,
+                    payload=payload,
+                )
+            self.store.put("cursors", cursor_key, cursor)
 
     def _requests(self, mid: str, snapshot: Mapping[str, Any]) -> None:
         candidates = [("planning", r) for r in snapshot["snapshot"].get("planning_questions", [])]
@@ -206,7 +254,7 @@ class SessionInbox:
                     **projected,
                     **{
                         name: detail[name]
-                        for name in ("question", "options", "summary", "reason", "topic")
+                        for name in ("question", "options", "summary", "reason", "topic", "kind")
                         if name in detail
                     },
                 }

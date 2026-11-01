@@ -289,7 +289,7 @@ async def run(root, principal, model, tools, render, last_seen=0):
 | `input_committed` / `turn_committed` | 输入已持久提交 / 回复已提交；失败回复走 `error` |
 | `delegated` | 已完成 delegation 与 mission 关联 |
 | `task_progress` | 任务事件的白名单摘要，只带类型、序号、时间和关联号；人工评论可带短摘要，内部 payload 不透传 |
-| `needs_response` | 人工问题或审批；含 `request_id/version/request_kind` 与可显示的提问内容 |
+| `needs_response` | 人工问题或审批；含 `request_id/version/request_kind` 与可显示的提问内容，审批类另带 `kind`（review / arbitration / action / source_change）；工作会话的提问镜像到父事件流时顶层与 payload 都带 `child_key`，payload 另带 `child_session_id` |
 | `result_ready` | 任务终态进入 inbox；按终态事件号去重 |
 | `error` | 稳定错误码，不把底层异常文字交给模型 |
 
@@ -360,6 +360,11 @@ capabilities = parent.capabilities()
 `source="child_result"`，始终 `instruction=False`。父下一次输入把结果附成“不是指令”的资料；
 自动汇总默认开着（`continuation_enabled=True`），会起一个只读回合把结果汇总给用户（见“异步受理与自动汇总”）。重复补读不会重复镜像或发 `result_ready`。结果由人在父会话 `ack()`；
 子会话不能确认父消费的结果，已读也不替代业务消费。
+
+工作会话的提问（规划问题、审阅裁决、审批）同样镜像到父事件流：父会话按子事件序号游标读子事件流里的
+`needs_response`，原样再发一条（同一个请求键去重），顶层与 payload 带 `child_key`，payload 另带
+`child_session_id`；父账本 `requests` 也登记一行。人在父会话 `respond(request_id, decision, version)`
+即可，不必找到工作会话；子会话先补读、父后镜像（中间崩溃）也不漏。能力名 `child_request_mirroring`。
 
 `capabilities()` 本地返回协议版本 2、配置版本 3、根/子角色、能力列表和策略限制，
 不调用模型或查询任务。返回键：`owner_generation / catalog_version / protocol_version / session_config_version / role / capabilities / limits / unsupported`；`limits` 里是 `max_depth / delegations_in_flight_per_session / policy`（策略公开字段），动作工具是 `capabilities` 列表里的 `action_tools` 一项，没有单独顶层键。`unsupported` 只有 `steer_running_mission`；Goal、自动汇总、授权回调、取消范围、恢复报告、归档见后文各节。

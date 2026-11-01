@@ -1528,6 +1528,7 @@ class Session:
                 "child_sessions",
                 "delegation_to_child",
                 "child_result_mirroring",
+                "child_request_mirroring",
                 "queued_child_inputs",
                 "async_accept",
                 "queued_input_execution",

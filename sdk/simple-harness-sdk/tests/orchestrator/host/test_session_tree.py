@@ -102,6 +102,83 @@ def test_delegating_to_two_children_runs_in_parallel_and_results_mirror_to_paren
     assert parent.ack(notice["event_id"])["acked"]
 
 
+def test_child_pending_requests_mirror_to_parent_and_parent_answers_them(tmp_path):
+    host, parent = make(tmp_path)
+    run(parent.create_child("a", command_id="c-a"))
+    turn = parent._commit_input("交给工作会话", "k")["turn_id"]
+    one = asyncio.run(parent._delegations.delegate(turn, "call-1", {**SPEC, "child_key": "a"}))
+    child = parent.child("a")
+    host.requests = [
+        {
+            "decision_id": "q-1",
+            "version": 3,
+            "state": "PENDING",
+            "request": {
+                "payload": {
+                    "question": "通过还是打回？",
+                    "options": [{"key": "pass", "label": "通过"}],
+                }
+            },
+        }
+    ]
+    arbitration = {
+        "request_id": "arb-1",
+        "mission_id": one["mission_id"],
+        "state": "PENDING",
+        "kind": "arbitration",
+        "options": ["met", "unmet"],
+        "summary": "两位审阅员都答不上来",
+    }
+    host.approvals = lambda mid=None: [arbitration]
+    host.decide = lambda rid, decision, **fields: host.decisions.append((rid, decision, fields)) or {
+        "ok": True
+    }
+    # 崩溃点：工作会话自己先补读（事件已落子账本、游标已前移），父会话这一拍之后才镜像
+    child._inbox.catch_up()
+    assert sum(e["kind"] == "needs_response" for e in child._store.events(0)) == 2
+    assert not any(e["kind"] == "needs_response" for e in parent._store.events(0))
+    parent._inbox.catch_up()
+    parent._inbox.catch_up()
+    mirrored = [e for e in parent._store.events(0) if e["kind"] == "needs_response"]
+    assert len(mirrored) == 2
+    by_id = {e["request_id"]: e for e in mirrored}
+    question = by_id["q-1"]
+    assert question["child_key"] == "a" and question["mission_id"] == one["mission_id"]
+    assert question["payload"]["child_key"] == "a"
+    assert question["payload"]["child_session_id"] == child.session_id
+    assert question["payload"]["question"] == "通过还是打回？"
+    assert question["payload"]["request_kind"] == "planning" and question["payload"]["version"] == 3
+    ruling = by_id["arb-1"]["payload"]
+    assert ruling["request_kind"] == "approval" and ruling["kind"] == "arbitration"
+    assert ruling["options"] == ["met", "unmet"] and ruling["child_key"] == "a"
+    assert parent._store.get("requests", "q-1")["child_key"] == "a"
+    # 游标推进到子事件尾：下一拍不重读子事件流
+    assert parent._store.get("cursors", "child_events:a") == child._store.get("meta", "sequence")
+    # 人在父会话直接作答，落到工作会话的任务上
+    assert parent.respond("q-1", "pass", version=3) == {"answered": True}
+    assert host.decisions[-1]["decision_id"] == "q-1" and host.decisions[-1]["answer"] == "pass"
+    parent.respond("arb-1", "arbitrate", version=ruling["version"], ruling="met", basis="内容齐全")
+    assert host.decisions[-1] == ("arb-1", "arbitrate", {"ruling": "met", "basis": "内容齐全"})
+    # 重开父会话、重复补读都不重复镜像
+    reopened = Session(host, session_id="main")
+    run(reopened.recover())
+    reopened._inbox.catch_up()
+    reopened._inbox.catch_up()
+    assert sum(e["kind"] == "needs_response" for e in reopened._store.events(0)) == 2
+    # 答过以后再答：与父自己的请求同口径
+    host.requests[0]["state"] = "ANSWERED"
+    with pytest.raises(SessionError, match="stale_request"):
+        parent.respond("q-1", "pass", version=3)
+    # 请求从快照里消失后再答：靠父账本的 requests 行判 stale，而不是"与本会话无关"
+    host.requests = []
+    host.approvals = lambda mid=None: []
+    with pytest.raises(SessionError, match="stale_request"):
+        parent.respond("q-1", "pass", version=3)
+    with pytest.raises(SessionError, match="stale_request"):
+        parent.respond("arb-1", "arbitrate", version=ruling["version"], ruling="met", basis="x")
+    assert "child_request_mirroring" in parent.capabilities()["capabilities"]
+
+
 def test_child_send_queues_input_without_running_it_and_capabilities_need_no_model(tmp_path):
     host, parent = make(tmp_path)
     run(parent.create_child("a", command_id="c-a"))
