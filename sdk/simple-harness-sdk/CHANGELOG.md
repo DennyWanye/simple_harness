@@ -1,3 +1,30 @@
+## opt.225 — 工作会话的提问镜像到主会话（2026-11-01）
+
+父会话按子事件序号游标读工作会话事件流里的 `needs_response`，原样再发到父事件流：顶层与 payload 带
+`child_key`，payload 另带 `child_session_id`，同一请求键去重，父账本 `requests` 登记一行；人在父会话
+`respond(request_id, decision, version)` 即可作答，不必找到工作会话。`_requests` 投影补 `kind`
+（review / arbitration / action / source_change）。能力名 `child_request_mirroring`。
+配置版本仍为 3，公开方法不变。桌面端主对话据此出裁决卡（真实模型一局走通）。
+
+## opt.224 — 长期主会话统筹多个工作会话（2026-10-31）
+
+面向 AgentOS 合同 v1.0 与 AIPhone 统一交接的一版。新增：子会话（`create_child / child_send / children / child`，
+深度 1）与命令回执（`command_receipt`，同号同参返原回执、异参 `idempotency_conflict`）；宿主统一模型并发门
+`HostSettings.max_concurrent_model_calls` 与等待事件 `waiting_for_slot`；工具目录 `ToolCatalog` 与元命令
+`tool_search / tool_schema`；异步受理 `send(..., wait=False)`、`child_send` 的 `next_turn` 排队输入、
+结果驱动自动汇总 `ContinuationPolicy`（默认开，hold / deny 可注入）；宿主授权回调 `AuthorizationPort`、
+效果账本 `EffectLedger`、取消范围 `cancel(goal | delegation | session_tree)`、`archive()` 有活报 `active_work`、
+`owner_generation` 与 `owner_conflict`、`put_goal / finish_goal / exclude_result`、`recovery_report()`；
+连接器操作可暴露成主会话动作工具（`OperationSpec.tool_roles`）。`capabilities()` 返回协议版本 2、配置版本 3。
+聊天池升到 chat-v3，**要用新的数据根**，旧库报 `incompatible_store_version`，不迁移。
+发版前跑了一次全量回归（SDK 8325 条，16 处失败全部处置，见 Host 仓库
+`plans/2026-10-30-agentos-main-session-contract/记录-全量回归-2026-11-01.md`）与仓库外真实模型一局。
+
+## opt.223 — 停止回答后原会话可继续（2026-10-31）
+
+修 AIPhone F1：点"停止回答"后会话永久 `react_cost_exceeded`。根因是 `_given_up` 不换代，且预算里的不明费用
+被无条件判为超支。现在预算含不明费用时换代，不清零、不重放结果不明的调用。配置版本不变。
+
 ## opt.222 — Session 同键重放稳定委派（2026-10-30）
 
 `session.send(text, key=...)` 的委派意图改为绑定用户回合与从 0 起的调用槽位；
