@@ -372,9 +372,10 @@ export function PrimaryChatView({ channel, onOpenSettings, active = true }: Prim
                   </button>
                 </>
               ) : text(request.kind) === "arbitration" ? (
+                // 裁决选项以 SDK 给的为准（它校验 ruling 在选项内），界面不另列白名单
                 (Array.isArray(request.options) ? request.options : [])
                   .map((option) => text(option))
-                  .filter((option) => option === "met" || option === "unmet")
+                  .filter((option) => option)
                   .map((option) => (
                     <button
                       key={option}
