@@ -1,0 +1,34 @@
+{
+  "sdk_version": "0.13.0.dev20260925+opt.225",
+  "wheel_sha256": "1ec937c84cc009729315fd8e216ef4ae122b12a8b604cdf58969be1fd098c32d",
+  "result_meaning": "Baseline gaps reproduced, NOT repaired SDK acceptance",
+  "environment": "Temporary stores; SDK FakeHost/FakeChat; no real model or network",
+  "fixture_sha256": {
+    "test_continuation.py": "a8c225bf0253edad52b1a2658eca6db52703fd33441d5904014792bf3f9220b3",
+    "test_goals.py": "0ab11ca58221c1c19671738897c6b16f95615c4d0e52f9cb48a30e05128bc01c",
+    "test_session.py": "5359c7326832e312c7bf946fd610540ad21e2ff02577f6e07ce5ba90646d9b52",
+    "test_session_async.py": "1b61c3a24b1222c0c1f4e96b21fe6b62a81a6267fbf4a52c518ecd8aec53164a"
+  },
+  "G1_static_gate": {
+    "verification_kind": "static_source_only",
+    "source": "src/agent_orchestrator/host/session_chat.py",
+    "method_line": 256,
+    "controls_absent_from_query_allowlist": [
+      "child_send",
+      "create_child",
+      "delegate_task"
+    ],
+    "real_model_or_authorized_continuation_executed": false
+  },
+  "G2_hold_then_allow": {
+    "before": "hold",
+    "after_three_ticks": "hold",
+    "policy_calls": 1,
+    "queued_inputs": 0,
+    "model_calls": 0
+  },
+  "G3_success_without_evidence": {
+    "state": "succeeded",
+    "tasks": 0
+  }
+}

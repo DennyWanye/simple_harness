@@ -1,0 +1,10 @@
+{
+  "date": "2026-11-02",
+  "package": "AgentOS opt.225 supplement v1.1",
+  "files": {
+    "SUPPLEMENT.zh-CN.md": "04c45fa3dd7a1392756cb090863ae7eef3ffc226ac2307d88b46cfdd995b0b55",
+    "reproduce_opt225.py": "abbbfaf51ba5aa2432136657a2f0f62d1284c77eb07462ea29b9e60198ea3853",
+    "reproduction.json": "1a902a1788cae90f18a0bc81ccb7892dadbf6684ed891ed8d926ef893466bfcc"
+  },
+  "contents": "AgentOS-authored requirements and reproducer; local reproduction output; no SDK wheel/source or credentials included"
+}
