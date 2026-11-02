@@ -30,6 +30,8 @@ ERROR_CODES = (
     "cursor_expired",
     "effect_unknown",
     "provider_unavailable",
+    # 成功收口被验收记录拦住；结构事实未收口仍是 active_work
+    "acceptance_incomplete",
 )
 
 #: 同身份重试可能成功的码；其余码换 command_id 重试也不会变成功。

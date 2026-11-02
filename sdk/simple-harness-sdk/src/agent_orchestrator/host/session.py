@@ -248,6 +248,30 @@ class Session:
     def exclude_result(self, event_id, reason, *, command_id):
         return self._goals.exclude(event_id, reason, command_id=command_id)
 
+    def goal(self, goal_id):
+        """Goal 的公开只读视图（规格、状态、等待原因、验收阻塞、采用的记录）；不调模型。"""
+        return self._goals.read(goal_id)
+
+    def record_acceptance(self, goal_id, record, *, command_id, expected_version):
+        """可信宿主登记一条验收结论；成功收口按当前版本的这些记录核对。"""
+        return self._goals.record(
+            goal_id, record, command_id=command_id, expected_version=expected_version
+        )
+
+    def acceptance_records(self, goal_id):
+        return self._goals.records(goal_id)
+
+    def reevaluate_continuation(
+        self, *, command_id, event_ids=None, policy_revision="", expected_goal_version=None
+    ):
+        """可信宿主在策略变更后要求重评暂缓 / 拒绝过的结果；真正再问策略在泵的下一拍。"""
+        return self._continuation.reevaluate(
+            command_id=command_id,
+            event_ids=event_ids,
+            policy_revision=policy_revision,
+            expected_goal_version=expected_goal_version,
+        )
+
     def revoke_authorization(self, grant_ref: str) -> None:
         self._check_open()
         self._authorization.revoke(grant_ref)
@@ -697,6 +721,9 @@ class Session:
                 else queued.get("goal_ref"),
                 "source": "user" if queued is None else queued.get("source", "user"),
                 "source_input_id": None if queued is None else queued["input_id"],
+                # 续办回合冻结的控制动作与授权请求：命令执行时按这一份核，不看当下策略
+                "controls": [] if queued is None else list(queued.get("controls") or []),
+                "authorization": None if queued is None else queued.get("authorization"),
             }
             for notice in notices:
                 if row["result_subject"] is None and notice.get("delegation_id") is not None:
@@ -1533,7 +1560,10 @@ class Session:
                 "async_accept",
                 "queued_input_execution",
                 "continuation",
+                "continuation_controls",
+                "continuation_reevaluation",
                 "goals",
+                "goal_acceptance_records",
                 "authorization_port",
                 "cancel_scope",
                 "recovery_report",
@@ -1817,6 +1847,8 @@ class TreeSessionChatService(SessionChatService):
             active = None if input_key is None else session._store.get("turns", input_key)
             if active is None:
                 raise SessionError("permission_denied", "no committed input belongs to this run")
+            if active.get("source") == "continuation" and name != "child_status":
+                session._continuation.check_control(active, name)
             command_id = session._model_command_id(name, active["turn_id"], run_id, call_id)
             if name == "cancel":
                 return session.cancel(

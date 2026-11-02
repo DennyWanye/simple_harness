@@ -17,8 +17,8 @@ from .session_ledger import SessionError, digest
 
 _UNSET = object()
 
-CONFIG_VERSION = 3
-PROTOCOL_VERSION = 2
+CONFIG_VERSION = 4
+PROTOCOL_VERSION = 3
 MAX_DEPTH = 1
 
 _KEY = re.compile(r"[A-Za-z0-9_-]{1,64}")

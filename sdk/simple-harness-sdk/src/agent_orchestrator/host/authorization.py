@@ -18,7 +18,9 @@ from .session_ledger import SessionError, digest, encoded
 
 _UNSET = object()
 
-ACTIONS = frozenset({"accept_input", "delegate", "create_child", "connector_effect"})
+ACTIONS = frozenset(
+    {"accept_input", "delegate", "create_child", "connector_effect", "continue_within_goal"}
+)
 
 
 @dataclass(frozen=True)

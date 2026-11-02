@@ -8,6 +8,7 @@ import time
 from types import SimpleNamespace
 
 import pytest
+from test_goals import accept
 from test_session import FakeHost
 
 from agent_orchestrator.host import Session
@@ -532,6 +533,8 @@ def test_closed_goal_rejects_new_effect_but_keeps_committed_receipt(tmp_path, ou
             connector, "write", "target", {}, operation_key="old", goal_ref=goal["goal_ref"]
         )
     )
+    if outcome == "succeeded":
+        accept(session, "goal")
     session.finish_goal("goal", outcome, command_id="finish", expected_version=1, basis="receipt")
     with pytest.raises(SessionError, match="stale_version"):
         run(
@@ -606,6 +609,8 @@ def test_repeated_approval_returns_original_after_goal_closes(tmp_path, outcome)
         run(session._authorization.ensure("connector_effect", "input", {}))
     [pending] = session._store.rows("authorization_requests")
     receipt = session.respond(pending["request_id"], "approve", pending["version"])
+    if outcome == "succeeded":
+        accept(session)
     session.finish_goal("g", outcome, command_id="finish", expected_version=1, basis="facts")
     assert session.respond(pending["request_id"], "approve", pending["version"]) == receipt
     with pytest.raises(SessionError, match="stale_version"):

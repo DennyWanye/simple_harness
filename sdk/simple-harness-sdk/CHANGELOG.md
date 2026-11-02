@@ -1,3 +1,28 @@
+## opt.227 — 授权内续办、暂缓后重评、目标验收记录（2026-11-02）
+
+AgentOS 补充合同 v1.1 的三项缺口，都只补"秩序"：谁有权、何时重校、怎么去重、按哪个版本收口；
+条件通不通过、下一步做什么仍由模型或宿主的验收器 / 人判。
+
+- **暂缓后重评** `reevaluate_continuation(command_id=, event_ids=None, policy_revision="", expected_goal_version=None)`：
+  范围受理时冻结，回执经命令账本；泵下一拍对范围内每条仍可重评（hold / deny / waiting）的结果再问一次策略
+  （上下文 `reevaluation_id`），写 `decisions` 历史与 `continuation_reevaluated`；enqueue 的按新输入身份入队，
+  同一结果最多一个有效输入；已应用 / 已排除 / 已取消 / Goal 已关或版本不符的跳过不问；普通唤醒不再问策略，deny 只有显式重评才会变。
+- **授权内续办** `ContinuationDecision.enqueue(controls=[...])`（`create_child / child_send / delegate_task` 子集）：
+  策略放行后再以 `continue_within_goal` 问 `AuthorizationPort`，授权请求冻结进结果行与排队输入；派发前重核，
+  撤销 / 过期 / 取消 / Goal 改版就撤回控制动作、退成只读汇总（`continuation_controls_withheld`）；回合内每条控制命令
+  执行前再核一遍，随后仍走各自原有授权，Goal 引用取冻结版本；要人批的先 `hold("authorization_required")`，批了由宿主重评接上。
+  默认策略不带控制动作，行为不变。
+- **目标验收记录**：`completion_criteria` 项有稳定 `criterion_id`（宿主自带或按位次 `c1…`）；
+  `record_acceptance(goal_id, record, command_id=, expected_version=)` 登记结论（pass / fail / unknown、验证者、方法、
+  证据引用 + 哈希 / 回执身份），证据对本树的任务产物 / 效果 / 结果核账，后来的记录接替先前的；`finish_goal(succeeded)`
+  要求每个必需条件在当前版本有 pass 且证据复核一致，否则 `acceptance_incomplete` 并在 `goal()` 的 `acceptance_blockers`
+  列出原因；通过时回执带 `accepted_records`。`acceptance_records() / goal()` 查询。
+- 能力发现 `continuation_reevaluation / continuation_controls / goal_acceptance_records`；错误码表加 `acceptance_incomplete`；
+  `protocol_version=3`、`session_config_version=4`，**要用新的数据根**；主会话说明文字改了续办那句。
+
+测试：`test_continuation_reevaluation.py`（4）、`test_goal_acceptance.py`（3）、`test_continuation_controls.py`（7，含真实宿主一条：
+A/B 结果回来后续办回合在同一 Goal 下自动委派 C，资料里的删除 / 批准无效）；既有成功收口的测试补了验收记录。
+
 ## opt.226 — 人工接管重试能解开运行阻塞（2026-11-02）
 
 AIPhone 11-02 交接单第一件：步骤在交接后断线，尝试记 LOST（用量未知）；规划器此前有回复被拒，系统自己的

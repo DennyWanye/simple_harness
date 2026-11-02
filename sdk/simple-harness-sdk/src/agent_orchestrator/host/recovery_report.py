@@ -102,6 +102,9 @@ def build_recovery_report(session: Any) -> RecoveryReport:
                     row["input_id"],
                     row.get("reason", row.get("error", row["state"])),
                 )
+        for row in store.rows("continuation_reevaluations"):
+            if row["state"] == "requested":
+                add("resumed_refs", row["reevaluation_id"], "reevaluation_requested")
         for row in store.rows("continuation_results"):
             if row["state"] in {"hold", "waiting"}:
                 add("held_refs", row["event_id"], row.get("reason", row["state"]))

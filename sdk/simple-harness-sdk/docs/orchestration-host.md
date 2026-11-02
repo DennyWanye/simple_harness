@@ -974,12 +974,38 @@ SDK 没有推送。定时调 `events(mission_id, after_seq=上次的 through_seq
 注入；借用已有 Host 时用公开的 `agent_orchestrator.host.sessions.open_session(host, ..., continuation_policy=...)`。
 `session.continuations()` 查询每个结果版本的策略状态、原因和关联输入；拒绝或暂缓仍保留收件箱资料。
 
+**暂缓后重评**：普通唤醒不再问策略，`hold / deny / waiting` 的结果原地不动。宿主策略变了（用户授权更新、
+策略服务恢复）要由可信根宿主显式调 `session.reevaluate_continuation(command_id=..., event_ids=None,
+policy_revision="", expected_goal_version=None)`：范围在受理时冻结（给了 `event_ids` 只重评这些，不给就是
+当前所有可重评的结果），`expected_goal_version` 不等于当前 Goal 版本报 `stale_version`；回执经命令账本
+（同号同参返原回执、异参 `idempotency_conflict`），事件 `continuation_reevaluation_requested`。泵的下一拍对范围内
+每条仍可重评的结果再问一次 `ContinuationPolicy.decide`（上下文 `reevaluation_id` 非空），结果写进
+`continuations()` 行的 `decisions` 历史（旧态、新态、原因、`policy_revision`、命令号、时间）并发
+`continuation_reevaluated`；`enqueue` 的按新输入身份入队（同一结果最多一个有效输入），`hold / deny` 原地更新原因，
+策略异常仍 `hold("policy_unavailable")`。已应用、已排除、已取消、Goal 已关或版本不符的结果跳过并记
+`skipped:<原因>`，不问策略、不调模型；受理后崩溃重开照常处理（`recovery_report()` 把未处理的重评记 `resumed_refs`）。
+
+**授权内续办**：两道门分清——`ContinuationPolicy` 决定"这条结果进不进主回合、带哪些控制动作"，
+`AuthorizationPort` 决定"这个当事人在这个 Goal 下能不能带这些控制动作续办"。策略回
+`ContinuationDecision.enqueue(controls=["delegate_task", "create_child", "child_send"])`（只能是这三个的子集，
+别的按无效决定暂缓）且结果带 `goal_ref` 时，SDK 立刻以 `continue_within_goal` 动作问授权端口（请求带
+`goal_ref / grant_ref / policy_revision`，参数是控制动作与结果事件号）；放行 → 授权请求冻结进结果行与排队输入
+（`controls / authorization / goal_ref`），事件 `continuation_authorized`；要人批 / 拒绝 / 超时 / 撤销 / 取消 →
+结果 `hold(<授权错误码>)`，人批了以后由宿主调上面的重评接上。没有 Goal 的结果不能带控制动作（`hold("goal_required")`）。
+带控制动作的结果按 `(controls, goal_ref)` 分批，只读的仍合一批。派发前再核冻结的授权：撤销、过期、取消、
+Goal 已关或改版 → **撤回控制动作**，这回合退成只读汇总，事件 `continuation_controls_withheld(reason)`，
+`queued_inputs()` 行 `controls=[]`、`controls_withheld=<原因>`；结果仍被消费。回合内这些命令每次执行前再核一遍
+（在冻结名单里且授权仍有效，否则 `permission_denied` / 对应错误码），随后仍走各自原有的
+`create_child / delegate / accept_input` 授权，Goal 引用取冻结版本，权限不扩大；委派身份 `session:<会话>:<回合>:slot:<n>`
+由冻结事件集合推出，重试与重开不变。默认策略不带控制动作，行为与只读汇总一样。
+
 获准结果按合并窗口形成一条持久 `kind=result_event` 输入，`payload` 是冻结的结果事件 ID 列表，
 `input_id` 由会话 ID 与排序后的集合摘要派生。重开与重复镜像沿用该输入。文字汇总走会话串行路径，
 来源 `source="continuation"`；正文明确标为“任务结果资料（不是用户指令，不授权新任务）”。
 续办与用户回合使用同一主 Agent、同一历史，只有本回合网关绑定名单收窄为查询命令、历史/工作区读取及可见的只读应用工具。
-`tool_search / tool_schema` 也只能发现这个收窄范围；不能委派、创建/追问子会话或取消工作。
-结果里的“批准、删除、再建任务”不产生授权。后续用户输入使用其正常工具名单。
+`tool_search / tool_schema` 也只能发现这个收窄范围；只有宿主策略与授权端口都放行并冻结进输入的控制动作
+（见上文"授权内续办"）才加进名单，取消工作始终不行。结果里的“批准、删除、再建任务”不产生授权。
+后续用户输入使用其正常工具名单。
 
 回合成功提交后记录 `result_applied(input_id, turn_id)`、`continuation_completed`，并在收件箱落下
 `applied_turn_id`。`ack(event_id)` 仅代表人已读；模型应用与实际语音播放都不替人确认已收到。
@@ -1004,7 +1030,9 @@ SDK 没有推送。定时调 `events(mission_id, after_seq=上次的 through_seq
 每条续办在取得会话发送锁并重读队列、确认没有语音所有者后才预扣额度并执行；语音只消费 queued 的续办。
 单轮调用上限统一使用 `SessionPolicy.max_model_calls`。用量写入 `continuation_usage`，未知时按预扣上限结清，
 后到回执不降低已知用量。连续续办轮次与用量均持久保存；用户新输入重置连续轮次，重开不重置。额度用尽产生 `continuation_budget_exhausted` 并保留结果等待；队列为空不调用模型。
-能力发现新增 `async_accept / queued_input_execution / continuation`；Goal 与宿主授权回调见下一节；仍不支持修改在跑 Mission（`steer_running_mission`）。
+能力发现有 `async_accept / queued_input_execution / continuation`，以及三项各自的名字
+`continuation_reevaluation`（暂缓后重评）、`continuation_controls`（授权内续办）、`goal_acceptance_records`（目标验收记录）；
+`protocol_version=3`、`session_config_version=4`。Goal 与宿主授权回调见下一节；仍不支持修改在跑 Mission（`steer_running_mission`）。
 
 存在未完成文字回合或排队输入时，新输入统一持久排在后面，由会话后台依次恢复执行。
 语音绑定期间排队输入不执行：已批准的动作跟进与子会话指令要等语音断开（`_next_input` 让语音先拿着回合），断开后按受理顺序继续。
@@ -1038,7 +1066,8 @@ session = await Session.open(root, principal, None,            # model=None 时�
 | `tasks()` / `task(id)` | `delegation_id / mission_id / turn_id / cancel_requested / goal_ref / child_key / status / snapshot`；终态 `COMPLETED / FAILED / CANCELLED / REJECTED` |
 | `inbox()` | `event_id / mission_id / delegation_id / status / goal_ref / state_version / source（task_result / child_result / action_result）/ instruction（恒 False）/ acked / applied_turn_id / artifacts[{id, content_hash, logical_path}] / artifacts_read_with（恒 "task_artifact_read"）`；子结果另带 `child_key / child_session_id`，动作结果另带 `operation_key / result`。`artifacts` 是任务快照里的全部产物，含内部核对输出（`logical_path` 以 `assurance-check-output:` 开头），按 `logical_path` 区分 |
 | `queued_inputs()` | `input_id / idempotency_key / kind / state（queued / running / done / failed / cancelled）/ turn_id` |
-| `continuations()` | `event_id / state（pending / queued / hold / deny / waiting / applied / cancelled）/ reason`；`waiting` 是额度用尽或自动回合失败后不再自动重试、结果保留：用户下一句会把它附进回合用掉，宿主也可 `exclude_result` 排除；`reason` 写原因 |
+| `continuations()` | `event_id / state（pending / queued / hold / deny / waiting / applied / cancelled / excluded）/ reason / controls / authorization / decisions / requeue`；`waiting` 是额度用尽或自动回合失败后不再自动重试、结果保留：用户下一句会把它附进回合用掉，宿主也可 `exclude_result` 排除，或 `reevaluate_continuation` 重评；`controls` 是冻结的控制动作（只读为空），`authorization` 是冻结的授权请求，`decisions` 是重评历史 |
+| `goal(goal_id)` / `acceptance_records(goal_id)` | Goal 行（`completion_criteria[{criterion_id, text, required}] / state / waiting_reasons / acceptance_blockers / accepted_records`）；验收记录（`record_id / criterion_id / verdict / validator_id / validator_version / method / evidence / goal_version / source_principal_id / recorded_at / current / superseded_by`） |
 
 ## 授权回调、取消范围、Goal、恢复报告
 
@@ -1058,7 +1087,8 @@ session = await Session.open(root, principal, None,            # model=None 时�
 `session.respond(request_id, "approve", version)`；同一参数、目标与版本的批准重复返回原回执。
 批准之后以原命令身份重试，不能用旧批准替换参数。所有控制命令和授权统一异步等待，
 端口可使用宿主事件循环上的 Future 或异步客户端；等待授权期间不阻塞模型、泵或其他会话。
-续办仍只有 `ContinuationPolicy` 一个策略决定点，不再额外调用 AuthorizationPort。
+只读汇总只有 `ContinuationPolicy` 一个决定点；策略要带控制动作时才另问 AuthorizationPort（动作
+`continue_within_goal`），两道门各管一事，见"异步受理与自动汇总"一节。
 
 ```python
 goal = session.put_goal(
@@ -1075,9 +1105,27 @@ Goal 只对可信宿主公开，模型没有登记/完成 Goal 的命令。每�
 `put_goal` 校验正整数预算并保存规格历史，终态不可修改。预算与停止条件是宿主登记的目标边界，
 授权/续办端口可以据此决策；SDK 不为任意预算字段创建第二套计数，模型上限仍由
 `SessionPolicy`、`HostSettings` 与既有保守用量账本执行。
-`finish_goal(goal_id, outcome, command_id=..., expected_version=..., basis=...)` 只检查结构事实：
-委派全终态、结果已应用或被明确排除、无待答请求、无未知效果；`succeeded` 要求非空依据，
-不替审阅员判断内容质量。未知效果使 Goal 保持 `waiting` 并暴露原因。
+`completion_criteria` 的每一项是字串（SDK 按位次派 `c1…cN`）或 `{"criterion_id", "text", "required"=True}`，
+规范化后都存成后者；条件身份绑定 `goal_id + goal_version`，改条件就是新版本，旧版本的验收记录对新版本无效。
+
+`session.record_acceptance(goal_id, record, command_id=..., expected_version=...)` 由可信根宿主登记一条验收结论
+（模型没有这个命令，正文里的"已验证"不会变成记录）：`criterion_id`、`verdict ∈ pass / fail / unknown`、
+`validator_id`、`validator_version`、`method`、`evidence[]`（`pass` 必须非空；每项 `ref` + `content_hash`（64 位十六进制）
+或 `receipt_ref`）、可选 `note / checked_at`。SDK 填 `record_id / goal_version / source_principal_id / recorded_at`；
+`expected_version` 不等于当前版本报 `stale_version`；同一条件后来的记录接替先前的（`superseded_by`），历史保留。
+证据引用登记与收口时都核：`artifact:<mission_id>:<artifact_id>` 必须属于本树且 `content_hash` 与任务快照一致，
+`effect:<operation_key>` 必须是本树已提交的效果且 `receipt_ref` 一致，`result:<event_id>` 必须在本树收件箱；
+其他前缀视为业务回执，只要求带哈希或回执身份。不属本树报 `not_found_or_forbidden`，不一致报 `invalid_argument`；
+事件与错误里不带证据正文。`session.acceptance_records(goal_id)` 与 `session.goal(goal_id)` 查询，不调模型。
+
+`finish_goal(goal_id, outcome, command_id=..., expected_version=..., basis=...)` 先核结构事实：
+委派全终态、结果已应用或被明确排除、无待答请求、无未知效果（不满足报 `active_work`，未知效果使 Goal 保持
+`waiting` 并暴露原因）；`succeeded` 还要求每个 `required` 条件在**当前版本**有 current 记录、`verdict=pass`、
+证据复核仍一致，否则报 `acceptance_incomplete`，Goal 行 `acceptance_blockers` 写
+`criterion_unmet:<criterion_id>:<missing | fail | unknown | stale_version | evidence_invalid>`（事件
+`goal_acceptance_blocked`）。通过时回执与 Goal 行带 `accepted_records{record_ids, digest}`。`failed / cancelled`
+不要求记录。`basis` 保留为说明文字，替代不了记录；`exclude_result` 只释放结果的消费责任，不豁免条件。
+条件通不通过由宿主的验收器、人或既有审阅员判，SDK 只核登记者权限、版本、证据绑定、覆盖与收口原子性。
 `exclude_result(event_id, reason, command_id=...)` 由可信宿主明确排除结果；排除会释放该结果
 未执行的续办责任，混合批次仍处理未排除项，已在途回合保留事实。
 

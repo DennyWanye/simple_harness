@@ -5,6 +5,7 @@ import asyncio
 import contextlib
 
 import pytest
+from test_goals import accept
 from test_session import SPEC, FakeHost
 from test_session_async import FakeChat
 
@@ -148,6 +149,7 @@ def test_cancel_scopes_do_not_mix_and_late_cancel_keeps_succeeded_goal(tmp_path)
             command_id="goal",
             expected_version=0,
         )
+        accept(parent)
         parent.finish_goal("g", "succeeded", command_id="done", expected_version=1, basis="核验")
         parent.cancel("goal", "g", command_id="late")
         assert parent._goals.find("g")["state"] == "succeeded"

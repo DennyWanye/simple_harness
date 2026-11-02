@@ -36,6 +36,24 @@ def put(session, goal_id="g", *, command="put", version=0, **changes):
     return session.put_goal(spec(goal_id, **changes), command_id=command, expected_version=version)
 
 
+def accept(session, goal_id="g", *, version=1, command="accept"):
+    """成功收口前，给当前版本每条必需条件登记一条带证据的 pass（宿主验收器替身）。"""
+    for criterion in session.goal(goal_id)["completion_criteria"]:
+        session.record_acceptance(
+            goal_id,
+            {
+                "criterion_id": criterion["criterion_id"],
+                "verdict": "pass",
+                "validator_id": "test-validator",
+                "validator_version": "1",
+                "method": "mechanical",
+                "evidence": [{"ref": "business:row-1", "content_hash": "f" * 64}],
+            },
+            command_id=f"{command}:{criterion['criterion_id']}:{version}",
+            expected_version=version,
+        )
+
+
 def test_goal_version_history_idempotency_terminal_and_single_active(tmp_path):
     _, session = make(tmp_path)
     first = put(session)
@@ -51,6 +69,7 @@ def test_goal_version_history_idempotency_terminal_and_single_active(tmp_path):
     assert session._store.get("goal_history", "g:2")["objective"] == "扩写报告"
     with pytest.raises(SessionError, match="stale_version"):
         put(session, command="stale", version=1)
+    accept(session, version=2)
     done = session.finish_goal(
         "g", "succeeded", command_id="finish", expected_version=2, basis="审阅员已核验"
     )
@@ -131,6 +150,7 @@ def test_goal_success_requires_basis_and_structural_facts_in_children(tmp_path):
         == excluded
     )
     assert parent.inbox()[0]["applied_turn_id"] is None
+    accept(parent)
     assert (
         parent.finish_goal(
             "g", "succeeded", command_id="finish", expected_version=1, basis="验收通过"
@@ -234,6 +254,7 @@ def test_a_terminal_task_with_an_unknown_action_still_blocks_goal_finish(tmp_pat
         session.finish_goal("g", "succeeded", command_id="finish", expected_version=1, basis="看过")
     # 动作有了结果：放行
     host.snapshot = original
+    accept(session)
     session.finish_goal("g", "succeeded", command_id="finish-2", expected_version=1, basis="看过")
 
 
@@ -308,6 +329,7 @@ def test_goal_applied_parent_mirror_does_not_remain_blocked_by_child_copy(tmp_pa
         notice["applied_turn_id"] = "summary-turn"
         parent._store.put("inbox", notice["event_id"], notice)
     assert parent.child("a").inbox()[0]["applied_turn_id"] is None
+    accept(parent)
     assert (
         parent.finish_goal(
             "g", "succeeded", command_id="finish", expected_version=1, basis="读过完整结果"

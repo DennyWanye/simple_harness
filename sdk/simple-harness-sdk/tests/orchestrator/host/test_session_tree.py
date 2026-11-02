@@ -130,9 +130,9 @@ def test_child_pending_requests_mirror_to_parent_and_parent_answers_them(tmp_pat
         "summary": "两位审阅员都答不上来",
     }
     host.approvals = lambda mid=None: [arbitration]
-    host.decide = lambda rid, decision, **fields: host.decisions.append((rid, decision, fields)) or {
-        "ok": True
-    }
+    host.decide = lambda rid, decision, **fields: (
+        host.decisions.append((rid, decision, fields)) or {"ok": True}
+    )
     # 崩溃点：工作会话自己先补读（事件已落子账本、游标已前移），父会话这一拍之后才镜像
     child._inbox.catch_up()
     assert sum(e["kind"] == "needs_response" for e in child._store.events(0)) == 2
@@ -189,7 +189,7 @@ def test_child_send_queues_input_without_running_it_and_capabilities_need_no_mod
     assert row["input_id"] == queued["input_id"] and row["state"] == "queued"
     assert any(e["kind"] == "input_accepted" for e in parent.child("a")._store.events(0))
     capabilities = parent.capabilities()
-    assert capabilities["protocol_version"] == 2
+    assert capabilities["protocol_version"] == 3
     assert {"child_sessions", "command_receipts"} <= set(capabilities["capabilities"])
     assert "continuation_policy" not in capabilities["capabilities"]
 
@@ -337,7 +337,7 @@ def test_capabilities_are_local_and_errors_do_not_disclose_details(tmp_path, mon
 
     monkeypatch.setattr(parent._host, "snapshot", fail)
     caps = parent.capabilities()
-    assert caps["session_config_version"] == 3 and caps["role"] == "root"
+    assert caps["session_config_version"] == 4 and caps["role"] == "root"
     assert parent.child("a").capabilities()["role"] == "child"
     assert caps["limits"] == {
         "max_depth": 1,
@@ -345,7 +345,7 @@ def test_capabilities_are_local_and_errors_do_not_disclose_details(tmp_path, mon
         "policy": parent.policy.public(),
     }
     assert set(caps["unsupported"]) == {"steer_running_mission"}
-    assert len(ERROR_CODES) == 18
+    assert len(ERROR_CODES) == 19
     for code in (*ERROR_CODES, "busy", "permission_denied"):
         error = SessionError(code, "private provider response secret")
         public = error.public()
