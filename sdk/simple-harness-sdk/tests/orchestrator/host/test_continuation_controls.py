@@ -268,3 +268,46 @@ def test_real_host_authorized_continuation_delegates_within_the_same_goal(tmp_pa
             await parent.close()
 
     asyncio.run(case())
+
+
+def test_revoke_during_downtime_after_commit_withholds_controls_without_breaking_the_turn(tmp_path):
+    """回合正文已提交后崩溃，停机期间授权被撤销：重开后撤回控制动作、回合照常只读消费，不撞幂等冲突。"""
+
+    async def case():
+        host, parent = await goal_parent(tmp_path, policy=ControlsPolicy())
+        fired = []
+
+        def crash(name):
+            if name == "input_committed" and not fired:
+                fired.append(name)
+                raise Crash(name)
+
+        parent._checkpoint = crash
+        try:
+            await tick(parent)
+            await asyncio.sleep(0.3)
+        except Crash:
+            pass
+        assert fired
+        [queued] = parent.queued_inputs()
+        assert parent._store.get("turns", queued["input_id"]) is not None
+        await parent.close()
+        reopened = Session(host, session_id="main", continuation_policy=ControlsPolicy())
+        reopened._chat = FakeChat(reopened)
+        reopened.revoke_authorization("grant-report")
+        await reopened.recover()
+        reopened._inbox.catch_up()
+        for _ in range(5):
+            await tick(reopened)
+            await asyncio.sleep(0.05)
+        await eventually(lambda: bool(reopened.inbox()[0]["applied_turn_id"]))
+        [again] = reopened.queued_inputs()
+        assert again["state"] == "done" and again["controls"] == []
+        assert again["controls_withheld"] == "authorization_revoked"
+        turn = reopened._store.get("turns", again["input_id"])
+        assert turn["controls"] == [] and turn["controls_withheld"] == "authorization_revoked"
+        assert reopened._chat.calls == 1
+        assert [r["state"] for r in reopened.continuations()] == ["applied"]
+        await reopened.close()
+
+    asyncio.run(case())

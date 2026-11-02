@@ -587,7 +587,15 @@ class Continuation:
             blocker = self._controls_blocker(queued)
             if blocker is not None:
                 with self.store.transaction():
-                    queued.update(controls=[], controls_withheld=blocker, text=READ_ONLY_TEXT)
+                    queued.update(controls=[], controls_withheld=blocker)
+                    turn = self.store.get("turns", input_id)
+                    if turn is None:
+                        # 回合还没提交：换成只读正文。已提交的回合正文是幂等键的一部分，不能改；
+                        # 它的命令由 check_control 按清空后的名单拦住。
+                        queued["text"] = READ_ONLY_TEXT
+                    else:
+                        turn.update(controls=[], controls_withheld=blocker)
+                        self.store.put("turns", input_id, turn)
                     self.store.put("queued_inputs", input_id, queued)
                     self.store.event(
                         "continuation_controls_withheld",
