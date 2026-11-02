@@ -31,7 +31,7 @@ dependencies = [
     "aiosqlite>=0.22.1",
     # Companion Task 2: Rust signs privileged window credentials with
     # Ed25519; the backend verifies them directly before any mutation.
-    "cryptography==49.0.0",
+    "cryptography==50.0.2",
     # P2-0-S4: scripts/perf/rss_sampler.py uses psutil to watch process RSS.
     "psutil>=7.2.2,<8",
     # P2-1-S6: /metrics endpoint exposes TTFT Histogram.
