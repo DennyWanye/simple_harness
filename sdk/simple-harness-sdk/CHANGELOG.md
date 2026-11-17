@@ -1,4 +1,4 @@
-## 未发布 — DomainTool 可以「总是露出」（issue #40，2026-11-17）
+## opt.228 — DomainTool 可以「总是露出」（issue #40，2026-11-17）
 
 开着 `tool_search` 时，宿主注册的应用工具都要模型先搜才看得见；模型偶尔不搜，直接说"没有能用的工具"，
 这一回合就白跑。宿主此前只能用 `HostSettings(tool_search=False)` 全关。
