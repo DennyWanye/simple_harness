@@ -657,6 +657,7 @@ tool = DomainTool(
     invoke=device_status,                      # 普通函数（线程里跑）或 async def（事件循环上跑）
     timeout_seconds=30,
     roles=("task", "main", "child"),          # 允许范围，只缩不放
+    always_exposed=False,                      # True：开着 tool_search 也直接列给模型（见"工具层"）
 )
 host = await OrchestrationHost.open(root, principal=..., model=..., tools=[tool])
 ```
@@ -664,7 +665,7 @@ host = await OrchestrationHost.open(root, principal=..., model=..., tools=[tool]
 | 规则 | 说明 |
 |---|---|
 | 只收只读工具 | `read_only=False` 在构造时被拒。有副作用的操作走连接器（有审批、去重号、对账），见 4b、4c 节 |
-| 注册时就拒 | 名字不合法、与内置工具或技能工具同名、重复注册、schema 不是对象或没写 `description`、超时不是正数 |
+| 注册时就拒 | 名字不合法、与内置工具或技能工具同名、重复注册、schema 不是对象或没写 `description`、超时不是正数、`always_exposed` 不是 bool |
 | 参数校验 | 模型给的参数先按 schema 校验，不合格不会调到你的函数 |
 | 串行 | 同一任务内的工具调用一个接一个（每任务一把锁），任务之间并行 |
 | 忙 | 上一次超时的调用还没结束、锁还占着：这次最多等 `timeout_seconds`，然后判"失败"（`tool_busy`），不发起调用 |
@@ -711,6 +712,10 @@ host = await OrchestrationHost.open(root, principal=..., model=..., tools=[tool]
 抛出异常并走原有失败回执。控制命令和两个历史回读始终下发，其余说明按需加载。
 始终暴露集合由宿主读取目录的 `always_exposed` 生成，经配置传到执行层；新控制命令自动加入，
 不依赖固定名字名单，也不在 schema 里夹带开关。
+应用工具默认按需加载；宿主可以给少数核心工具设 `DomainTool(..., always_exposed=True)`，
+让它在开着 `tool_search` 时也直接列给模型（主会话、子会话、后台任务三处都生效），其余工具照旧先搜。
+它只影响说明可见性：不放宽 `roles`（对某角色不可见的工具不会因此露出），也不改执行许可；
+`tool_search=False` 时本来就全量下发，这个字段不起作用。默认 `False`，行为与以前相同。
 加载集合写入本回合 checkpoint，恢复同回合会复用，下一回合清空。
 直接调用允许名单内尚未加载的工具照常经过原授权执行。
 设 `tool_search=False` 会下发全部允许说明。显式收窄工具名单时，需要保留两个元工具以便搜索，

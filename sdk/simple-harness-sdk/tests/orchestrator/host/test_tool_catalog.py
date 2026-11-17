@@ -542,3 +542,157 @@ def test_main_reads_task_artifacts_through_the_host(tmp_path, monkeypatch):
             await host.close()
 
     asyncio.run(case())
+
+
+# ---- DomainTool.always_exposed：宿主挑几个核心工具，开着 tool_search 也直接列给模型 ----
+
+
+def _pinned(tool, name, **changes):
+    return replace(tool, name=name, always_exposed=True, **changes)
+
+
+def test_domain_tool_always_exposed_defaults_off_and_reaches_the_exposure_policy():
+    from agent_orchestrator.runtime.tool_catalog import catalog_for, exposure_policy
+
+    tool = _device_tool([])
+    assert tool.always_exposed is False
+    catalog = catalog_for({"device_status": tool, "pinned_status": _pinned(tool, "pinned_status")})
+    flags = {e.name: e.always_exposed for e in catalog.entries if e.source == "application"}
+    assert flags == {"device_status": False, "pinned_status": True}
+    policy = exposure_policy(catalog)
+    assert "pinned_status" in policy.always_exposed
+    assert "device_status" not in policy.always_exposed
+    with pytest.raises(ValueError, match="always_exposed"):
+        replace(tool, always_exposed=1)
+
+
+def test_always_exposed_tool_is_listed_without_search_in_chat_and_session(tmp_path):
+    async def case():
+        seen = []
+        tool = _device_tool(seen)
+        script = _chat_script([("pinned_status", {}), "查到了", "好的"])
+        host = await _open(tmp_path, chat=script, tools=[tool, _pinned(tool, "pinned_status")])
+        session = None
+        try:
+            reply = await host.chat({"session_id": "s", "text": "查电量", "idempotency_key": "i"})
+            assert reply["state"] == "committed", reply
+            assert reply["tool_calls"][0]["outcome"] == "succeeded"
+            assert len(seen) == 1
+            first = {t.name for t in script.asked[0].tools}
+            assert {"pinned_status", "tool_search", "tool_schema"} <= first
+            assert "device_status" not in first  # 没标的照旧要先搜
+            session = await host.open_session("pinned")
+            before = len(script.asked)
+            receipt = await session.send("你好", key="pinned-1")
+            assert receipt["state"] == "committed", receipt
+            names = {t.name for t in script.asked[before].tools}
+            assert "pinned_status" in names and "device_status" not in names
+        finally:
+            if session is not None:
+                await session.close()
+            await host.close()
+
+    asyncio.run(case())
+
+
+def test_always_exposed_never_shows_a_tool_to_a_role_that_cannot_see_it(tmp_path):
+    async def case():
+        tool = _device_tool([])
+        script = _chat_script(["好的"])
+        host = await _open(
+            tmp_path,
+            chat=script,
+            tools=[
+                _pinned(tool, "task_pinned", roles=("task",)),
+                _pinned(tool, "main_pinned", roles=("main",)),
+                _pinned(tool, "shared_pinned", roles=("main", "child")),
+            ],
+        )
+        session = None
+        try:
+            session = await host.open_session("roles")
+            receipt = await session.send("你好", key="parent")
+            assert receipt["state"] == "committed", receipt
+            parent = {t.name for t in script.asked[-1].tools}
+            assert {"main_pinned", "shared_pinned"} <= parent
+            assert "task_pinned" not in parent
+            await session.create_child("topic", command_id="child-roles")
+            before = len(script.asked)
+            receipt = await session.child("topic").send("你好", key="child")
+            assert receipt["state"] == "committed", receipt
+            child = {t.name for t in script.asked[before].tools}
+            assert "shared_pinned" in child
+            assert not {"main_pinned", "task_pinned"} & child
+        finally:
+            if session is not None:
+                await session.close()
+            await host.close()
+
+    asyncio.run(case())
+
+
+def test_background_task_sees_always_exposed_task_tool_without_search(tmp_path, monkeypatch):
+    from agent_orchestrator.host import OrchestrationHost
+    from agent_orchestrator.testing.scripted_replies import worker_reply
+
+    monkeypatch.setattr("agent_orchestrator.orchestrator.event_handler.WAIT_BACKOFF_MAX", 0.05)
+    requests = []
+
+    def worker(request):
+        requests.append(request)
+        return worker_reply(request)
+
+    async def case():
+        tool = _device_tool([])
+        host = await OrchestrationHost.open(
+            tmp_path,
+            principal=Principal("u", "用户"),
+            counter=FixtureWordCounter(),
+            provider=ScriptedProvider(worker=worker),
+            require_acceptance=False,
+            tools=[
+                tool,
+                _pinned(tool, "pinned_status"),
+                _pinned(tool, "main_pinned", roles=("main",)),
+            ],
+        )
+        try:
+            assert host.settings.tool_search is True
+            mid = host.create_mission(
+                {
+                    "goal": "写一份 NOTES.md，记录设备状态",
+                    "success_criteria": ["file:NOTES.md"],
+                    "idempotency_key": "pinned-task",
+                }
+            )["mission_id"]
+            final = await host.run_until_settled(mid, timeout=60)
+            assert final["snapshot"]["mission"]["status"] == "COMPLETED"
+            first = {t.name for t in requests[0].tools}
+            assert {"pinned_status", "tool_search", "tool_schema"} <= first
+            assert "device_status" not in first
+            assert all("main_pinned" not in {t.name for t in r.tools} for r in requests)
+        finally:
+            await host.close()
+
+    asyncio.run(case())
+
+
+def test_tool_search_off_still_sends_every_tool_whether_pinned_or_not(tmp_path):
+    async def case():
+        tool = _device_tool([])
+        script = _chat_script(["好的"])
+        host = await _open(
+            tmp_path,
+            chat=script,
+            tools=[tool, _pinned(tool, "pinned_status")],
+            tool_search=False,
+        )
+        try:
+            reply = await host.chat({"session_id": "s", "text": "你好", "idempotency_key": "i"})
+            assert reply["state"] == "committed", reply
+            names = {t.name for t in script.asked[0].tools}
+            assert {"device_status", "pinned_status", "workspace_read_file"} <= names
+        finally:
+            await host.close()
+
+    asyncio.run(case())
