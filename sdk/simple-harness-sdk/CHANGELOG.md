@@ -1,3 +1,16 @@
+## 未发布 — DomainTool 可以「总是露出」（issue #40，2026-11-17）
+
+开着 `tool_search` 时，宿主注册的应用工具都要模型先搜才看得见；模型偶尔不搜，直接说"没有能用的工具"，
+这一回合就白跑。宿主此前只能用 `HostSettings(tool_search=False)` 全关。
+
+- `DomainTool` 新增 `always_exposed: bool = False`（必须是 bool）。为 True 时工具说明在开着 `tool_search`
+  的情况下也直接列给模型，主会话、子会话和后台任务三条路都生效；其余工具照旧先搜再加载。
+- 只影响说明可见性：`roles` 照旧先过滤（对某角色不可见的工具不会因此露出），执行许可与授权不变；
+  `tool_search=False` 时本来就全量下发，不受影响。默认 False，行为不变；配置版本与公开方法不变。
+
+测试：`tests/orchestrator/host/test_tool_catalog.py` 新增 5 条（默认值与目录标记、主会话与会话直接可见、
+角色不放宽、后台任务直接可见、关掉 tool_search 照旧全量）。
+
 ## opt.227 — 授权内续办、暂缓后重评、目标验收记录（2026-11-02）
 
 AgentOS 补充合同 v1.1 的三项缺口，都只补"秩序"：谁有权、何时重校、怎么去重、按哪个版本收口；

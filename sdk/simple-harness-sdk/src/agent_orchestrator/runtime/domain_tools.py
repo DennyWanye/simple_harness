@@ -58,6 +58,9 @@ class DomainTool:
     read_only: bool = True
     timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS
     roles: tuple[str, ...] = ("task", "main", "child")
+    #: 开着 ``tool_search`` 时也直接把说明列给模型、不必先搜；只影响说明可见性，不放宽
+    #: ``roles`` 与执行许可。给少数核心工具用，其余照旧按需搜索加载。
+    always_exposed: bool = False
 
     def __post_init__(self) -> None:
         if not isinstance(self.name, str) or not NAME_PATTERN.match(self.name):
@@ -77,6 +80,8 @@ class DomainTool:
             or not self.timeout_seconds > 0
         ):
             raise ValueError(f"tool {self.name!r}: timeout_seconds must be a positive number")
+        if not isinstance(self.always_exposed, bool):
+            raise ValueError(f"tool {self.name!r}: always_exposed must be a bool")
 
 
 __all__ = ("DEFAULT_TIMEOUT_SECONDS", "NAME_PATTERN", "DomainTool", "ToolCallContext", "ToolInvoke")

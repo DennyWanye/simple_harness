@@ -209,7 +209,7 @@ def catalog_for(
             if name in (commands or {}) or name in SDK_TOOLS
             else "application",
             tool.roles,
-            name in always_exposed,
+            name in always_exposed or tool.always_exposed,
         )
         for name, tool in tools.items()
     )
