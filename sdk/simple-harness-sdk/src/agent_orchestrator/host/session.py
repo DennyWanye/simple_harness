@@ -1569,6 +1569,7 @@ class Session:
                 "recovery_report",
                 "archive",
                 "action_tools",
+                "action_request_read",
             ],
             "limits": {
                 "max_depth": 1,
@@ -1578,6 +1579,42 @@ class Session:
             "unsupported": [
                 "steer_running_mission",
             ],
+        }
+
+    def action_request(self, request_id: str) -> dict[str, Any]:
+        """一张会话动作审批单要批的是什么：连接器、操作、目标、参数、风险等级、操作说明。
+
+        ``needs_response`` 事件（``request_kind="action"``）只带目标和参数哈希；应用用它把参数
+        原文摆给审批的人看。只读：不改授权单，不执行。父会话与工作会话都能读同一棵会话树里的单。
+        """
+
+        self._check_open()
+        root = self._root_session()
+        row = root._store.get("authorization_requests", str(request_id))
+        intent = None
+        if row is not None and row.get("request_kind") == "action":
+            key = row["request"].get("operation_key") or ""
+            owner = next(
+                (s for s in root._tree_sessions() if s.session_id == row["request"]["session_id"]),
+                None,
+            )
+            intent = None if owner is None else owner._store.get("action_intents", key)
+        if row is None or intent is None:
+            raise SessionError("not_found_or_forbidden", "no such action request in this session")
+        connector = self._host.connectors.get(intent["connector"])
+        spec = getattr(connector, "operations", {}).get(intent["operation"])
+        return {
+            "request_id": row["request_id"],
+            "session_id": row["request"]["session_id"],
+            "operation_key": intent["operation_key"],
+            "connector": intent["connector"],
+            "operation": intent["operation"],
+            "target": intent["target"],
+            "params": dict(intent["params"]),
+            "level": None if spec is None else spec.level,
+            "description": "" if spec is None else spec.description,
+            "always_needs_approval": bool(intent["always_needs_approval"]),
+            "state": row["state"],
         }
 
     def respond(

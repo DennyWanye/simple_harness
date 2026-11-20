@@ -179,6 +179,8 @@ def _checked_connectors(connectors: Sequence[Any], settings: HostSettings) -> di
                 raise ValueError(f"{name}.{operation} must be an OperationSpec with that name")
             if not spec.mutates:
                 raise ValueError(f"{name}.{operation} is read-only; register reads as a DomainTool")
+            if not isinstance(spec.always_exposed, bool):
+                raise ValueError(f"{name}.{operation}: always_exposed must be a bool")
         delivery = getattr(connector, "delivery", None)
         if delivery not in (None, "", "at_most_once"):
             raise ValueError(f"connector {name!r} delivery must be omitted or 'at_most_once'")
