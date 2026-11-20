@@ -5,8 +5,11 @@
 plan D7-6).
 
 A connector is the only way the orchestrator touches a system outside the workspace.
-The model never calls one: the Action Executor does, after the policy and the approvals
-allow it (plan D7-1).  Every operation declares its risk level (original §22, L0–L3);
+In a task the model never calls one: the Action Executor does, after the policy and the
+approvals allow it (plan D7-1).  An operation that declares ``tool_roles`` is also offered
+to the session model as a tool (``runtime/action_tools.py``); that call still goes through
+the session's authorization and effect ledger, never straight to ``execute``.
+Every operation declares its risk level (original §22, L0–L3);
 a connector that cannot deduplicate by idempotency key and answer "did this key
 happen?" (reconciliation) is never enabled for L2/L3 work (ORCH §12.3: "不支持幂等/核对的
 高风险连接器保持禁用或人工处理").
@@ -58,6 +61,10 @@ class OperationSpec:
     #: "总要人批"（用户 2026-10-20）：自动模式也不代批，至少等一个人点批准。
     always_needs_approval: bool = False
     tool_roles: tuple[str, ...] = ()
+    #: 暴露成会话工具（``tool_roles``）时：开着 ``tool_search`` 也直接把说明列给模型，不必先搜。
+    #: 只影响说明可见性；角色、风险上限、续办回合的过滤与授权照旧。
+    #: 同 ``DomainTool.always_exposed``。
+    always_exposed: bool = False
 
     def to_json(self) -> dict[str, Any]:
         return {

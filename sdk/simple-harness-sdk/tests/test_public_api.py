@@ -8,6 +8,8 @@ modules) must never be listed.
 from __future__ import annotations
 
 import importlib
+import re
+from pathlib import Path
 
 import pytest
 
@@ -47,3 +49,16 @@ def test_public_module_declares_and_provides_all(module_name: str) -> None:
     assert len(declared) == len(set(declared)), f"{module_name}.__all__ has duplicates"
     missing = [name for name in declared if not hasattr(module, name)]
     assert missing == [], f"{module_name}.__all__ names that do not exist: {missing}"
+
+
+def test_host_integration_doc_imports_only_public_modules() -> None:
+    """接入说明叫宿主导入的模块必须都在公开清单里（issue #42：4b 节的连接器合同曾经不在）。"""
+
+    doc = Path(__file__).resolve().parents[1] / "docs" / "orchestration-host.md"
+    imported = set(
+        re.findall(
+            r"^\s*(?:from|import)\s+(agent_orchestrator[\w.]*)", doc.read_text("utf-8"), re.M
+        )
+    )
+    assert "agent_orchestrator.runtime.connectors" in imported  # 文档确实教了写连接器
+    assert sorted(imported - set(ORCHESTRATOR_PUBLIC)) == []

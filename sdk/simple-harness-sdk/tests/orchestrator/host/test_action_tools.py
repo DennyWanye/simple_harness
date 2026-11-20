@@ -746,3 +746,116 @@ def test_f2_child_queue_projection_recovers_after_committed_approval(tmp_path, m
             await reopened.close()
 
     asyncio.run(case())
+
+
+def test_always_exposed_action_is_listed_without_search_and_stays_gated(tmp_path):
+    """issue #42：操作声明 always_exposed 后，模型不必先 tool_search 就看得见、能直接调；
+    没声明的照旧按需加载；续办回合照旧拿不到动作工具。"""
+
+    async def case():
+        connector = Photos()
+        connector.operations["move"] = replace(connector.operations["move"], always_exposed=True)
+        connector.operations["copy"] = replace(
+            connector.operations["move"], name="copy", always_exposed=False
+        )
+        script = _chat_script([("photos__move", {"target": "picture", "to": "album"}), "已移动"])
+        session = await real_session(tmp_path, connector, script)
+        try:
+            result = await session.send("移动一张照片", key="move")
+            first = {t.name for t in script.asked[0].tools}
+            assert "photos__move" in first and "photos__copy" not in first
+            assert result["state"] == "committed"
+            assert [call[:2] for call in connector.calls] == [("move", "picture")]
+            assert "photos__move" not in session._chat._registered_tools(source="continuation")
+        finally:
+            await session.close()
+
+    asyncio.run(case())
+
+
+def test_always_exposed_must_be_a_bool(tmp_path):
+    async def case():
+        connector = Photos()
+        connector.operations["move"] = replace(connector.operations["move"], always_exposed="yes")
+        with pytest.raises(ValueError, match="always_exposed"):
+            await real_session(tmp_path, connector, _chat_script(["不会到这里"]))
+
+    asyncio.run(case())
+
+
+def test_action_request_shows_what_is_being_approved(tmp_path):
+    """issue #42：审批的人要看得到批的是什么——连接器、操作、目标、参数、风险等级、操作说明。"""
+
+    from agent_orchestrator.host.session_ledger import SessionError
+
+    async def case():
+        connector = Photos(approval=True)
+        session = fake(tmp_path, connector)
+        pending = await invoke(session, connector, to="album/2026")
+        shown = session.action_request(pending["request_id"])
+        assert shown == {
+            "request_id": pending["request_id"],
+            "session_id": "main",
+            "operation_key": shown["operation_key"],
+            "connector": "photos",
+            "operation": "move",
+            "target": "picture",
+            "params": {"to": "album/2026"},
+            "level": "L2",
+            "description": "移动照片",
+            "always_needs_approval": True,
+            "state": "pending",
+        }
+        assert shown["operation_key"].startswith("action:")
+        [event] = [e for e in session._store.events(0) if e["kind"] == "needs_response"]
+        session.respond(pending["request_id"], "approve", event["payload"]["version"])
+        assert session.action_request(pending["request_id"])["state"] == "approved"
+        with pytest.raises(SessionError, match="not_found_or_forbidden"):
+            session.action_request("auth-no-such-request")
+
+    asyncio.run(case())
+
+
+def test_action_request_refuses_ordinary_authorization_requests(tmp_path):
+    from agent_orchestrator.host.session_ledger import SessionError
+
+    session = fake(tmp_path, Photos())
+    request = session._authorization._request("delegate", "task", {})
+    with pytest.raises(SessionError, match="authorization_required"):
+        session._authorization._apply(request, AuthorizationDecision.needs_approval("ordinary"))
+    [row] = session._store.rows("authorization_requests")
+    assert row["request_kind"] == "authorization"
+    with pytest.raises(SessionError, match="not_found_or_forbidden"):
+        session.action_request(row["request_id"])
+
+
+def test_real_parent_reads_child_action_request(tmp_path):
+    async def case():
+        connector = Photos(approval=True)
+        script = _chat_script(
+            [
+                ("tool_schema", {"names": ["photos__move"]}),
+                ("photos__move", {"target": "picture", "to": "album"}),
+                "等待批准",
+            ]
+        )
+        parent = await real_session(tmp_path, connector, script)
+        try:
+            assert "action_request_read" in parent.capabilities()["capabilities"]
+            await parent.create_child("topic", command_id="child")
+            child = parent.child("topic")
+            await child.send("移动照片", key="move")
+            [request] = parent._store.rows("authorization_requests")
+            shown = parent.action_request(request["request_id"])
+            assert shown["session_id"] == child.session_id
+            assert (shown["connector"], shown["operation"], shown["target"]) == (
+                "photos",
+                "move",
+                "picture",
+            )
+            assert shown["params"] == {"to": "album"} and shown["state"] == "pending"
+            assert child.action_request(request["request_id"]) == shown
+        finally:
+            await parent.close()
+
+    asyncio.run(case())

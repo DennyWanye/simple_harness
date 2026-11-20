@@ -1,3 +1,21 @@
+## 未发布 — 会话动作工具接进宿主应用的三处缺口（issue #42，2026-11-20）
+
+连接器操作声明 `tool_roles` 后主会话模型可以直接调（opt.224 起就有）。宿主应用真要用它，还差三处：
+
+- **公开清单**：`agent_orchestrator.runtime.connectors` 进 `PUBLIC_MODULES`。接入说明 4b 节一直叫应用从这里导入
+  `OperationSpec`、`Receipt`、`params_hash`，清单却没列，按公开面办事的宿主写不了连接器。
+- **`OperationSpec.always_exposed: bool = False`**（必须是 bool，注册连接器时查）：暴露成会话工具时，开着
+  `tool_search` 也直接把说明列给模型。只影响说明可见性；角色、风险上限、续办回合的过滤与授权照旧。不进
+  `to_json()`，不改配置版本。
+- **`Session.action_request(request_id)`**：只读，返回一张会话动作审批单要批的内容（连接器、操作、目标、参数、
+  风险等级、操作说明、状态）。`needs_response` 事件与授权单的形状不变。能力清单新增 `action_request_read`。
+
+没有改的：批准后的跟进回合仍是只读汇总，模型不能在那一回合接着调动作工具。
+
+测试：`tests/test_public_api.py` 新增 1 条（接入说明导入的模块都在公开清单里）；
+`tests/orchestrator/host/test_action_tools.py` 新增 5 条（直接列给模型且续办回合仍拿不到、非 bool 被拒、
+审批内容可读、普通授权单不可读、父会话读工作会话的单）。
+
 ## opt.228 — DomainTool 可以「总是露出」（issue #40，2026-11-17）
 
 开着 `tool_search` 时，宿主注册的应用工具都要模型先搜才看得见；模型偶尔不搜，直接说"没有能用的工具"，
