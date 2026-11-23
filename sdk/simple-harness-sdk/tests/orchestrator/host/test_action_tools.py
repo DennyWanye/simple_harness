@@ -920,3 +920,58 @@ def test_action_request_reads_only_action_kind_rows(tmp_path):
     assert session.action_request(pending["request_id"])["params"] == {"to": "album"}
     with pytest.raises(SessionError, match="not_found_or_forbidden"):
         session.action_request("auth-forged")
+
+
+@pytest.mark.parametrize("exposed", [False, True])
+def test_quick_chat_never_lists_action_tools(tmp_path, exposed):
+    """快速聊天 host.chat() 调不了动作工具（只在会话输入里执行），始终下发的说明里也不列它们——
+    标了 always_exposed 也一样（issue #42 第三轮独立核验）。会话普通回合照旧直接列出。"""
+
+    from agent_orchestrator.host import OrchestrationHost
+
+    async def case():
+        connector = Photos()
+        connector.operations["move"] = replace(connector.operations["move"], always_exposed=exposed)
+        script = _chat_script(["你好"])
+        host = await OrchestrationHost.open(
+            tmp_path,
+            principal=Principal("u", "用户"),
+            provider=ScriptedProvider(chat=script),
+            counter=FixtureWordCounter(),
+            settings=HostSettings(max_action_level="L2"),
+            connectors=[connector],
+            require_acceptance=False,
+        )
+        try:
+            await host.chat({"session_id": "s", "text": "你好", "idempotency_key": "i"})
+            quick = {t.name for t in script.asked[0].tools}
+            assert "photos__move" not in quick
+            assert {"tool_search", "tool_schema"} <= quick
+            assert not connector.calls
+        finally:
+            await host.close()
+
+    asyncio.run(case())
+
+
+def test_action_request_refused_after_session_closed(tmp_path):
+    from agent_orchestrator.host.session_ledger import SessionError
+
+    async def case():
+        connector = Photos(approval=True)
+        script = _chat_script(
+            [
+                ("tool_schema", {"names": ["photos__move"]}),
+                ("photos__move", {"target": "picture", "to": "album"}),
+                "等待批准",
+            ]
+        )
+        session = await real_session(tmp_path, connector, script)
+        await session.send("移动照片", key="move")
+        [request] = session._store.rows("authorization_requests")
+        assert session.action_request(request["request_id"])["params"] == {"to": "album"}
+        await session.close()
+        with pytest.raises(SessionError, match="session_closed"):
+            session.action_request(request["request_id"])
+
+    asyncio.run(case())
