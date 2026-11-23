@@ -61,6 +61,7 @@ PUBLIC_MODULES: tuple[str, ...] = (
     "agent_orchestrator.planning.htn.world",
     "agent_orchestrator.runtime.actions",
     "agent_orchestrator.runtime.assembly",
+    "agent_orchestrator.runtime.connectors",
     "agent_orchestrator.runtime.connectors_publish",
     "agent_orchestrator.runtime.deepseek_meter",
     "agent_orchestrator.runtime.delta_router",

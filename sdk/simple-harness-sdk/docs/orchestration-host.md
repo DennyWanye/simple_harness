@@ -739,9 +739,11 @@ host = await OrchestrationHost.open(root, principal=..., model=..., tools=[tool]
 
 ## 4b. 注册应用自己的连接器（有副作用的操作）
 
-发消息、移动文件、改设置这类会改变外部世界的操作，不给模型当工具调。两种来源：建任务时写成要求
+发消息、移动文件、改设置这类会改变外部世界的操作不注册成 `DomainTool`，而是做成连接器。后台任务里模型不直接调它，
+两种来源：建任务时写成要求
 （本节：系统在内容做完后按顺序执行：准备申请单 → 独立审阅 → 审批 → 执行 → 按回执核对 → 结果审阅），
-或执行中由模型提议（4c 节）。
+或执行中由模型提议（4c 节）。要让主会话的模型把它当工具直接调，见本节末「暴露成主会话工具」。
+`agent_orchestrator.runtime.connectors` 是公开模块（issue #42）。
 
 ```python
 from agent_orchestrator.runtime.connectors import OperationSpec, Receipt, params_hash
@@ -810,14 +812,16 @@ operations = {
     "move": OperationSpec(
         "move", "L2", ("to",), description="将 target 照片移动到 to",
         tool_roles=("main", "child"),
+        always_exposed=False,        # True：开着 tool_search 也直接列给模型，不必先搜
     ),
 }
 ```
 
 `Session.open(..., connectors=[Photos()], settings=HostSettings(max_action_level="L2"))`
 或已有 Host 的 `open_session()` 会把该操作登记为 `source="action"` 的 `photos__move`。
-工具名用双下划线连接，因为领域工具名不允许点号。动作工具按需加载；未声明角色、超过宿主
-风险上限的操作不进入目录。子会话只得到同时声明 `main` 和 `child` 的操作；任务池不直接获得动作工具。
+工具名用双下划线连接，因为领域工具名不允许点号。动作工具默认按需加载；操作上写
+`always_exposed=True`（必须是 bool）就和 `DomainTool.always_exposed` 一样直接列给模型——只影响说明
+可见性，角色、风险上限、续办回合的过滤和授权照旧。未声明角色、超过宿主风险上限的操作不进入目录。子会话只得到同时声明 `main` 和 `child` 的操作；任务池不直接获得动作工具。
 
 参数为 `{"target": "照片路径", "to": "相册路径"}`：`target` 是必填字符串，其他必填参数来自
 `required_params`，默认是字符串；已有 `param_schema` 可覆盖参数类型并增加可选参数。
@@ -830,6 +834,13 @@ operations = {
 "approve" 或 "deny", version)` 回答后，动作进入原会话的 `action_followup` 串行队列；批准后执行，
 拒绝后不执行，两者都将通知写到收件箱（`source="action_result"`，`instruction=False`）。
 通知可附在下一句，或沿已有的只读自动汇总回流；排队期间取消与交接前的屏障仍生效。
+
+**给审批的人看内容**：`needs_response` 事件只带 `target_ref`（`连接器:操作:目标`）和参数哈希，不带参数。
+应用收到 `request_kind="action"` 的事件后调 `session.action_request(request_id)`，拿到
+`{request_id, session_id, operation_key, connector, operation, target, params, level, description,
+always_needs_approval, state}`，把参数原文（要写的内容、要跑的命令）摆在审批卡上。只读，不改授权单；
+父会话和工作会话都能读同一棵会话树里的单；不是动作单或没有这张单时报 `not_found_or_forbidden`。
+能力发现：`capabilities()["capabilities"]` 里有 `action_request_read`。
 
 每回合动作调用上限由 `HostSettings.max_actions_per_turn` 配置（默认 4，正整数），并受
 `SessionPolicy.max_tool_calls` 限制。无效参数不会占用动作槽位；只声明 `child` 的动作不登记进目录。

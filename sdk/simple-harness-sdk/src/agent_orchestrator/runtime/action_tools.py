@@ -62,6 +62,7 @@ def action_tool(connector, operation: str, *, host) -> DomainTool:
         read_only=False,
         roles=spec.tool_roles,
         timeout_seconds=host.settings.connector_timeout_seconds * 3 + 5,
+        always_exposed=spec.always_exposed,
     )
 
 
