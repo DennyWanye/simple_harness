@@ -98,6 +98,7 @@ class TurnToolExposure:
         self._by_name = {spec.name: spec for spec in self._specs}
         self._turn_id = turn_id
         self._always_exposed = policy.always_exposed
+        self._bound_tools = policy.bound_tools
         self._loaded: set[str] = set()
 
     def restore(self, run_id: RunId, checkpoint: JsonValue | None) -> None:
@@ -112,10 +113,10 @@ class TurnToolExposure:
         self._loaded.update(name for name in names if name in self._by_name)
 
     def provider_specs(self, run_id: RunId) -> tuple[ProviderToolSpec, ...]:
+        bound = None if self._bound_tools is None else self._bound_tools(run_id)
+        always = self._always_exposed if bound is None else self._always_exposed & bound
         return tuple(
-            spec
-            for spec in self._specs
-            if spec.name in self._always_exposed or spec.name in self._loaded
+            spec for spec in self._specs if spec.name in always or spec.name in self._loaded
         )
 
     def execution_policy(self, run_id: RunId, provider_name: str) -> None:

@@ -10,11 +10,12 @@
 - **`Session.action_request(request_id)`**：只读，返回一张会话动作审批单要批的内容（连接器、操作、目标、参数、
   风险等级、操作说明、状态）。`needs_response` 事件与授权单的形状不变。能力清单新增 `action_request_read`。
 
+- **续办回合不列调不了的工具**（发版前独立核验查出）：`ToolExposurePolicy` 加可选 `bound_tools`（按运行给出这一回合调得了的工具），执行层始终下发的说明只留其中的。会话把网关绑定放行的名单交给它，所以批准后的只读汇总回合里，标了 `always_exposed` 的动作工具也不会列给模型（以前列出来但调用被拒）。普通回合绑定放行全部已注册工具，行为不变。
+
 没有改的：批准后的跟进回合仍是只读汇总，模型不能在那一回合接着调动作工具。
 
 测试：`tests/test_public_api.py` 新增 1 条（接入说明导入的模块都在公开清单里）；
-`tests/orchestrator/host/test_action_tools.py` 新增 5 条（直接列给模型且续办回合仍拿不到、非 bool 被拒、
-审批内容可读、普通授权单不可读、父会话读工作会话的单）。
+`tests/orchestrator/host/test_action_tools.py` 新增 6 条（直接列给模型、非 bool 被拒、审批内容可读、普通授权单不可读、带动作键的普通授权单也不可读、父会话读工作会话的单），原有「续办回合不能发现动作工具」参数化加上 `always_exposed=True`，断言模型实际收到的工具说明。
 
 ## opt.228 — DomainTool 可以「总是露出」（issue #40，2026-11-17）
 

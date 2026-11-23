@@ -361,9 +361,14 @@ def test_action_approval_queue_recovers_and_cancelled_goal_blocks_handoff(tmp_pa
     asyncio.run(case())
 
 
-def test_real_continuation_cannot_discover_or_execute_action(tmp_path):
+@pytest.mark.parametrize("exposed", [False, True])
+def test_real_continuation_cannot_discover_or_execute_action(tmp_path, exposed):
+    """续办回合（批准后的只读汇总）里，模型收到的工具说明里没有动作工具——标了
+    always_exposed 也一样（issue #42 独立核验查出的缺口）；调用也不会执行。"""
+
     async def case():
         connector = Photos()
+        connector.operations["move"] = replace(connector.operations["move"], always_exposed=exposed)
         script = _chat_script(
             [
                 ("tool_search", {"query": "photos"}),
@@ -859,3 +864,20 @@ def test_real_parent_reads_child_action_request(tmp_path):
             await parent.close()
 
     asyncio.run(case())
+
+
+def test_action_request_reads_only_action_kind_rows(tmp_path):
+    """一张普通授权单即使带着某个动作的 operation_key，也不能借 action_request 读出动作参数。"""
+
+    from agent_orchestrator.host.session_ledger import SessionError
+
+    connector = Photos(approval=True)
+    session = fake(tmp_path, connector)
+    pending = asyncio.run(invoke(session, connector))
+    row = dict(session._store.get("authorization_requests", pending["request_id"]))
+    forged = {**row, "request_id": "auth-forged", "request_kind": "authorization"}
+    with session._store.transaction():
+        session._store.put("authorization_requests", "auth-forged", forged)
+    assert session.action_request(pending["request_id"])["params"] == {"to": "album"}
+    with pytest.raises(SessionError, match="not_found_or_forbidden"):
+        session.action_request("auth-forged")
