@@ -821,7 +821,9 @@ operations = {
 或已有 Host 的 `open_session()` 会把该操作登记为 `source="action"` 的 `photos__move`。
 工具名用双下划线连接，因为领域工具名不允许点号。动作工具默认按需加载；操作上写
 `always_exposed=True`（必须是 bool）就和 `DomainTool.always_exposed` 一样直接列给模型——只影响说明
-可见性，角色、风险上限、续办回合的过滤和授权照旧。未声明角色、超过宿主风险上限的操作不进入目录。子会话只得到同时声明 `main` 和 `child` 的操作；任务池不直接获得动作工具。
+可见性，角色、风险上限和授权照旧；开着 `tool_search` 时，续办回合（批准后的只读汇总）里不会列给模型——会话把这一回合
+网关绑定不放行的动作工具从始终下发的说明里收掉，其余说明不受影响。快速聊天 `host.chat()` 调不了
+动作工具，始终下发的说明里也不列。未声明角色、超过宿主风险上限的操作不进入目录。子会话只得到同时声明 `main` 和 `child` 的操作；任务池不直接获得动作工具。
 
 参数为 `{"target": "照片路径", "to": "相册路径"}`：`target` 是必填字符串，其他必填参数来自
 `required_params`，默认是字符串；已有 `param_schema` 可覆盖参数类型并增加可选参数。
@@ -839,7 +841,7 @@ operations = {
 应用收到 `request_kind="action"` 的事件后调 `session.action_request(request_id)`，拿到
 `{request_id, session_id, operation_key, connector, operation, target, params, level, description,
 always_needs_approval, state}`，把参数原文（要写的内容、要跑的命令）摆在审批卡上。只读，不改授权单；
-父会话和工作会话都能读同一棵会话树里的单；不是动作单或没有这张单时报 `not_found_or_forbidden`。
+同一棵会话树里的任何会话（父会话、发单的工作会话、它的兄弟工作会话）都能读这张单；不是动作单或没有这张单时报 `not_found_or_forbidden`。
 能力发现：`capabilities()["capabilities"]` 里有 `action_request_read`。
 
 每回合动作调用上限由 `HostSettings.max_actions_per_turn` 配置（默认 4，正整数），并受

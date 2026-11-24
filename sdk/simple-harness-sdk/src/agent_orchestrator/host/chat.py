@@ -210,13 +210,16 @@ class ChatService:
         self._tool_catalog = catalog_for(
             tools, commands={name: command.schema for name, command in commands.items()}
         )
+        policy = exposure_policy(self._tool_catalog)
+        # 快速聊天调不了动作工具（只在会话输入里执行）：标了 always_exposed 也不列给模型。
+        # 会话聊天在 SessionChatService._configuration 里另建策略，不走这里。
+        actions = {e.name for e in self._tool_catalog.entries if e.source == "action"}
+        policy = replace(policy, always_exposed=policy.always_exposed - actions)
         return replace(
             config,
             domain_tools=tools,
             control_commands=commands,
-            tool_exposure_policy=exposure_policy(self._tool_catalog)
-            if self._host.settings.tool_search
-            else None,
+            tool_exposure_policy=policy if self._host.settings.tool_search else None,
         )
 
     def _native_plane(self, profile_id: str, tokens: int, counter: Any) -> Any:

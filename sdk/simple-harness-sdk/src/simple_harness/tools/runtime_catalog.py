@@ -13,7 +13,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import re
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from enum import StrEnum
 from threading import RLock
@@ -764,6 +764,12 @@ class ToolExposurePolicy:
 
     always_exposed: frozenset[str]
     loaders: frozenset[str]
+    #: 可选：按运行给出"这一回合调得了的工具"，始终下发的说明只留其中的；返回 None 不收窄。
+    #: 宿主用它让许可被收窄过的回合（如续办汇总）不把调不了的工具说明列给模型。
+    #: 只影响说明，不参与执行许可；不参与相等比较。
+    bound_tools: Callable[[RunId], frozenset[str] | None] | None = field(
+        default=None, compare=False, repr=False
+    )
 
     def applies_to(self, tool_names: frozenset[str] | set[str]) -> bool:
         return bool(self.loaders) and self.loaders <= set(tool_names)

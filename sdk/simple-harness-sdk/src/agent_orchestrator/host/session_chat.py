@@ -307,10 +307,29 @@ class SessionChatService(ChatService):
         )
         return replace(
             config,
-            tool_exposure_policy=exposure_policy(self._tool_catalog)
+            tool_exposure_policy=replace(
+                exposure_policy(self._tool_catalog), bound_tools=self._bound_tools
+            )
             if self._host.settings.tool_search
             else None,
         )
+
+    def _bound_tools(self, run_id: Any) -> frozenset[str] | None:
+        """始终下发的说明里，收掉这一回合网关绑定不放行的**动作工具**。
+
+        绑定由 ``_bind`` 按回合来源收窄过。续办回合因此不会把调不了的动作工具列给模型，
+        哪怕它标了 ``always_exposed``；其余说明（内置命令、历史回读、只读应用工具）照旧下发，
+        与没有这道收窄时逐位相同。没有绑定就不收窄。
+        """
+
+        gateway = None if self._assembled is None else self._assembled.gateway
+        binding = None if gateway is None else gateway.binding_for(getattr(run_id, "value", run_id))
+        if binding is None:
+            return None
+        names = {entry.name for entry in self._tool_catalog.entries}
+        actions = {entry.name for entry in self._tool_catalog.entries if entry.source == "action"}
+        hidden = actions - set(binding.allowed_tools)
+        return frozenset(names - hidden) if hidden else None
 
     def _native_plane(self, profile_id: str, tokens: int, counter: Any) -> Any:
         native = super()._native_plane(profile_id, tokens, counter)
