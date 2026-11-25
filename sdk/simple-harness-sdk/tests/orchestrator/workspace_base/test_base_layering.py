@@ -248,7 +248,9 @@ def test_the_courtesy_run_on_a_base_ignores_the_users_own_red_tests(tmp_path):
     assert run["target"] is None and run["no_tests_collected"] is True and run["courtesy"]
     own_test = _courtesy(tmp_path / "c", writes={"tests/test_cli.py": TEST})
     assert own_test.status == "PASS", own_test
-    assert [r["target"] for r in own_test.detail["runs"]] == ["tests/test_cli.py"]
+    [run] = own_test.detail["runs"]
+    # 行的目标仍是 None（不替哪条 pytest:<路径> 作证），跑的是哪个文件另记
+    assert run["target"] is None and run["courtesy_target"] == "tests/test_cli.py"
 
 
 def test_the_courtesy_run_on_a_base_still_fails_on_the_steps_own_red_test(tmp_path):
@@ -258,7 +260,7 @@ def test_the_courtesy_run_on_a_base_still_fails_on_the_steps_own_red_test(tmp_pa
 def test_every_changed_test_file_runs_not_just_the_first(tmp_path):
     # 核验第三轮：改了两个测试文件，第二个是红的
     result = _courtesy(tmp_path, writes={"tests/test_a_cli.py": TEST, "tests/test_b_cli.py": RED})
-    assert [r["target"] for r in result.detail["runs"]] == [
+    assert [r["courtesy_target"] for r in result.detail["runs"]] == [
         "tests/test_a_cli.py",
         "tests/test_b_cli.py",
     ]
@@ -282,3 +284,32 @@ def test_the_no_tests_run_does_not_load_the_users_root_config(tmp_path):
     # 核验第三轮：根目录 conftest 导入了沙箱里没有的包、pyproject 要 --cov
     result = _courtesy(tmp_path, base={**BROKEN, **HOSTILE_ROOT})
     assert result.status == "PASS", result
+
+
+def test_a_test_named_file_without_tests_is_not_a_failure(tmp_path):
+    # 核验第四轮：Django 式的 tests/test_settings.py 里没有测试函数，退出码 5
+    alone = _courtesy(tmp_path / "a", writes={"tests/test_settings.py": "DEBUG = True\n"})
+    assert alone.status == "PASS", alone
+    assert alone.detail["courtesy_no_tests"] == ["tests/test_settings.py"]
+    [run] = alone.detail["runs"]
+    assert run["no_tests_collected"] is True  # 退回空目录那一次
+    mixed = _courtesy(
+        tmp_path / "b",
+        writes={"tests/test_settings.py": "DEBUG = True\n", "tests/test_cli.py": TEST},
+    )
+    assert mixed.status == "PASS", mixed
+    assert [r["courtesy_target"] for r in mixed.detail["runs"]] == ["tests/test_cli.py"]
+
+
+def test_tests_deselected_by_the_users_config_are_not_a_failure(tmp_path):
+    # 核验第四轮：使用方配置 -m 'not slow'，这一步写的测试全被反选
+    config = {
+        "pyproject.toml": (
+            b"[tool.pytest.ini_options]\naddopts = \"-m 'not slow'\"\n"
+            b'markers = ["slow: slow tests"]\n'
+        )
+    }
+    slow = "import pytest\n\n@pytest.mark.slow\ndef test_cli():\n    assert True\n"
+    result = _courtesy(tmp_path, base={**BROKEN, **config}, writes={"tests/test_cli.py": slow})
+    assert result.status == "PASS", result
+    assert result.detail["courtesy_no_tests"] == ["tests/test_cli.py"]

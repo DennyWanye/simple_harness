@@ -1,6 +1,6 @@
 {
   "acceptance_evidence": null,
-  "deployment_id": "1ab363dbbf36e4e2606a20c9b82ccadaedde2b246434852799c96b18a86de685",
+  "deployment_id": "30407a0bb911955010a4bbfdf8a09f1dcec27e0764aaeed36bc5252aad73a4eb",
   "schema": "taskgraph-htn-wiring-derivation-v1",
   "source_files": {
     "agent_orchestrator/__init__.py": "eb50152258b356bc7866e55823fc45c7209cb6150efe205dd03c40c33beedbc2",
@@ -549,7 +549,7 @@
     "agent_orchestrator/verification/conflicts.py": "887503a2989bb2d6146bff33626b3a170ebe3979ad1bf5686e20ccd59271f136",
     "agent_orchestrator/verification/criteria.py": "a0c0cf764bcafb87ce50a115cf47194d5ca9ea02fe8bfc8b590ddefab7bf1703",
     "agent_orchestrator/verification/critics.py": "11205b78b52c94ca5ec6a61cac3e8b573a4aff30a34583e8a12752a9f3137d6f",
-    "agent_orchestrator/verification/deterministic_checks.py": "ca616a96d561a3599ca55bf687e699c2fad3c565c4eb3484b72704690828f765",
+    "agent_orchestrator/verification/deterministic_checks.py": "d7398d76e581457b64660e9255b32e7f224d74419216ad63e92e41f8a2cb5ff5",
     "agent_orchestrator/verification/domain_handlers.py": "f3a149f094f558b0193a37278c9e1f2d8ecbe577770114a356cff3e8c0f22a95",
     "agent_orchestrator/verification/evidence_resolver.py": "7afb09aac85719dc96fdcca1e516be32a805bc07b243a1705da74aa789a88858",
     "agent_orchestrator/verification/human_review.py": "b9121585e5818d07c260ad17fa537da00a38b67841c4717b20d4e639db7c6826",

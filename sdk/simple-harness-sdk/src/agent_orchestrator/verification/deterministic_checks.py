@@ -161,7 +161,7 @@ async def code_test(
     没有 ``pytest:`` 条件（连不带路径的也没有）时照例顺手跑一次（目标记为 None）。任务有底（``on_base``）
     时不跑整棵树：验收副本里有使用方仓库原有的全部测试和根目录的 pytest 配置、``conftest.py``，其中本来
     就红、要联网、缺依赖的与这一步无关，不能让一个只要求 ``file:`` 的步骤因此反复失败。所以本次登记的
-    产物里的每个测试文件各跑一次（指名运行，照常加载底里的配置与夹具）；一个都没有时，在验收副本旁边
+    产物里的每个测试文件各跑一次（照常加载底里的配置与夹具；收集不到测试的不算失败）；一个有测试的都没有时，在验收副本旁边
     一个空目录里跑（不加载底里的任何配置，退出码 5），照旧算「不适用、视为满足」。
     """
 
@@ -196,15 +196,16 @@ async def code_test(
                 requested_whole_tree = True
             if target not in targets:
                 targets.append(target)
-    courtesy_on_base = not targets and on_base
-    if courtesy_on_base:
-        targets.extend(
-            sorted({artifact.path for artifact in artifacts if _is_test_file(artifact.path)})
-        )
-    if not targets:
-        targets.append(None)
     runs: list[dict[str, Any]] = []
     failed = False
+    courtesy_no_tests: list[str] = []
+    if not targets and on_base:
+        runs, courtesy_no_tests = await _courtesy_on_base(
+            verification_copy, artifacts, timeout=timeout, executor=executor
+        )
+        failed = any(not row["passed"] for row in runs)
+    if not targets and not on_base:
+        targets.append(None)
     for target in targets:
         if target is not None:
             try:
@@ -214,24 +215,13 @@ async def code_test(
                 runs.append({"target": target, "error": str(error)})
                 failed = True
                 continue
-        cwd = verification_copy.root
-        isolated = None
-        if courtesy_on_base and target is None:
-            # 空目录放在验收副本外面：pytest 的根目录与配置查找都止于工作目录，碰不到底里的东西
-            isolated = cwd.parent / f"{cwd.name}{EXEC_COPY_MARK}no-tests-{uuid.uuid4().hex[:12]}"
-            isolated.mkdir()
-            cwd = isolated
-        try:
-            run = await run_pytest(
-                str(cwd),
-                path=target,
-                timeout=timeout,
-                executor=executor,
-                report_all=True,
-            )
-        finally:
-            if isolated is not None:
-                shutil.rmtree(isolated, ignore_errors=True)
+        run = await run_pytest(
+            str(verification_copy.root),
+            path=target,
+            timeout=timeout,
+            executor=executor,
+            report_all=True,
+        )
         # Assurance 1.1 default-ON (2026-09-23): the courtesy whole-tree run that no
         # ``pytest:`` criterion asked for, on a workspace pytest collects nothing from
         # (exit 5), attests nothing and fails nothing.  Any run a criterion asked for —
@@ -251,8 +241,6 @@ async def code_test(
         }
         if no_tests_collected:
             row["no_tests_collected"] = True
-        if courtesy_on_base:
-            row["courtesy"] = True  # 有底时的顺手运行：没有条件要求，只验本次改过的测试
         runs.append(row)
         failed = failed or not row["passed"]
     summary = (
@@ -281,11 +269,70 @@ async def code_test(
         for path, digest in manifest.items()
     )
     detail: dict[str, Any] = {"runs": runs}
+    if courtesy_no_tests:
+        detail["courtesy_no_tests"] = courtesy_no_tests
     if failed:
         detail["failure_nodes"] = _code_test_failure_nodes(runs)
     if bound and unchanged:
         detail["observation_scope"] = scope
     return LayerResult("code_test", FAIL if failed else PASS, summary, detail)
+
+
+def _vacuous(run: Any) -> bool:
+    return (
+        run.returncode == 5
+        and not run.timed_out
+        and (run.receipt is None or run.receipt.status == "ok")
+    )
+
+
+async def _courtesy_on_base(
+    copy: Workspace, artifacts: Sequence[Artifact], *, timeout: float, executor: Any
+) -> tuple[list[dict[str, Any]], list[str]]:
+    """任务有底、一条 ``pytest:`` 都没写时的顺手运行（见 :func:`code_test`）。
+
+    本次登记的每个测试文件各跑一次（启动脚本只认一个目标）。行的目标仍记 None，与没有底时的
+    顺手运行同一口径：它不替哪条 ``pytest:<路径>`` 作证，路径另记在 ``courtesy_target``。收集不到
+    测试的文件（没有测试函数、被使用方配置反选掉，退出码 5）不算失败，记进第二个返回值。一个
+    有测试的都没有时，在验收副本外的空目录里跑一次：不加载底里的 pytest 配置与 ``conftest.py``，
+    退出码 5，照旧「不适用、视为满足」。
+    """
+
+    runs: list[dict[str, Any]] = []
+    no_tests: list[str] = []
+    for path in sorted({a.path for a in artifacts if _is_test_file(a.path)}):
+        run = await run_pytest(
+            str(copy.root), path=path, timeout=timeout, executor=executor, report_all=True
+        )
+        if _vacuous(run):
+            no_tests.append(path)
+            continue
+        runs.append(
+            {
+                "target": None,
+                "courtesy_target": path,
+                **run.to_json(),
+                "passed": run.passed,
+                "courtesy": True,
+            }
+        )
+    if runs:
+        return runs, no_tests
+    # 空目录放在验收副本外面：pytest 的根目录与配置查找都止于工作目录，碰不到底里的东西
+    isolated = (
+        copy.root.parent / f"{copy.root.name}{EXEC_COPY_MARK}no-tests-{uuid.uuid4().hex[:12]}"
+    )
+    isolated.mkdir()
+    run = await run_pytest(
+        str(isolated), path=None, timeout=timeout, executor=executor, report_all=True
+    )
+    if run.receipt is None or run.receipt.status == "ok":
+        # 出错的运行留着工作目录，交给执行器的清理（目录名带执行副本标记）
+        shutil.rmtree(isolated, ignore_errors=True)
+    row = {"target": None, **run.to_json(), "passed": run.passed or _vacuous(run), "courtesy": True}
+    if _vacuous(run):
+        row["no_tests_collected"] = True
+    return [row], no_tests
 
 
 def _is_test_file(path: str) -> bool:

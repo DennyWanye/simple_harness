@@ -230,7 +230,11 @@ def _r16_worker(request):
     reply = worker_reply(request)
     if isinstance(reply, tuple) and reply[0] == "workspace_write_file":
         path = reply[1]["path"]
-        content = {"ledger/cli.py": CLI, "tests/test_cli.py": TEST}.get(path, reply[1]["content"])
+        content = {
+            "ledger/cli.py": CLI,
+            "tests/test_cli.py": TEST,
+            "tests/test_settings.py": "DEBUG = True\n",
+        }.get(path, reply[1]["content"])
         return ("workspace_write_file", {"path": path, "content": content})
     return reply
 
@@ -388,5 +392,42 @@ def test_a_file_only_mission_is_not_failed_by_the_users_own_red_tests(tmp_path):
             )
             final = await host.run_until_settled(created["mission_id"], timeout=120.0)
             assert str(final["snapshot"]["mission"]["status"]) == "COMPLETED", final["snapshot"]
+
+    asyncio.run(case())
+
+
+def test_a_settings_file_and_a_large_base_do_not_stall_a_file_only_mission(tmp_path):
+    # 核验第四轮：这一步写了 tests/test_settings.py（没有测试函数），只要求 file:；
+    # 底有 450 个前端文件，交给执行者的清单按顶层目录汇总
+    files = {**REPO, **{f"web/asset{i}.js": b"x\n" for i in range(450)}}
+    seen: list[dict] = []
+
+    def worker(request):
+        seen.append(package_of(request))
+        return _r16_worker(request)
+
+    async def case():
+        provider = LayeredScriptedProvider(worker=worker)
+        async with _host(
+            tmp_path / "root", provider=provider, workspace_base=InMemoryBase(files)
+        ) as host:
+            if host.policy.code_execution != "sandboxed":
+                pytest.skip("这台机器没有可用的隔离区，顺手运行不发生")
+            created = host.create_mission(
+                {
+                    "goal": "加设置文件",
+                    "success_criteria": ["file:tests/test_settings.py"],
+                    "idempotency_key": "settings",
+                }
+            )
+            final = await host.run_until_settled(created["mission_id"], timeout=120.0)
+            assert str(final["snapshot"]["mission"]["status"]) == "COMPLETED", final["snapshot"]
+            listed = {
+                path
+                for package in seen
+                for path in (package.get("tools_and_permissions") or {}).get("workspace_files", ())
+            }
+            assert "web/ (450 个文件)" in listed, sorted(listed)[:10]
+            assert not any(path.startswith("web/asset") for path in listed)
 
     asyncio.run(case())
