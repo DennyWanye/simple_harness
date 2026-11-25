@@ -168,15 +168,31 @@ def test_the_door_refuses_a_file_criterion_that_is_not_a_bare_path(tmp_path, cri
     asyncio.run(case())
 
 
-def test_amending_requirements_refuses_a_file_criterion_that_is_not_a_bare_path(tmp_path):
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"op": "add", "statement": "file:report.md 按月列出合计"},
+        {"op": "add", "statement": "file:report.md "},
+        {"op": "rewrite", "criterion_id": "c-1", "statement": " file:report.md"},
+        {"op": "add", "statement": "file:./report.md"},
+    ],
+)
+def test_amending_requirements_refuses_a_file_criterion_that_is_not_a_bare_path(tmp_path, change):
     async def case():
         async with _host(tmp_path / "root") as host:
             with pytest.raises(HostRequestError) as refused:
-                host.amend_requirements(
-                    {
-                        "mission_id": "mission-any",
-                        "changes": [{"op": "add", "statement": "file:report.md 按月列出合计"}],
-                    }
+                host.amend_requirements({"mission_id": "mission-any", "changes": [change]})
+            assert refused.value.code == "file_criterion_not_a_path"
+
+    asyncio.run(case())
+
+
+def test_the_door_checks_the_statement_of_a_parameterised_criterion_as_stored(tmp_path):
+    async def case():
+        async with _host(tmp_path / "root") as host:
+            with pytest.raises(HostRequestError) as refused:
+                host.create_mission(
+                    {"goal": "x", "success_criteria": [{"statement": "file:a.md ", "params": {}}]}
                 )
             assert refused.value.code == "file_criterion_not_a_path"
 
