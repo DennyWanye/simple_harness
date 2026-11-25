@@ -54,6 +54,32 @@ def test_rejected_source_batch_does_not_poison_session_or_hold_budget(tmp_path, 
     asyncio.run(case())
 
 
+def test_model_sees_a_rejected_file_criterion_and_can_resubmit_it_as_a_bare_path(tmp_path):
+    bad = {**SPEC, "success_criteria": ["file:report.md 按月列出合计"]}
+    good = {**SPEC, "success_criteria": ["file:report.md", "report.md 按月列出合计"]}
+    seen = []
+
+    def resubmit(request):
+        seen.append(str(request))
+        return "delegate_task", good
+
+    async def case():
+        script = _chat_script([("delegate_task", bad), resubmit, "Accepted."])
+        session = await Session.open(tmp_path, **options(script))
+        try:
+            reply = await session.send("Write a report", key="report")
+            assert reply["state"] == "committed"
+            assert "file_criterion_not_a_path" in seen[0]
+            missions = session._host.missions()
+            assert len(missions) == 1
+            mission = session._host.snapshot(missions[0]["mission_id"])["snapshot"]["mission"]
+            assert mission["success_criteria"] == good["success_criteria"]
+        finally:
+            await session.close()
+
+    asyncio.run(case())
+
+
 @pytest.mark.parametrize("known", [False, True])
 def test_result_retry_process_exit_reconciles_only_claimed_attempts(tmp_path, known):
     command = [sys.executable, str(Path(__file__).resolve()), str(tmp_path), str(int(known))]

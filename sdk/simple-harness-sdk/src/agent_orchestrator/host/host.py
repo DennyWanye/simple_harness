@@ -26,7 +26,7 @@ import sys
 import time
 from collections.abc import Awaitable, Callable, Iterator, Mapping, Sequence
 from dataclasses import replace
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, Any
 
 import httpx
@@ -224,6 +224,15 @@ def criterion_statement(item: Any) -> str:
     if isinstance(item, Mapping):
         return str(item.get("statement") or "").strip()
     return str(item).strip()
+
+
+def is_bare_relative_path(text: str) -> bool:
+    """``file:`` 条件里的路径：非空、没有空白、正斜杠分隔、不是绝对路径、不含 ``..``。"""
+
+    if not text or any(ch.isspace() for ch in text) or "\\" in text or "\x00" in text:
+        return False
+    path = PurePosixPath(text)
+    return not path.is_absolute() and ".." not in path.parts
 
 
 def with_publish_sources(criteria: list[Any]) -> list[Any]:
@@ -1228,8 +1237,18 @@ class OrchestrationHost:
             ) from error
 
     def check_criteria(self, criteria: list[str]) -> None:
-        """这个部署真做得到的要求：``pytest:`` 要沙箱，``action:`` 要启用了的连接器。"""
+        """这个部署真做得到的要求：``file:`` 后面是一个工作区相对路径，``pytest:`` 要沙箱，
+        ``action:`` 要启用了的连接器。"""
 
+        for criterion in criteria:
+            text = criterion.strip()
+            if text.startswith("file:") and not is_bare_relative_path(text[len("file:") :]):
+                # 验收把 file: 后面整串当路径找；带了说明的条件永远判「文件不存在」，任务只会反复重做
+                raise HostRequestError(
+                    "file_criterion_not_a_path",
+                    "file: 后面只能写一个工作区内的相对路径（不带空白、不是绝对路径、不含 ..），"
+                    "对文件内容的要求另起一条成功条件",
+                )
         if any(c.strip().startswith("pytest:") for c in criteria) and not (
             self.policy is not None and self.policy.code_execution == "sandboxed"
         ):

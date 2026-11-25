@@ -629,7 +629,7 @@ host = await OrchestrationHost.open(
 | 驱动 | `run_until_settled(mission_id, timeout=)`（跑到结束）、`run_forever()`（常驻）、`run_once()` / `drain()`（跑到空闲） |
 
 被拒绝的请求抛 `HostRequestError`，`code` 稳定：`invalid_request`、`not_found`、`conflict`、`secret_rejected`、
-`local_tests_disabled`、`action_criteria_disabled`、`orchestration_unavailable`、`orchestration_degraded`、
+`local_tests_disabled`、`action_criteria_disabled`、`file_criterion_not_a_path`、`orchestration_unavailable`、`orchestration_degraded`、
 `sdk_refused` 等。
 
 ## 4a. 注册应用自己的工具
@@ -932,7 +932,7 @@ host.taskgraph.reads.why_not_ready(mission_id, occurrence_id)   # 没就绪的�
 ## 5. 要求怎么写
 
 - 每行一条，普通文字就行；规划器按它拆步骤，审阅员按它审。
-- `file:路径`：工作区里要有这个文件。
+- `file:路径`：工作区里要有这个文件。冒号后只写一个工作区相对路径（不带空白、不是绝对路径、不含 `..`），对文件内容的要求另起一条；写成 `file:report.md 按月列出合计` 的条件在入口（建任务、委派、改要求）就被拒，码 `file_criterion_not_a_path`——验收把冒号后整串当路径，这样的条件永远判「文件不存在」，任务只会反复重做。
 - `pytest: 路径`：在沙箱里跑测试（需要沙箱可用）。
 - `action:file_publish.publish:路径`：完成后发布到授权目录；入口自动补一条 `file:路径`。
 - `action:连接器.操作:目标`（可带参数）：完成后由应用的连接器执行，见 4b 节。
@@ -970,6 +970,7 @@ SDK 没有推送。定时调 `events(mission_id, after_seq=上次的 through_seq
 | 原因含 `AppArmor restricts unprivileged user namespaces` | Ubuntu 23.10+ 要装 bwrap 的 AppArmor 规则（见 3a 节） |
 | 原因含 `kernel.unprivileged_userns_clone=0` 或 `max_user_namespaces=0` | 内核不许普通用户开用户命名空间，要系统管理员放开 |
 | `local_tests_disabled` | 这台机器没有可用的隔离区，任务不能带 `pytest:` 要求 |
+| `file_criterion_not_a_path` | 某条 `file:` 条件冒号后不是单纯的路径（多半是把说明写在了路径后面）；路径和说明分成两条 |
 
 ## 异步受理与自动汇总
 
