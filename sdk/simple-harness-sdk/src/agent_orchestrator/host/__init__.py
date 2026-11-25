@@ -20,6 +20,13 @@
     await host.close()
 """
 
+from ..artifacts.workspace_base import (
+    BaseCapture,
+    BaseFile,
+    DirectoryBase,
+    GitRepoBase,
+    WorkspaceBase,
+)
 from ..governance.permissions import Principal
 from ..runtime.domain_tools import DomainTool, ToolCallContext
 from ..runtime.tool_catalog import CatalogEntry, ToolCatalog
@@ -65,6 +72,11 @@ __all__ = (
     "ContinuationDecision",
     "ContinuationPolicy",
     "AudioIO",
+    "BaseCapture",
+    "BaseFile",
+    "DirectoryBase",
+    "GitRepoBase",
+    "WorkspaceBase",
     "CONTEXT_INPUT_CHOICES",
     "NO_COUNTER_REASON",
     "ChatRequestError",

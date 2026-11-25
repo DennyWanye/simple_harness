@@ -74,7 +74,9 @@ class DeploymentMixin(OrchestratorCore):
         dispatched or judged: a Mission is recorded as waiting for the assembly.  Each
         Mission's planning world is bound per Mission (``_dispatch_for``)."""
 
-        self._wiring.hierarchical = HierarchicalDispatch(self.store, self.commit)
+        self._wiring.hierarchical = HierarchicalDispatch(
+            self.store, self.commit, bases=self.assembled.workspaces.bases
+        )
         return self._wiring.hierarchical
 
     def set_between_cycles(self, duty: Callable[[], Any] | None, *, every_seconds: float) -> None:
@@ -154,6 +156,7 @@ class DeploymentMixin(OrchestratorCore):
                 self.store,
                 self.commit,
                 planning=world,
+                bases=self.assembled.workspaces.bases,
             )
         dispatch = self._wiring.mission_dispatches[mission_id]
         if self._wiring.taskgraph_dispatch_setup is not None:

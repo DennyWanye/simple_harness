@@ -92,6 +92,9 @@ class MissionSpec:
     budget: Budget = field(default_factory=Budget)
     task_kind: str = "code"
     workspace_seed: Mapping[str, str] = field(default_factory=dict)
+    #: 任务的底（建任务时拍下的底提交，见 :mod:`agent_orchestrator.artifacts.workspace_base`）：
+    #: ``{"commit", "files", "bytes", "scope", "withheld", "source"}``；没有底是 None。进章程哈希。
+    workspace_base: Mapping[str, Any] | None = None
     untrusted_sources: tuple[str, ...] = ()  # step 4 (D4-12): path prefixes of external content
     domain: str = CODE_DOMAIN  # P3.3 (D1): the domain profile this Mission freezes
     runtime_profile_id: str | None = None
@@ -140,6 +143,9 @@ class MissionSpec:
             data["action_params"] = {key: dict(value) for key, value in self.action_params.items()}
         if self.allowed_actions:
             data["allowed_actions"] = list(self.allowed_actions)
+        if self.workspace_base is not None:
+            # 没有底的任务不加这个键：升级后重发同一请求的章程哈希不变
+            data["workspace_base"] = dict(self.workspace_base)
         data[SEMANTICS_KEY] = self.orchestration_semantics_version
         data["planning_protocol_version"] = self.planning_protocol_version
         return data

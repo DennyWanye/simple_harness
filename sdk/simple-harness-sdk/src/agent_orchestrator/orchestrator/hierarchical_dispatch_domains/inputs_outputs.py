@@ -29,6 +29,7 @@ from ...artifacts.versioning import (
     manifest_upstream_inputs,
     resolve_input_manifest,
 )
+from ...artifacts.workspace_base import mission_base_commit
 from ...contracts import ContractError, TaskStatus
 from ...contracts.evidence_state import ValidityWitness
 from ...contracts.htn import (
@@ -810,6 +811,14 @@ class InputOutputMixin(HierarchicalDispatchCore):
         if mission is None:
             raise ContractError("delivery sources: the Mission is unavailable")
         seed = set((mission.final_report or {}).get("workspace_seed", {}))
+        base_commit = mission_base_commit(mission.final_report)
+        if base_commit is not None:
+            if self.bases is None:
+                raise ContractError(
+                    "delivery sources: the Mission has a base but no base repository"
+                )
+            # 底文件也是「原工作区文件」：只读生产者交出的底文件照传
+            seed |= set(self.bases.manifest(base_commit))
         semantics = self.semantics()
         files: list[DeliveredFile] = []
         received: dict[str, frozenset[tuple[str, str, str]]] = {}

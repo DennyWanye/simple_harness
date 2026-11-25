@@ -20,7 +20,7 @@ TERMINAL = frozenset({"COMPLETED", "FAILED", "CANCELLED"})
 
 
 def normalize_spec(body: Mapping[str, Any]) -> dict[str, Any]:
-    if set(body) - {"goal", "success_criteria", "sources", "reason", "child_key"}:
+    if set(body) - {"goal", "success_criteria", "sources", "reason", "child_key", "base_scope"}:
         raise SessionError("invalid_arguments", "identity and policy are supplied by the SDK")
     goal, criteria, sources = (
         body.get("goal"),
@@ -70,11 +70,19 @@ def normalize_spec(body: Mapping[str, Any]) -> dict[str, Any]:
             raise SessionError("invalid_arguments", "source paths conflict")
     if not isinstance(body.get("reason", ""), str):
         raise SessionError("invalid_arguments", "reason must be text")
-    return {
+    spec: dict[str, Any] = {
         "goal": " ".join(unicodedata.normalize("NFC", goal).split()),
         "success_criteria": [c.strip() for c in criteria],
         "sources": sorted(attached, key=lambda s: s["path"]),
     }
+    if "base_scope" in body:
+        # 底的范围由模型判断；格式与上限由宿主入口核（不在底上的宿主回 base_unavailable）。
+        # 没写时不加这个键：升级前就在途的委派，指纹不变
+        scope = body["base_scope"]
+        if not isinstance(scope, list) or not all(isinstance(item, str) for item in scope):
+            raise SessionError("invalid_arguments", "base_scope must be a list of paths")
+        spec["base_scope"] = [item.strip() for item in scope]
+    return spec
 
 
 class Delegations:
@@ -197,6 +205,7 @@ class Delegations:
                         "goal": spec["goal"],
                         "success_criteria": spec["success_criteria"],
                         "idempotency_key": key,
+                        **({"base_scope": spec["base_scope"]} if "base_scope" in spec else {}),
                     }
                 )
                 row = {

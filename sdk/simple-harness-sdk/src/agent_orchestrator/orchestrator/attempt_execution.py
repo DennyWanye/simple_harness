@@ -16,6 +16,7 @@ from collections.abc import Mapping, Sequence
 from typing import Any
 
 from ..artifacts.store import ArtifactStore, read_verified
+from ..artifacts.workspace_base import mission_base_commit
 from ..contracts import ContractError, Task
 from ..contracts.models import sha256_hex
 from ..storage.store import Store
@@ -113,6 +114,10 @@ def freeze_attempt_execution(
         "files": files,
         "retry_of": retry_of,
     }
+    base_commit = mission_base_commit(mission.final_report)
+    if base_commit is not None:
+        # 底按提交号冻结（提交号就是整棵树的内容身份），不逐文件写进来
+        body["base_commit"] = base_commit
     return {**body, "constraints_revision": sha256_hex(body)}
 
 

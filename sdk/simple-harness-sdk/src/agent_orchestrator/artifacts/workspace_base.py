@@ -1,0 +1,674 @@
+# SPDX-FileCopyrightText: 2026 DennyWanye
+# SPDX-License-Identifier: Apache-2.0
+
+"""任务的「底」：宿主交来的文件树，建任务时拍成 SDK 工作仓库里的一个 git 提交。
+
+设计见 ``plans/2026-11-26-workspace-base/00-设计-任务工作区以底为基础.md``。
+
+* :class:`WorkspaceBase` 是宿主实现的端口：按范围列出底里的文件（字节按需读）。SDK 自带
+  :class:`GitRepoBase`（用户的 git 仓库：受版本管理 + 未忽略的新文件，含没提交的改动）、
+  :class:`DirectoryBase`（普通目录）、:class:`InMemoryBase`（测试替身）。
+* :class:`BaseRepo` 是 SDK 自管的裸仓库（``<数据根>/bases/work.git``）。只用底层命令
+  （``fast-import`` / ``ls-tree`` / ``cat-file``），并隔离用户与系统的 git 配置：换行转换、
+  属性过滤一概不发生，铺回目录的字节与拍快照时逐字节相同。
+* :func:`capture_base` 守 SDK 这一道：范围、上限、扣留（疑似密钥、软链、大小写冲突、保留路径）、
+  二进制 / 超大文件标成不可读。同样的内容拍出同一个提交号（作者、时间、说明都固定）。
+
+提交号是底的身份：任务行记它，尝试工作区、验收副本、判定树都从它铺底；提交与对象由引用
+``refs/harness/base/<提交号>`` 保住，工作区目录清掉以后照样能重建。
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import os
+import re
+import subprocess  # noqa: S404 - 固定的 git 底层命令，参数不来自模型
+import tempfile
+import uuid
+from collections.abc import Callable, Iterable, Mapping, Sequence
+from dataclasses import dataclass, field
+from pathlib import Path, PurePosixPath
+from typing import Protocol, runtime_checkable
+
+from .paths import under_prefix
+
+GIT_MIN_VERSION = (2, 38)
+#: 工作区读写单文件的上限（与 :data:`workspace.MAX_FILE_BYTES` 同值）；更大的底文件只读不可改。
+READABLE_MAX_BYTES = 512 * 1024
+#: 遍历时跳过的目录名（与工作区相同）。
+IGNORED_DIRS = frozenset({"__pycache__", ".pytest_cache", ".git"})
+#: 按名字直接扣留的文件：凭据、私钥、证书一类，即使被 git 跟踪了也不交给模型。
+SECRET_NAME_PATTERNS = (
+    re.compile(r"^\.env(\..*)?$"),
+    re.compile(r".*\.(pem|key|p12|pfx|keystore|jks|mobileprovision)$", re.IGNORECASE),
+    re.compile(r"^id_(rsa|dsa|ecdsa|ed25519)(\.pub)?$"),
+    re.compile(r"^\.(netrc|npmrc|pypirc)$"),
+)
+#: SDK 自己在工作区里用的路径（资料根、保证通道材料、判定树里落选的产出）；底里撞上的扣留。
+RESERVED_BASE_PREFIXES = ("sources/", ".assurance/", "accepted-outputs/")
+_COMMITTER = "SimpleHarness <harness@localhost> 0 +0000"
+_CONTROL = re.compile(r"[\x00-\x1f\x7f]")
+
+
+class BaseError(ValueError):
+    """底拍不了或读不了；``reason`` 是给调用方的机器码。"""
+
+    def __init__(self, reason: str, message: str) -> None:
+        super().__init__(message)
+        self.reason = reason
+
+
+class BaseUnavailable(BaseError):
+    def __init__(self, message: str) -> None:
+        super().__init__("base_unavailable", message)
+
+
+class BaseTooLarge(BaseError):
+    """范围内的文件超过上限；带实际的文件数和字节数，让调用方缩小范围。"""
+
+    def __init__(self, files: int, size: int, limits: CaptureLimits) -> None:
+        super().__init__(
+            "base_too_large",
+            f"底有 {files} 个文件、{size} 字节，超过上限 {limits.max_files} 个 / "
+            f"{limits.max_bytes} 字节；缩小范围（base_scope）后重交",
+        )
+        self.files = files
+        self.bytes = size
+        self.limits = limits
+
+
+@dataclass(frozen=True, slots=True)
+class CaptureLimits:
+    max_files: int = 5000
+    max_bytes: int = 64 * 1024 * 1024
+
+
+@dataclass(frozen=True, slots=True)
+class BaseFile:
+    """底里的一个文件：大小先给，字节按需读（大的底不必先全读进来才知道超限）。"""
+
+    path: str
+    size: int
+    read: Callable[[], bytes]
+    executable: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class BaseCapture:
+    files: Sequence[BaseFile]
+    #: 适配器自己扣留的（例如软链）：路径 → 原因
+    withheld: Mapping[str, str] = field(default_factory=dict)
+    #: 来历，记进任务（例如 ``{"kind": "git", "head": 提交号}``）
+    source: Mapping[str, str] = field(default_factory=dict)
+
+
+@runtime_checkable
+class WorkspaceBase(Protocol):
+    """宿主交给 SDK 的底。``scope`` 是路径前缀（空 = 整个底）；适配器可以先按它少列，
+    SDK 收到后还会再按它筛一遍。"""
+
+    def capture(self, scope: Sequence[str]) -> BaseCapture: ...
+
+
+@dataclass(frozen=True, slots=True)
+class BaseEntry:
+    """工作仓库里底提交的一个文件。"""
+
+    path: str
+    blob: str
+    sha256: str
+    size: int
+    executable: bool
+    readable: bool
+
+    def to_json(self) -> dict[str, object]:
+        return {
+            "blob": self.blob,
+            "sha256": self.sha256,
+            "size": self.size,
+            "executable": self.executable,
+            "readable": self.readable,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class BaseRecord:
+    """一次拍快照的结果，记进任务行（``final_report["workspace_base"]``）。"""
+
+    commit: str
+    files: int
+    bytes: int
+    scope: tuple[str, ...]
+    withheld: Mapping[str, str]
+    source: Mapping[str, str]
+
+    def to_json(self) -> dict[str, object]:
+        return {
+            "commit": self.commit,
+            "files": self.files,
+            "bytes": self.bytes,
+            "scope": list(self.scope),
+            "withheld": dict(sorted(self.withheld.items())),
+            "source": dict(self.source),
+        }
+
+
+# ---------------------------------------------------------------- 适配器
+
+
+def _in_scope(path: str, scope: Sequence[str]) -> bool:
+    if not scope:
+        return True
+    return any(path == item.rstrip("/") or under_prefix(path, (item,)) for item in scope)
+
+
+def _file(root: Path, relative: str) -> BaseFile:
+    target = root / relative
+    stat = target.stat()
+    return BaseFile(
+        relative,
+        stat.st_size,
+        lambda: target.read_bytes(),
+        executable=bool(stat.st_mode & 0o111),
+    )
+
+
+class DirectoryBase:
+    """本机目录（没有 git 的也行）：全量遍历；软链扣留，不跟随。"""
+
+    def __init__(self, root: str | Path) -> None:
+        self.root = Path(root)
+
+    def _paths(self) -> Iterable[str]:
+        for directory, names, filenames in os.walk(self.root):
+            base = Path(directory)
+            names[:] = [
+                name for name in names if name not in IGNORED_DIRS or (base / name).is_symlink()
+            ]
+            for name in (*names, *filenames):
+                target = base / name
+                if target.is_symlink() or target.is_file():
+                    yield target.relative_to(self.root).as_posix()
+
+    def _source(self) -> dict[str, str]:
+        return {"kind": "directory"}
+
+    def capture(self, scope: Sequence[str]) -> BaseCapture:
+        files: list[BaseFile] = []
+        withheld: dict[str, str] = {}
+        for relative in sorted(set(self._paths())):
+            if not _in_scope(relative, scope):
+                continue
+            target = self.root / relative
+            if target.is_symlink():
+                withheld[relative] = "symlink"
+            elif target.is_file():
+                files.append(_file(self.root, relative))
+        return BaseCapture(files, withheld, self._source())
+
+
+class GitRepoBase(DirectoryBase):
+    """用户的 git 仓库：工作目录里受版本管理的文件 + 未被忽略的新文件（没提交的改动算在内）。
+    只读用户的仓库，不写它的 ``.git``。"""
+
+    def _run(self, *args: str) -> subprocess.CompletedProcess[bytes]:
+        return subprocess.run(  # noqa: S603
+            ["git", "-C", str(self.root), *args],
+            capture_output=True,
+            env=_isolated_env(),
+            check=False,
+            timeout=120,
+        )
+
+    def _paths(self) -> Iterable[str]:
+        done = self._run("ls-files", "-z", "--cached", "--others", "--exclude-standard")
+        if done.returncode != 0:
+            raise BaseUnavailable(
+                f"列不出 {self.root} 的文件：{done.stderr.decode(errors='replace')[:200]}"
+            )
+        for raw in done.stdout.split(b"\0"):
+            if not raw:
+                continue
+            relative = raw.decode("utf-8", errors="surrogateescape")
+            target = self.root / relative
+            # 已跟踪但工作目录里删掉了的不算底
+            if target.is_symlink() or target.is_file():
+                yield relative
+
+    def _source(self) -> dict[str, str]:
+        done = self._run("rev-parse", "--verify", "-q", "HEAD")
+        head = done.stdout.decode().strip() if done.returncode == 0 else ""
+        return {"kind": "git", "head": head} if head else {"kind": "git"}
+
+
+class InMemoryBase:
+    """测试替身：``{路径: 字节}``。"""
+
+    def __init__(
+        self,
+        files: Mapping[str, bytes],
+        *,
+        executable: Iterable[str] = (),
+        source: Mapping[str, str] | None = None,
+    ) -> None:
+        self.files = dict(files)
+        self.executable = frozenset(executable)
+        self.source = dict(source or {"kind": "memory"})
+
+    def capture(self, scope: Sequence[str]) -> BaseCapture:
+        return BaseCapture(
+            [
+                BaseFile(path, len(data), (lambda data=data: data), path in self.executable)
+                for path, data in sorted(self.files.items())
+                if _in_scope(path, scope)
+            ],
+            {},
+            self.source,
+        )
+
+
+# ---------------------------------------------------------------- 工作仓库
+
+
+def _isolated_env(**extra: str) -> dict[str, str]:
+    """不读用户 / 系统的 git 配置（换行转换、钩子、过滤器都不生效），输出不翻译。"""
+
+    env = {
+        key: value
+        for key, value in os.environ.items()
+        if not key.startswith("GIT_") or key in {"GIT_EXEC_PATH"}
+    }
+    env.update(
+        {
+            "GIT_CONFIG_GLOBAL": os.devnull,
+            "GIT_CONFIG_NOSYSTEM": "1",
+            "GIT_TERMINAL_PROMPT": "0",
+            "LC_ALL": "C",
+        }
+    )
+    env.update(extra)
+    return env
+
+
+def _readable(data: bytes) -> bool:
+    if len(data) > READABLE_MAX_BYTES or b"\0" in data[:8192]:
+        return False
+    try:
+        data.decode("utf-8")
+    except UnicodeDecodeError:
+        return False
+    return True
+
+
+class BaseRepo:
+    """SDK 自管的裸仓库。只有本模块写它；引用 ``refs/harness/base/<提交号>`` 保住每个底。"""
+
+    def __init__(self, path: str | Path, *, git: str = "git") -> None:
+        self.path = Path(path)
+        self._git_program = git
+
+    # ------------------------------------------------------------ 底层
+    def _git(
+        self, *args: str, input: bytes | None = None, env: Mapping[str, str] | None = None
+    ) -> bytes:
+        done = subprocess.run(  # noqa: S603
+            [self._git_program, f"--git-dir={self.path}", *args],
+            input=input,
+            capture_output=True,
+            env=_isolated_env(**dict(env or {})),
+            check=False,
+            timeout=300,
+        )
+        if done.returncode != 0:
+            raise BaseError(
+                "base_repo_failed",
+                f"git {args[0]} 失败：{done.stderr.decode(errors='replace')[:300]}",
+            )
+        return done.stdout
+
+    def probe(self) -> dict[str, object]:
+        """git 在不在、够不够新（要 ``merge-tree --write-tree``，2.38 起）。"""
+
+        try:
+            done = subprocess.run(  # noqa: S603
+                [self._git_program, "--version"],
+                capture_output=True,
+                env=_isolated_env(),
+                check=False,
+                timeout=30,
+            )
+        except (OSError, subprocess.SubprocessError) as error:
+            return {"ok": False, "reason": f"找不到 git：{type(error).__name__}"}
+        match = re.search(rb"(\d+)\.(\d+)(?:\.(\d+))?", done.stdout)
+        if done.returncode != 0 or match is None:
+            return {"ok": False, "reason": "git --version 没有给出版本"}
+        version = ".".join(part.decode() for part in match.groups() if part is not None)
+        if (int(match.group(1)), int(match.group(2))) < GIT_MIN_VERSION:
+            return {
+                "ok": False,
+                "version": version,
+                "reason": f"git {version} 太旧，要 {GIT_MIN_VERSION[0]}.{GIT_MIN_VERSION[1]} 以上",
+            }
+        return {"ok": True, "version": version}
+
+    def ensure(self) -> None:
+        if (self.path / "HEAD").is_file():
+            return
+        self.path.mkdir(parents=True, exist_ok=True)
+        self._git("init", "--bare", "-q")
+
+    def _manifest_cache(self, commit: str) -> Path:
+        return self.path.parent / "manifests" / f"{commit}.json"
+
+    # ------------------------------------------------------------ 写
+    def commit_files(
+        self, files: Mapping[str, bytes], *, executable: Iterable[str] = (), message: str = "base"
+    ) -> str:
+        """把一组文件写成一个无父提交（作者、时间固定：同样的内容得到同一个提交号）。"""
+
+        self.ensure()
+        executable = frozenset(executable)
+        temporary = f"refs/harness/import/{uuid.uuid4().hex}"
+        stream = bytearray()
+        text = message.encode()
+        stream += (
+            f"commit {temporary}\ncommitter {_COMMITTER}\ndata {len(text)}\n".encode()
+            + text
+            + b"\n"
+        )
+        for path in sorted(files):
+            data = files[path]
+            mode = "100755" if path in executable else "100644"
+            stream += f"M {mode} inline {path}\ndata {len(data)}\n".encode() + data + b"\n"
+        stream += b"done\n"
+        self._git("fast-import", "--quiet", "--done", input=bytes(stream))
+        commit = self._git("rev-parse", "--verify", temporary).decode().strip()
+        self._git("update-ref", f"refs/harness/base/{commit}", commit)
+        self._git("update-ref", "-d", temporary)
+        manifest = {
+            path: BaseEntry(
+                path,
+                blob="",
+                sha256=hashlib.sha256(files[path]).hexdigest(),
+                size=len(files[path]),
+                executable=path in executable,
+                readable=_readable(files[path]),
+            )
+            for path in files
+        }
+        self._write_manifest(commit, self._with_blobs(commit, manifest))
+        return commit
+
+    def _with_blobs(self, commit: str, manifest: Mapping[str, BaseEntry]) -> dict[str, BaseEntry]:
+        blobs = self._tree(commit)
+        return {
+            path: BaseEntry(path, blobs[path][0], e.sha256, e.size, e.executable, e.readable)
+            for path, e in manifest.items()
+        }
+
+    def _write_manifest(self, commit: str, manifest: Mapping[str, BaseEntry]) -> None:
+        target = self._manifest_cache(commit)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        body = json.dumps(
+            {path: entry.to_json() for path, entry in sorted(manifest.items())},
+            ensure_ascii=False,
+            sort_keys=True,
+        )
+        with tempfile.NamedTemporaryFile(
+            "w", dir=target.parent, delete=False, encoding="utf-8"
+        ) as out:
+            out.write(body)
+        os.replace(out.name, target)
+
+    # ------------------------------------------------------------ 读
+    def has(self, commit: str) -> bool:
+        if not re.fullmatch(r"[0-9a-f]{40}", commit or "") or not (self.path / "HEAD").is_file():
+            return False
+        try:
+            kind = self._git("cat-file", "-t", commit).decode().strip()
+        except BaseError:
+            return False
+        return kind == "commit"
+
+    def _tree(self, commit: str) -> dict[str, tuple[str, str]]:
+        """路径 → (blob 号, 模式)。"""
+
+        out = self._git("ls-tree", "-r", "-z", "--full-tree", commit)
+        entries: dict[str, tuple[str, str]] = {}
+        for record in out.split(b"\0"):
+            if not record:
+                continue
+            meta, _, raw_path = record.partition(b"\t")
+            mode, kind, blob = meta.decode().split(" ")
+            if kind == "blob":
+                entries[raw_path.decode("utf-8", errors="surrogateescape")] = (blob, mode)
+        return entries
+
+    def _blobs(self, ids: Sequence[str]) -> dict[str, bytes]:
+        if not ids:
+            return {}
+        out = self._git("cat-file", "--batch", input=("\n".join(ids) + "\n").encode())
+        found: dict[str, bytes] = {}
+        cursor = 0
+        for _ in ids:
+            newline = out.index(b"\n", cursor)
+            header = out[cursor:newline].decode().split(" ")
+            if len(header) != 3:
+                raise BaseError("base_repo_failed", f"底里缺对象：{header[0]}")
+            blob, _kind, size = header
+            start = newline + 1
+            found[blob] = out[start : start + int(size)]
+            cursor = start + int(size) + 1
+        return found
+
+    def manifest(self, commit: str) -> dict[str, BaseEntry]:
+        """底提交的文件清单（路径 → blob 号、sha256、大小、可执行、可读）。缓存是派生数据，
+        丢了就从 git 对象重算。"""
+
+        cache = self._manifest_cache(commit)
+        if cache.is_file():
+            raw = json.loads(cache.read_text(encoding="utf-8"))
+            return {
+                path: BaseEntry(
+                    path,
+                    item["blob"],
+                    item["sha256"],
+                    item["size"],
+                    item["executable"],
+                    item["readable"],
+                )
+                for path, item in raw.items()
+            }
+        tree = self._tree(commit)
+        data = self._blobs(sorted({blob for blob, _mode in tree.values()}))
+        manifest = {
+            path: BaseEntry(
+                path,
+                blob,
+                hashlib.sha256(data[blob]).hexdigest(),
+                len(data[blob]),
+                mode == "100755",
+                _readable(data[blob]),
+            )
+            for path, (blob, mode) in tree.items()
+        }
+        self._write_manifest(commit, manifest)
+        return manifest
+
+    def read(self, commit: str, path: str) -> bytes:
+        entry = self.manifest(commit).get(path)
+        if entry is None:
+            raise BaseError("base_missing", f"底里没有 {path}")
+        return self._blobs([entry.blob])[entry.blob]
+
+    def files(self, commit: str, paths: Iterable[str] | None = None) -> dict[str, bytes]:
+        manifest = self.manifest(commit)
+        wanted = manifest if paths is None else {p: manifest[p] for p in paths if p in manifest}
+        data = self._blobs(sorted({entry.blob for entry in wanted.values()}))
+        return {path: data[entry.blob] for path, entry in wanted.items()}
+
+    def materialise(self, commit: str, target: Path, *, skip: Iterable[str] = ()) -> list[str]:
+        """把底提交的文件逐字节写进 ``target``（不经任何 git 过滤），返回写了哪些路径。"""
+
+        manifest = self.manifest(commit)
+        skipped = frozenset(skip)
+        data = self._blobs(sorted({e.blob for p, e in manifest.items() if p not in skipped}))
+        written = []
+        for path, entry in sorted(manifest.items()):
+            if path in skipped:
+                continue
+            destination = Path(target) / path
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_bytes(data[entry.blob])
+            if entry.executable:
+                destination.chmod(destination.stat().st_mode | 0o111)
+            written.append(path)
+        return written
+
+
+# ---------------------------------------------------------------- 任务里的底
+
+
+def mission_base_commit(final_report: Mapping[str, object] | None) -> str | None:
+    """任务行记的底提交号；没有底返回 None。"""
+
+    base = (final_report or {}).get("workspace_base")
+    if isinstance(base, Mapping) and isinstance(base.get("commit"), str) and base["commit"]:
+        return str(base["commit"])
+    return None
+
+
+#: 交给模型的工作区文件清单最多列这么多条；底更大时按顶层目录汇总，细节让它用列目录工具看。
+LISTING_LIMIT = 400
+
+
+def workspace_listing(paths: Iterable[str], *, limit: int = LISTING_LIMIT) -> list[str]:
+    ordered = sorted(set(paths))
+    if len(ordered) <= limit:
+        return ordered
+    counts: dict[str, int] = {}
+    for path in ordered:
+        head, sep, _rest = path.partition("/")
+        key = head + "/" if sep else head
+        counts[key] = counts.get(key, 0) + 1
+    return [
+        key if count == 1 and not key.endswith("/") else f"{key} ({count} 个文件)"
+        for key, count in sorted(counts.items())
+    ]
+
+
+# ---------------------------------------------------------------- 拍快照
+
+
+def _path_problem(path: str) -> str | None:
+    if not isinstance(path, str) or not path or _CONTROL.search(path) or "\\" in path:
+        return "invalid_path"
+    if path.startswith('"'):
+        return "invalid_path"
+    try:
+        path.encode("utf-8")
+    except UnicodeEncodeError:  # 不是 UTF-8 的文件名（Linux 上可能有）：写不进提交，也没法交给模型
+        return "invalid_path"
+    posix = PurePosixPath(path)
+    if (
+        posix.is_absolute()
+        or str(posix) != path
+        or any(part in {"..", "."} for part in posix.parts)
+    ):
+        return "invalid_path"
+    if any(part in IGNORED_DIRS for part in posix.parts[:-1]):
+        return "ignored"
+    return None
+
+
+def _secret_name(path: str) -> bool:
+    name = PurePosixPath(path).name
+    return any(pattern.fullmatch(name) for pattern in SECRET_NAME_PATTERNS)
+
+
+def capture_base(
+    base: WorkspaceBase,
+    repo: BaseRepo,
+    *,
+    scope: Sequence[str],
+    limits: CaptureLimits,
+    is_secret: Callable[[str], bool],
+    reserved: Sequence[str] = (),
+) -> BaseRecord:
+    """按范围拍一次底：先按名字、路径、大小写扣留，再查上限（只看大小，不读字节），
+    最后读字节、按内容扣留疑似密钥，写成底提交。"""
+
+    scope = tuple(scope)
+    captured = base.capture(scope)
+    withheld: dict[str, str] = {
+        path: reason for path, reason in captured.withheld.items() if _in_scope(path, scope)
+    }
+    candidates: dict[str, BaseFile] = {}
+    for item in captured.files:
+        if not _in_scope(item.path, scope):
+            continue
+        problem = _path_problem(item.path)
+        if problem == "ignored":
+            continue
+        if problem is not None:
+            withheld[item.path] = problem
+        elif under_prefix(item.path.casefold(), tuple(r.casefold() for r in reserved)):
+            withheld[item.path] = "reserved_path"
+        elif _secret_name(item.path):
+            withheld[item.path] = "secret_name"
+        else:
+            candidates[item.path] = item
+    folded: dict[str, list[str]] = {}
+    for path in candidates:
+        folded.setdefault(path.casefold(), []).append(path)
+    for group in folded.values():
+        if len(group) > 1:
+            for path in group:
+                withheld[path] = "case_conflict"
+                candidates.pop(path)
+    total = sum(item.size for item in candidates.values())
+    if len(candidates) > limits.max_files or total > limits.max_bytes:
+        raise BaseTooLarge(len(candidates), total, limits)
+    files: dict[str, bytes] = {}
+    executable = []
+    for path, item in sorted(candidates.items()):
+        data = item.read()
+        if _readable(data) and is_secret(data.decode("utf-8")):
+            withheld[path] = "secret_content"
+            continue
+        files[path] = data
+        if item.executable:
+            executable.append(path)
+    source = dict(captured.source)
+    commit = repo.commit_files(files, executable=executable, message="base\n")
+    return BaseRecord(
+        commit=commit,
+        files=len(files),
+        bytes=sum(len(data) for data in files.values()),
+        scope=scope,
+        withheld=withheld,
+        source=source,
+    )
+
+
+__all__ = (
+    "BaseCapture",
+    "BaseEntry",
+    "BaseError",
+    "BaseFile",
+    "BaseRecord",
+    "BaseRepo",
+    "BaseTooLarge",
+    "BaseUnavailable",
+    "CaptureLimits",
+    "DirectoryBase",
+    "GitRepoBase",
+    "InMemoryBase",
+    "RESERVED_BASE_PREFIXES",
+    "WorkspaceBase",
+    "capture_base",
+    "mission_base_commit",
+    "workspace_listing",
+)

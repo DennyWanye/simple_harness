@@ -37,6 +37,14 @@ if TYPE_CHECKING:
     from .session import Session, SessionPolicy
 
 from ..api import facade, policies
+from ..artifacts.workspace_base import (
+    RESERVED_BASE_PREFIXES,
+    BaseError,
+    BaseRepo,
+    CaptureLimits,
+    WorkspaceBase,
+    capture_base,
+)
 from ..contracts import Budget
 from ..deployment.assembly import RootNames, UserMissionDeployment
 from ..deployment.goal_world import WORKSPACE_TOOLS, goal_world, root_names
@@ -319,6 +327,7 @@ class OrchestrationHost:
         tools: Sequence[DomainTool] = (),
         connectors: Sequence[Any] = (),
         sandbox: SandboxOptions | None = None,
+        workspace_base: WorkspaceBase | None = None,
     ) -> None:
         """
         ``model`` + ``tokenizer_path``：用 DeepSeek 端点（正常用法）。
@@ -333,9 +342,17 @@ class OrchestrationHost:
         要求它执行；注册了连接器就必须在 ``settings.max_action_level`` 写明最高风险等级。
         ``kind="event"`` 的操作随注册启用。
         ``sandbox``：模型写的代码在哪个隔离区里跑（:class:`SandboxOptions`）；默认按系统自动选。
+        ``workspace_base``：任务的底（实现 :class:`WorkspaceBase`，例如 ``GitRepoBase(仓库)``）。
+        给了就每个新任务建任务时拍一次底提交，执行者与验收都在「底 + 本任务改动」上工作；
+        要求本机有 git 2.38 以上，开宿主时探测，结果在 ``self.base``。
         """
         self.tools = _checked_tools(tools)
         self._sandbox_options = sandbox or SandboxOptions()
+        if workspace_base is not None and not isinstance(workspace_base, WorkspaceBase):
+            raise TypeError("workspace_base 要实现 WorkspaceBase（capture(scope) -> BaseCapture）")
+        self._workspace_base = workspace_base
+        #: 底的探测结果：``{"enabled": bool, "reason"?, "git"?}``
+        self.base: dict[str, Any] = {"enabled": False, "reason": "未接底"}
 
         self.root = Path(root)
         self.settings = settings or HostSettings()
@@ -754,6 +771,7 @@ class OrchestrationHost:
         )
         self.sandbox = await self._probe_sandbox()
         sandboxed = bool(self.sandbox.get("ok"))
+        self.base = self._probe_base()
         skill_tools = tuple(SKILL_TOOL_NAMES)
         # session_history_read：超限的工具结果只给预览，执行者用它读全文（执行库里的记录）
         base_tools = (
@@ -1240,6 +1258,82 @@ class OrchestrationHost:
                 FACADE_MESSAGES.get(error.code, str(error)),
             ) from error
 
+    def _probe_base(self) -> dict[str, Any]:
+        """接了底就探测 git（每次启动都重新探测，不信文件）；探测不过时宿主照常开，只是建任务回
+        ``base_unavailable``。"""
+
+        if self._workspace_base is None:
+            return {"enabled": False, "reason": "未接底"}
+        probe = BaseRepo(self.root / "bases" / "work.git").probe()
+        if not probe.get("ok"):
+            return {"enabled": False, "reason": str(probe.get("reason"))}
+        return {"enabled": True, "git": probe.get("version")}
+
+    def _bases(self) -> BaseRepo:
+        return self.orchestrator.assembled.workspaces.bases
+
+    def _base_for(self, body: dict[str, Any], scope: Any, existing: Any) -> None:
+        """给建任务请求补上底：同一幂等键的重试沿用原任务的底；调用方带来的底核对它在工作仓库里；
+        否则按 ``scope`` 拍一个新的。"""
+
+        if self._workspace_base is None:
+            if scope is not None or "workspace_base" in body:
+                raise HostRequestError("base_unavailable", "这个宿主没有接底，不能带底建任务")
+            return
+        if "workspace_base" in body:
+            given = body["workspace_base"]
+            commit = given.get("commit") if isinstance(given, Mapping) else None
+            if not isinstance(commit, str) or not self._bases().has(commit):
+                raise HostRequestError("invalid_request", "底提交不在这个宿主的工作仓库里")
+        elif existing is not None:
+            prior = (existing.final_report or {}).get("workspace_base")
+            if prior is not None:
+                body["workspace_base"] = prior
+        else:
+            body["workspace_base"] = self._capture_base(scope)
+        base = body.get("workspace_base")
+        seed = body.get("workspace_seed") or {}
+        if base is not None and isinstance(seed, Mapping) and seed:
+            overlap = sorted(set(seed) & set(self._bases().manifest(str(base["commit"]))))
+            if overlap:
+                raise HostRequestError(
+                    "invalid_request", f"workspace_seed 与底里的文件重名：{overlap[:5]}"
+                )
+
+    def _capture_base(self, scope: Any) -> dict[str, Any]:
+        if not self.base.get("enabled"):
+            raise HostRequestError("base_unavailable", f"拍不了底：{self.base.get('reason')}")
+        if scope is None:
+            scope = []
+        if (
+            not isinstance(scope, list)
+            or len(scope) > 20
+            or not all(
+                isinstance(item, str) and is_bare_relative_path(item.rstrip("/")) for item in scope
+            )
+        ):
+            raise HostRequestError(
+                "invalid_request",
+                "base_scope 是至多 20 个底里的相对路径"
+                "（目录或文件，不带空白、不是绝对路径、不含 ..）",
+            )
+        assert self._workspace_base is not None
+        try:
+            record = capture_base(
+                self._workspace_base,
+                self._bases(),
+                scope=tuple(scope),
+                limits=CaptureLimits(self.settings.base_max_files, self.settings.base_max_bytes),
+                is_secret=lambda text: bool(find_secrets(text, extra=self.secret_values())),
+                reserved=(
+                    *RESERVED_BASE_PREFIXES,
+                    *self.orchestrator._config.deployment_policy.denied_path_prefixes,
+                ),
+            )
+        except BaseError as error:
+            raise HostRequestError(error.reason, str(error)) from error
+        return record.to_json()
+
     def check_criteria(self, criteria: list[str]) -> None:
         """这个部署真做得到的要求：``file:`` 后面是一个工作区相对路径，``pytest:`` 要沙箱，
         ``action:`` 要启用了的连接器。``criteria`` 是调用方要存的原文（不去首尾空白）。"""
@@ -1359,6 +1453,7 @@ class OrchestrationHost:
         与预算（同一幂等键的重试沿用原任务的）。"""
 
         body = dict(request)
+        scope = body.pop("base_scope", None)
         goal = body.get("goal")
         criteria = body.get("success_criteria")
         if not isinstance(goal, str) or not goal.strip():
@@ -1386,6 +1481,7 @@ class OrchestrationHost:
             else None
         )
         existing = found[0] if found else None
+        self._base_for(body, scope, existing)
         profiles = self.context_profiles()
         if "runtime_profile_id" in body:
             selected = body["runtime_profile_id"]

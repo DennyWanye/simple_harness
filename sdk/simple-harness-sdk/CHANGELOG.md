@@ -1,3 +1,22 @@
+## 未发布 — 后台任务在「底提交」上干活（issue #51，2026-11-26）
+
+宿主真机局（R16）里任务工作区是空的：执行者能用只读工具看到用户仓库，验收副本里却没有仓库原有文件，新写的测试
+`from ledger.book import Book` 导入失败，三次验收全挂。设计见 `plans/2026-11-26-workspace-base/`（本次是 P1）。
+
+- **底**：`OrchestrationHost(workspace_base=...)` 接一个 `WorkspaceBase`（自带 `GitRepoBase`、`DirectoryBase`）。
+  开宿主时探测 git ≥ 2.38，结果在 `host.base`；建任务时按 `base_scope`（会话委派新参数）拍成 SDK 自管 git 仓库
+  `bases/work.git` 里的一个提交，记进任务行 `final_report.workspace_base`；同一幂等键重试沿用原底。
+- **入口**：`base_too_large`（带文件数、字节数，模型缩小范围重交）、`base_unavailable`、范围写法不对与种子和底重名
+  回 `invalid_request`。疑似凭据的文件、软链、大小写冲突、SDK 保留路径扣留，不进底。
+- **工作区**：底铺在尝试工作区、验收副本、任务判定树的最下层（重试从上一棵树起步）；起步状态含底，只登记真改动；
+  二进制 / 超大底文件与 `pytest:` 点名的底文件只读；规划器的文件视图、交给执行者的文件清单（多了按顶层目录汇总）
+  含底；尝试冻结与工作区身份带底提交号。没有底的任务各处哈希与以前逐位相同。
+- **还没有**：交付改动集与写回、尝试即提交、步骤合并、删除工具（P2）。
+
+测试：`tests/orchestrator/workspace_base/` 三个文件 23 条——拍快照（真 git：逐字节还原、扣留、范围、上限、读用户
+仓库不改它的 `.git`）、工作区叠层（R16 同构：不铺底时 pytest `ModuleNotFoundError`、铺底后通过；只登记真改动）、
+宿主入口与整局（拒绝码、幂等、模型看到 `base_too_large` 后缩小范围、R16 同构任务跑到 COMPLETED 且底文件不是产物）。
+
 ## 未发布 — `file:` 成功条件只认纯路径（issue #49，2026-11-25）
 
 宿主真机局里主会话把成功条件写成 `file:ledger/csv_io.py 提供 load_csv(path) -> Book …`，验收把 `file:` 后整串当路径，

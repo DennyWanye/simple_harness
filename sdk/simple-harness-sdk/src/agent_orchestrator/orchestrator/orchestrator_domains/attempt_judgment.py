@@ -16,6 +16,7 @@ from simple_harness.agents import AgentConfig, AgentLimits
 
 from ...artifacts.store import ArtifactStoreError, read_verified
 from ...artifacts.versioning import ArtifactConflict, UpstreamInput
+from ...artifacts.workspace_base import BaseError, mission_base_commit, workspace_listing
 from ...context.context_builder import (
     CONTEXT_BUILDER_VERSION,
     ContextRejected,
@@ -673,7 +674,16 @@ class AttemptJudgmentMixin(OrchestratorCore):
         source_paths = set(source_versions or {})
         if source_binding:
             untrusted = sorted(set(untrusted) | source_paths)
-        previous_files = sorted({*seed, *(item.path for item in inputs), *source_paths})
+        base_commit = mission_base_commit(mission.final_report)
+        base_paths: set[str] = set()
+        if base_commit is not None:
+            try:
+                base_paths = set(self.assembled.workspaces.bases.manifest(base_commit))
+            except BaseError:
+                logger.debug("base_manifest_unreadable", exc_info=True)
+        previous_files = sorted(
+            {*base_paths, *seed, *(item.path for item in inputs), *source_paths}
+        )
         if previous is not None:
             try:
                 previous_files = sorted(
@@ -688,6 +698,9 @@ class AttemptJudgmentMixin(OrchestratorCore):
                 if path in source_paths
                 or not _under_source_root(path, source_binding["source_roots"])
             ]
+        if base_commit is not None:
+            # 底可能有几千个文件：清单过长时按顶层目录汇总，细节让执行者用列目录工具看
+            previous_files = workspace_listing(previous_files)
         return untrusted, previous_files, source_binding, source_versions
 
     def _with_leaf_context(
@@ -941,7 +954,9 @@ class AttemptJudgmentMixin(OrchestratorCore):
         # P0-2: one judgment tree per orchestrator instance — another instance may be
         # running pytest in its own; the judgment Commit itself is idempotent
         view_id = f"{mission.id}-judge-{self._owner}"
-        copy = self.assembled.workspaces.integrated_copy(view_id, seed=seed, files=files)
+        copy = self.assembled.workspaces.integrated_copy(
+            view_id, seed=seed, files=files, base=mission_base_commit(mission.final_report)
+        )
         self._register_copy(
             "judge",
             f"{view_id}-verify",

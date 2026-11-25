@@ -48,6 +48,8 @@ class HierarchicalDispatchCore:
     _taskgraph_settlement_reader: Any = field(default=None, repr=False)
     _taskgraph_preview: Any = field(default=None, repr=False)
     _taskgraph_history: Any = field(default=None, repr=False)
+    #: 任务底提交住的工作仓库（:class:`~agent_orchestrator.artifacts.workspace_base.BaseRepo`）
+    bases: Any = field(default=None, repr=False)
 
     # ---------------------------------------------------------------- reading the plan
     @classmethod
