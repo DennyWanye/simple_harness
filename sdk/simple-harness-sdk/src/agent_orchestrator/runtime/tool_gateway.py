@@ -38,7 +38,7 @@ logger = logging.getLogger(__name__)
 TOOL_ANSWER_MARGIN = 8
 
 from bisect import bisect_right
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Mapping
 from copy import deepcopy
 from dataclasses import dataclass
 from hashlib import sha256
@@ -484,7 +484,6 @@ async def run_pytest(
     timeout: float,
     executor: SandboxExecutorPort | None = None,
     report_all: bool = False,
-    paths: Sequence[str] = (),
 ) -> TestRun:
     """pytest through the sandbox executor port (P3.2 D1): fixed cwd, an explicit
     environment, hard CPU and file limits, every process of the run reaped afterwards.
@@ -496,8 +495,6 @@ async def run_pytest(
     command = [runner.interpreter, "-c", _PYTEST_WORKSPACE_BOOTSTRAP]
     if path:
         command.append(path)
-    # 一次跑几个目标（任务有底时的顺手运行只跑本次改过的测试文件）
-    command.extend(paths)
     env = {"PYTHONDONTWRITEBYTECODE": "1", "PYTHONHASHSEED": "0"}
     if report_all:
         env["PYTEST_ASSURANCE_REPORT"] = "1"

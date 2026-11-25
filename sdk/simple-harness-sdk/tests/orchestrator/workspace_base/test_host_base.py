@@ -28,6 +28,7 @@ from agent_orchestrator.host import (  # noqa: E402
     Session,
 )
 from agent_orchestrator.host.offline import ScriptedProvider  # noqa: E402
+from agent_orchestrator.testing.fixtures import package_of  # noqa: E402
 from agent_orchestrator.testing.scripted_replies import (  # noqa: E402
     LayeredScriptedProvider,
     worker_reply,
@@ -272,10 +273,14 @@ BOOK_TEST = (
 LOGO = b"\x89PNG\r\n\x1a\n\x00\x00\x00"
 
 
+PACKAGES: list[dict] = []
+
+
 def _tampering_worker(request):
     """先试着改 ``pytest:`` 点名的底测试和二进制底文件（都该被工具层拒掉），
     再照常写出要求的文件。"""
 
+    PACKAGES.append(package_of(request))
     tools = sum(1 for message in request.messages if "tool" in str(message.role).lower())
     if tools == 0:
         return (
@@ -352,6 +357,13 @@ def test_protected_base_files_stay_put_and_the_base_is_frozen_into_the_attempt(t
             assert {"ledger/book.py", "tests/test_book.py", "assets/logo.png"} <= set(view)
             recorded = {a["path"] for a in final["snapshot"].get("artifacts", []) if a.get("path")}
             assert not recorded & {"tests/test_book.py", "assets/logo.png", "ledger/book.py"}
+            # 交给执行者的文件清单里有底里的文件（底不大，不汇总）
+            listed = {
+                path
+                for package in PACKAGES
+                for path in (package.get("tools_and_permissions") or {}).get("workspace_files", ())
+            }
+            assert {"ledger/book.py", "tests/test_book.py"} <= listed, PACKAGES[:1]
 
     asyncio.run(case())
 

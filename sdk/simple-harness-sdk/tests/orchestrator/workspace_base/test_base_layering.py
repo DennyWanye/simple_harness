@@ -174,9 +174,15 @@ def test_the_verification_copy_is_rebuilt_from_records_after_the_tree_is_gone(tm
 
 
 BROKEN = {"tests/test_needs_network.py": b"def test_fetch():\n    assert False, 'needs network'\n"}
+#: 使用方根目录的 pytest 配置与 conftest：沙箱里没有 pytest-cov、也没装 some_missing_plugin
+HOSTILE_ROOT = {
+    "pyproject.toml": b'[tool.pytest.ini_options]\naddopts = "--cov=ledger"\n',
+    "conftest.py": b"import some_missing_plugin  # noqa\n",
+}
+RED = "def test_cli():\n    assert False\n"
 
 
-def _file_only_task() -> Task:
+def _criteria_task(criteria: tuple[str, ...]) -> Task:
     return Task(
         id="task-1",
         mission_id="mission-1",
@@ -184,7 +190,7 @@ def _file_only_task() -> Task:
         dependency_ids=(),
         goal="加命令行模块",
         rationale="test",
-        success_criteria=("file:ledger/cli.py",),
+        success_criteria=criteria,
         verification_policy=("format_check", "rule_check", "code_test", "critic_review"),
         allowed_tools=("workspace_write_file",),
         budget=Budget(max_tokens=1000, max_attempts=1),
@@ -194,10 +200,17 @@ def _file_only_task() -> Task:
     )
 
 
-def _courtesy(tmp_path, *, write_test: str | None, on_base: bool):
+def _courtesy(
+    tmp_path,
+    *,
+    writes: dict[str, str] | None = None,
+    on_base: bool = True,
+    base: dict[str, bytes] | None = None,
+    criteria: tuple[str, ...] = ("file:ledger/cli.py",),
+):
     manager = WorkspaceManager(tmp_path / "workspaces")
     record = capture_base(
-        InMemoryBase({**REPO, **BROKEN}),
+        InMemoryBase({**REPO, **(BROKEN if base is None else base)}),
         manager.bases,
         scope=(),
         limits=CaptureLimits(),
@@ -205,38 +218,67 @@ def _courtesy(tmp_path, *, write_test: str | None, on_base: bool):
     )
     workspace = manager.create("attempt-1", seed={}, base=record.commit)
     workspace.write_text("ledger/cli.py", CLI)
-    if write_test is not None:
-        workspace.write_text("tests/test_cli.py", write_test)
+    for path, content in (writes or {}).items():
+        workspace.write_text(path, content)
     artifacts = _changed(workspace, manager.bases.manifest(record.commit))
     copy = manager.verification_copy(
         "attempt-1", seed={}, inputs={}, artifacts=artifacts, base=record.commit
     )
-    return asyncio.run(
+    result = asyncio.run(
         code_test(
-            _file_only_task(),
+            _criteria_task(criteria),
             verification_copy=copy,
             timeout=120,
             artifacts=artifacts,
             on_base=on_base,
         )
     )
+    # 空目录用完就删，不留在工作区根下
+    assert not [p for p in manager.root.iterdir() if "no-tests" in p.name]
+    return result
 
 
 def test_the_courtesy_run_on_a_base_ignores_the_users_own_red_tests(tmp_path):
     # 核验第二轮：只要求 file: 的步骤，顺手运行不该跑到使用方仓库里本来就红的测试
-    whole_tree = _courtesy(tmp_path / "a", write_test=None, on_base=False)
-    assert whole_tree.status == "FAIL"  # 改之前的行为：整棵树都跑
-    nothing_changed = _courtesy(tmp_path / "b", write_test=None, on_base=True)
+    whole_tree = _courtesy(tmp_path / "a", on_base=False)
+    assert whole_tree.status == "FAIL"  # 没有底时的行为：整棵树都跑
+    nothing_changed = _courtesy(tmp_path / "b")
     assert nothing_changed.status == "PASS", nothing_changed
     [run] = nothing_changed.detail["runs"]
-    assert run["target"] is None and run["no_tests_collected"] is True
-    assert run["courtesy_paths"] == []
-    own_test = _courtesy(tmp_path / "c", write_test=TEST, on_base=True)
+    assert run["target"] is None and run["no_tests_collected"] is True and run["courtesy"]
+    own_test = _courtesy(tmp_path / "c", writes={"tests/test_cli.py": TEST})
     assert own_test.status == "PASS", own_test
-    assert own_test.detail["runs"][0]["courtesy_paths"] == ["tests/test_cli.py"]
+    assert [r["target"] for r in own_test.detail["runs"]] == ["tests/test_cli.py"]
 
 
 def test_the_courtesy_run_on_a_base_still_fails_on_the_steps_own_red_test(tmp_path):
-    red = "def test_cli():\n    assert False\n"
-    result = _courtesy(tmp_path, write_test=red, on_base=True)
+    assert _courtesy(tmp_path, writes={"tests/test_cli.py": RED}).status == "FAIL"
+
+
+def test_every_changed_test_file_runs_not_just_the_first(tmp_path):
+    # 核验第三轮：改了两个测试文件，第二个是红的
+    result = _courtesy(tmp_path, writes={"tests/test_a_cli.py": TEST, "tests/test_b_cli.py": RED})
+    assert [r["target"] for r in result.detail["runs"]] == [
+        "tests/test_a_cli.py",
+        "tests/test_b_cli.py",
+    ]
     assert result.status == "FAIL", result
+
+
+def test_a_bare_pytest_criterion_still_runs_the_whole_tree_on_a_base(tmp_path):
+    # 核验第三轮：不带路径的 pytest: 是要求跑整棵树，不收窄
+    red = _courtesy(tmp_path / "a", writes={"tests/test_cli.py": TEST}, criteria=("pytest:",))
+    assert red.status == "FAIL", red  # 底里那条红测试被看见了
+    green = _courtesy(
+        tmp_path / "b",
+        base={"tests/test_book.py": b"def test_ok():\n    pass\n"},
+        criteria=("pytest:",),
+    )
+    assert green.status == "PASS", green  # 这一步没改测试，底里的绿测试照样算数
+    assert [r["target"] for r in green.detail["runs"]] == [None]
+
+
+def test_the_no_tests_run_does_not_load_the_users_root_config(tmp_path):
+    # 核验第三轮：根目录 conftest 导入了沙箱里没有的包、pyproject 要 --cov
+    result = _courtesy(tmp_path, base={**BROKEN, **HOSTILE_ROOT})
+    assert result.status == "PASS", result

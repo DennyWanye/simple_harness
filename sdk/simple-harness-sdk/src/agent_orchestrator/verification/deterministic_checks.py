@@ -18,12 +18,13 @@ from __future__ import annotations
 
 import logging
 import re
+import shutil
 import uuid
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
-from ..artifacts.workspace import Workspace, sha256_file
+from ..artifacts.workspace import EXEC_COPY_MARK, Workspace, sha256_file
 from ..contracts import Artifact, ResultEnvelope, Task
 from ..contracts.models import sha256_hex
 from ..governance.domains import DomainProfileV1
@@ -157,10 +158,11 @@ async def code_test(
 ) -> LayerResult:
     """Run every ``pytest:`` criterion (Task and Mission) in the verification copy.
 
-    没有 ``pytest:`` 条件时照例顺手跑一次（目标记为 None）。任务有底（``on_base``）时，顺手运行只跑
-    本次登记的产物里的测试文件：验收副本里有使用方仓库原有的全部测试，其中本来就红、要联网或缺依赖的
-    与这一步无关，不能让一个只要求 ``file:`` 的步骤因此反复失败。本次没改测试文件时，在一个空目录上
-    跑（退出码 5），照旧算「不适用、视为满足」。
+    没有 ``pytest:`` 条件（连不带路径的也没有）时照例顺手跑一次（目标记为 None）。任务有底（``on_base``）
+    时不跑整棵树：验收副本里有使用方仓库原有的全部测试和根目录的 pytest 配置、``conftest.py``，其中本来
+    就红、要联网、缺依赖的与这一步无关，不能让一个只要求 ``file:`` 的步骤因此反复失败。所以本次登记的
+    产物里的每个测试文件各跑一次（指名运行，照常加载底里的配置与夹具）；一个都没有时，在验收副本旁边
+    一个空目录里跑（不加载底里的任何配置，退出码 5），照旧算「不适用、视为满足」。
     """
 
     manifest = {
@@ -194,17 +196,13 @@ async def code_test(
                 requested_whole_tree = True
             if target not in targets:
                 targets.append(target)
+    courtesy_on_base = not targets and on_base
+    if courtesy_on_base:
+        targets.extend(
+            sorted({artifact.path for artifact in artifacts if _is_test_file(artifact.path)})
+        )
     if not targets:
         targets.append(None)
-    courtesy_paths: list[str] = []
-    if targets == [None] and on_base:
-        courtesy_paths = sorted(
-            {artifact.path for artifact in artifacts if _is_test_file(artifact.path)}
-        )
-        if not courtesy_paths:
-            empty = f".harness-no-tests-{uuid.uuid4().hex[:12]}"
-            (verification_copy.root / empty).mkdir()
-            courtesy_paths = [empty]
     runs: list[dict[str, Any]] = []
     failed = False
     for target in targets:
@@ -216,14 +214,24 @@ async def code_test(
                 runs.append({"target": target, "error": str(error)})
                 failed = True
                 continue
-        run = await run_pytest(
-            str(verification_copy.root),
-            path=target,
-            timeout=timeout,
-            executor=executor,
-            report_all=True,
-            paths=courtesy_paths if target is None else (),
-        )
+        cwd = verification_copy.root
+        isolated = None
+        if courtesy_on_base and target is None:
+            # 空目录放在验收副本外面：pytest 的根目录与配置查找都止于工作目录，碰不到底里的东西
+            isolated = cwd.parent / f"{cwd.name}{EXEC_COPY_MARK}no-tests-{uuid.uuid4().hex[:12]}"
+            isolated.mkdir()
+            cwd = isolated
+        try:
+            run = await run_pytest(
+                str(cwd),
+                path=target,
+                timeout=timeout,
+                executor=executor,
+                report_all=True,
+            )
+        finally:
+            if isolated is not None:
+                shutil.rmtree(isolated, ignore_errors=True)
         # Assurance 1.1 default-ON (2026-09-23): the courtesy whole-tree run that no
         # ``pytest:`` criterion asked for, on a workspace pytest collects nothing from
         # (exit 5), attests nothing and fails nothing.  Any run a criterion asked for —
@@ -243,8 +251,8 @@ async def code_test(
         }
         if no_tests_collected:
             row["no_tests_collected"] = True
-        if target is None and on_base:
-            row["courtesy_paths"] = [p for p in courtesy_paths if not p.startswith(".harness-")]
+        if courtesy_on_base:
+            row["courtesy"] = True  # 有底时的顺手运行：没有条件要求，只验本次改过的测试
         runs.append(row)
         failed = failed or not row["passed"]
     summary = (

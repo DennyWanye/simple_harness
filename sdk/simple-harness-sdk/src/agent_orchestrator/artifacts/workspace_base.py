@@ -622,9 +622,17 @@ def _path_problem(path: str) -> str | None:
     return None
 
 
+#: git 判断「是不是 .git」时忽略的不可见字符（HFS+ 会忽略它们）
+_IGNORABLE = dict.fromkeys(
+    [*range(0x200C, 0x2010), *range(0x202A, 0x202F), *range(0x206A, 0x2070), 0xFEFF]
+)
+
+
 def _git_alias(part: str) -> bool:
-    folded = part.casefold()
-    return folded != ".git" and (folded.rstrip(" .") == ".git" or folded == "git~1")
+    """git 当成 ``.git`` 拒收的写法（大小写、结尾的空格和点、8.3 短名、NTFS 流、不可见字符）。"""
+
+    folded = part.translate(_IGNORABLE).casefold().split(":", 1)[0].rstrip(" .")
+    return part.casefold() != ".git" and folded in {".git", "git~1"}
 
 
 def _secret_name(path: str) -> bool:

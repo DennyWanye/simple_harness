@@ -274,6 +274,8 @@ def test_an_unreadable_file_and_git_aliases_are_withheld_not_fatal(tmp_path):
     (root / "git~1").mkdir()
     (root / "git~1" / "config").write_text("x\n")
     (root / ".git.").write_text("x\n")
+    (root / ".git::$INDEX_ALLOCATION").write_text("x\n")
+    (root / ".g\u200cit").write_text("x\n")
     try:
         repo = BaseRepo(tmp_path / "bases" / "work.git")
         record = _capture(repo, DirectoryBase(root))
@@ -282,6 +284,8 @@ def test_an_unreadable_file_and_git_aliases_are_withheld_not_fatal(tmp_path):
             "locked.txt": "unreadable",
             "git~1/config": "invalid_path",
             ".git.": "invalid_path",
+            ".git::$INDEX_ALLOCATION": "invalid_path",
+            ".g\u200cit": "invalid_path",
         }
         assert not list(repo.path.glob("fast_import_crash_*"))
     finally:

@@ -15,9 +15,9 @@
 
 独立核验第一轮（FAIL）查出并已修：① 路径上任一级目录是软链（例如把已跟踪的 `lib/` 换成指向仓库外的软链）会读到仓库外的文件 → 任一级是软链都扣留，读前再查一次；② `GitRepoBase` 列文件时屏蔽了用户全局配置，`core.excludesFile` 里忽略的文件进了底 → 列文件改用用户自己的配置（关掉 fsmonitor 与钩子）；③ macOS 上只差大小写的两个目录让工作仓库（`init` 默认 `ignorecase`）并路径、拍底抛 `KeyError` → 工作仓库设 `core.ignorecase=false`，目录只差大小写的也按 `case_conflict` 扣留；④ 名为 `.git` 的文件（工作树 / 子模块指针）让拍底失败 → 跳过；⑤ 接入说明丢了「5. 要求怎么写」标题 → 补回。
 
-独立核验第二轮（FAIL）查出并已修：铺了底以后，没写 `pytest:` 的步骤在验收时顺手跑整棵树，跑到使用方仓库原有的全部测试，其中本来就红、要联网或缺依赖的会让只要求 `file:` 的步骤反复失败 → 有底时顺手运行只跑本次登记的产物里的测试文件（`test_*.py` / `*_test.py`），一个都没有就在空目录上跑（退出码 5，照旧「不适用、视为满足」）（`verification/deterministic_checks.code_test(on_base=)`、`runtime/tool_gateway.run_pytest(paths=)`、`verifier_router` 按任务有没有底传）。同时采纳的建议：读不了的文件与 git 不收的 `.git` 变体写法（`git~1`、`.git.` 等）改为扣留，不让整次拍底失败；接入说明补 `base_repo_failed` 码与「顺手跑的测试」一行。
+独立核验第二轮（FAIL）查出并已修：铺了底以后，没写 `pytest:` 的步骤在验收时顺手跑整棵树，跑到使用方仓库原有的全部测试，其中本来就红、要联网或缺依赖的会让只要求 `file:` 的步骤反复失败 → 有底时顺手运行不跑整棵树：本次登记的产物里每个测试文件（`test_*.py` / `*_test.py`）各指名跑一次；一个都没有时在验收副本外的空目录里跑（不加载底里的配置与 `conftest.py`，退出码 5，照旧「不适用、视为满足」）（`verification/deterministic_checks.code_test(on_base=)`，`verifier_router` 按任务有没有底传；只在一条 `pytest:` 都没写时收窄，不带路径的 `pytest:` 照旧跑整棵树）。第三轮核验（FAIL）查出第二轮初版的三处错，已按上面改正：一次传多个路径时启动脚本只跑第一个、不带路径的 `pytest:` 也被收窄、空目录放在副本里仍加载根目录配置与 `conftest.py`；`run_pytest` 回到原样。同时采纳的建议：读不了的文件与 git 不收的 `.git` 变体写法（`git~1`、`.git.`、NTFS 流、夹不可见字符等）改为扣留，不让整次拍底失败；接入说明补 `base_repo_failed` 码与「顺手跑的测试」一行。
 
-测试：`tests/orchestrator/workspace_base/` 三个文件 38 条——拍快照（真 git：逐字节还原、扣留、范围、上限、读用户
+测试：`tests/orchestrator/workspace_base/` 三个文件 41 条——拍快照（真 git：逐字节还原、扣留、范围、上限、读用户
 仓库不改它的 `.git`）、工作区叠层（R16 同构：不铺底时 pytest `ModuleNotFoundError`、铺底后通过；只登记真改动）、
 宿主入口与整局（拒绝码、幂等、模型看到 `base_too_large` 后缩小范围、R16 同构任务跑到 COMPLETED 且底文件不是产物；改 `pytest:` 点名的底测试与二进制底文件被工具层拒、尝试冻结与工作区身份带底提交号、规划器视图含底；目录清掉、清单缓存丢了以后验收副本照样重建）。核验五处问题各有回归，修复前红、修复后绿；去掉底文件保护的变异会让整局用例红。
 
