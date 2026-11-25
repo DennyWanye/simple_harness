@@ -192,3 +192,73 @@ def test_a_git_repo_base_is_the_working_tree_without_ignored_files(tmp_path):
     assert record.source == {"kind": "git", "head": head}
     assert _git(user, "status", "--porcelain") == before
     assert _git(user, "for-each-ref") == refs_before
+
+
+def test_a_file_reached_through_a_linked_directory_is_withheld(tmp_path):
+    # 核验发现：索引里记着 lib/conf.py，用户把 lib/ 换成了指向仓库外的软链（没提交）
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "conf.py").write_text("SECRET_OUTSIDE = 1\n")
+    user = tmp_path / "user-repo"
+    (user / "lib").mkdir(parents=True)
+    (user / "lib" / "conf.py").write_text("inside = 1\n")
+    (user / "app.py").write_text("x = 1\n")
+    _git(user, "init", "-q")
+    _git(user, "add", ".")
+    _git(user, "-c", "user.name=u", "-c", "user.email=u@x", "commit", "-qm", "init")
+    (user / "lib" / "conf.py").unlink()
+    (user / "lib").rmdir()
+    (user / "lib").symlink_to(outside)
+    repo = BaseRepo(tmp_path / "bases" / "work.git")
+    for base in (GitRepoBase(user), DirectoryBase(user)):
+        record = _capture(repo, base)
+        assert set(repo.manifest(record.commit)) == {"app.py"}, base
+        assert (
+            record.withheld.get("lib/conf.py") == "symlink"
+            or record.withheld.get("lib") == "symlink"
+        )
+
+
+def test_the_users_global_excludes_are_honoured(tmp_path, monkeypatch):
+    home = tmp_path / "home"
+    home.mkdir()
+    (home / "global-ignore").write_text("secrets.json\n")
+    (home / ".gitconfig").write_text(f"[core]\n\texcludesFile = {home / 'global-ignore'}\n")
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.delenv("GIT_CONFIG_GLOBAL", raising=False)
+    monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
+    user = tmp_path / "user-repo"
+    user.mkdir()
+    _git(user, "init", "-q")
+    (user / "app.py").write_text("x = 1\n")
+    (user / "secrets.json").write_text('{"password": "hunter2"}\n')
+    repo = BaseRepo(tmp_path / "bases" / "work.git")
+    record = _capture(repo, GitRepoBase(user))
+    assert set(repo.manifest(record.commit)) == {"app.py"}
+
+
+def test_directories_that_differ_only_in_case_are_withheld_not_crashed(tmp_path):
+    repo = BaseRepo(tmp_path / "bases" / "work.git")
+    files = {"Docs/a.md": b"a\n", "docs/b.md": b"b\n", "x.md": b"x\n"}
+    record = _capture(repo, InMemoryBase(files))
+    assert set(repo.manifest(record.commit)) == {"x.md"}
+    assert record.withheld == {"Docs/a.md": "case_conflict", "docs/b.md": "case_conflict"}
+
+
+def test_the_work_repository_keeps_paths_that_differ_only_in_case(tmp_path):
+    # 工作仓库本身逐字区分大小写（macOS 上 init 默认会打开 ignorecase）
+    repo = BaseRepo(tmp_path / "bases" / "work.git")
+    commit = repo.commit_files({"Docs/a.md": b"a\n", "docs/b.md": b"b\n"})
+    assert set(repo.manifest(commit)) == {"Docs/a.md", "docs/b.md"}
+
+
+def test_a_git_pointer_file_is_skipped(tmp_path):
+    root = tmp_path / "worktree"
+    (root / "sub").mkdir(parents=True)
+    (root / ".git").write_text("gitdir: /somewhere/else\n")
+    (root / "sub" / ".git").write_text("gitdir: ../.git/modules/sub\n")
+    (root / "sub" / "mod.py").write_text("y = 2\n")
+    repo = BaseRepo(tmp_path / "bases" / "work.git")
+    record = _capture(repo, DirectoryBase(root))
+    assert set(repo.manifest(record.commit)) == {"sub/mod.py"}
+    assert not list(repo.path.glob("fast_import_crash_*"))

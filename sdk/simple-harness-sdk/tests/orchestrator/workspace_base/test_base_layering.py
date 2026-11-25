@@ -152,3 +152,22 @@ def test_the_judgment_tree_has_the_base_under_the_accepted_files(tmp_path):
         base=record.commit,
     )
     assert sorted(tree.list_files()) == sorted([*REPO, "ledger/cli.py", "tests/test_cli.py"])
+
+
+def test_the_verification_copy_is_rebuilt_from_records_after_the_tree_is_gone(tmp_path):
+    # 工作区目录过保留期被清掉、或崩溃后：验收副本只靠底提交与登记的产物重建
+    manager = WorkspaceManager(tmp_path / "workspaces")
+    record = capture_base(
+        InMemoryBase(REPO),
+        manager.bases,
+        scope=(),
+        limits=CaptureLimits(),
+        is_secret=lambda _t: False,
+    )
+    workspace = manager.create("attempt-1", seed={}, base=record.commit)
+    workspace.write_text("ledger/cli.py", CLI)
+    workspace.write_text("tests/test_cli.py", TEST)
+    artifacts = _changed(workspace, manager.bases.manifest(record.commit))
+    manager.remove("attempt-1")
+    (manager.bases.path.parent / "manifests").rename(tmp_path / "manifests-gone")  # 缓存也丢了
+    assert _verify(manager, artifacts, base=record.commit).status == "PASS"

@@ -33,6 +33,7 @@ from pathlib import Path, PurePosixPath
 from typing import Protocol, runtime_checkable
 
 from .paths import under_prefix
+from .store import ArtifactStoreError, read_nofollow
 
 GIT_MIN_VERSION = (2, 38)
 #: 工作区读写单文件的上限（与 :data:`workspace.MAX_FILE_BYTES` 同值）；更大的底文件只读不可改。
@@ -164,15 +165,31 @@ def _in_scope(path: str, scope: Sequence[str]) -> bool:
     return any(path == item.rstrip("/") or under_prefix(path, (item,)) for item in scope)
 
 
+def _through_link(root: Path, relative: str) -> bool:
+    """路径上任何一级（含文件本身）是软链：读它就可能读到底以外的东西。"""
+
+    current = root
+    for part in PurePosixPath(relative).parts:
+        current = current / part
+        if current.is_symlink():
+            return True
+    return False
+
+
 def _file(root: Path, relative: str) -> BaseFile:
     target = root / relative
     stat = target.stat()
-    return BaseFile(
-        relative,
-        stat.st_size,
-        lambda: target.read_bytes(),
-        executable=bool(stat.st_mode & 0o111),
-    )
+
+    def read() -> bytes:
+        # 列出来以后到读之前目录可能被换成软链：读前再查一次，文件本身也不跟随
+        if _through_link(root, relative):
+            raise BaseError("base_changed", f"{relative} 在拍底时变成了软链")
+        try:
+            return read_nofollow(target)
+        except (OSError, ArtifactStoreError) as error:
+            raise BaseError("base_changed", f"{relative} 在拍底时读不了：{error}") from error
+
+    return BaseFile(relative, stat.st_size, read, executable=bool(stat.st_mode & 0o111))
 
 
 class DirectoryBase:
@@ -202,7 +219,7 @@ class DirectoryBase:
             if not _in_scope(relative, scope):
                 continue
             target = self.root / relative
-            if target.is_symlink():
+            if _through_link(self.root, relative):
                 withheld[relative] = "symlink"
             elif target.is_file():
                 files.append(_file(self.root, relative))
@@ -214,10 +231,23 @@ class GitRepoBase(DirectoryBase):
     只读用户的仓库，不写它的 ``.git``。"""
 
     def _run(self, *args: str) -> subprocess.CompletedProcess[bytes]:
+        # 列文件要按用户自己的规矩：仓库的 .gitignore 之外，还有用户全局配置里的 core.excludesFile，
+        # 所以这里不隔离用户配置；只读命令，另外关掉 fsmonitor 与钩子，不让用户配置借机执行程序。
+        env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+        env.update({"GIT_TERMINAL_PROMPT": "0", "LC_ALL": "C"})
         return subprocess.run(  # noqa: S603
-            ["git", "-C", str(self.root), *args],
+            [
+                "git",
+                "-c",
+                "core.fsmonitor=false",
+                "-c",
+                f"core.hooksPath={os.devnull}",
+                "-C",
+                str(self.root),
+                *args,
+            ],
             capture_output=True,
-            env=_isolated_env(),
+            env=env,
             check=False,
             timeout=120,
         )
@@ -233,8 +263,8 @@ class GitRepoBase(DirectoryBase):
                 continue
             relative = raw.decode("utf-8", errors="surrogateescape")
             target = self.root / relative
-            # 已跟踪但工作目录里删掉了的不算底
-            if target.is_symlink() or target.is_file():
+            # 已跟踪但工作目录里删掉了的不算底；经软链的照样列出，由 capture 扣留
+            if _through_link(self.root, relative) or target.is_file():
                 yield relative
 
     def _source(self) -> dict[str, str]:
@@ -358,6 +388,9 @@ class BaseRepo:
             return
         self.path.mkdir(parents=True, exist_ok=True)
         self._git("init", "--bare", "-q")
+        # macOS 上 init 会按文件系统自动打开 core.ignorecase，fast-import 就会把只差大小写的目录并成
+        # 一个；底的路径由 capture_base 守住大小写冲突，仓库本身必须逐字区分
+        self._git("config", "core.ignorecase", "false")
 
     def _manifest_cache(self, commit: str) -> Path:
         return self.path.parent / "manifests" / f"{commit}.json"
@@ -403,6 +436,8 @@ class BaseRepo:
 
     def _with_blobs(self, commit: str, manifest: Mapping[str, BaseEntry]) -> dict[str, BaseEntry]:
         blobs = self._tree(commit)
+        if set(blobs) != set(manifest):
+            raise BaseError("base_repo_failed", "底提交里的路径与写入的不一致")
         return {
             path: BaseEntry(path, blobs[path][0], e.sha256, e.size, e.executable, e.readable)
             for path, e in manifest.items()
@@ -578,7 +613,8 @@ def _path_problem(path: str) -> str | None:
         or any(part in {"..", "."} for part in posix.parts)
     ):
         return "invalid_path"
-    if any(part in IGNORED_DIRS for part in posix.parts[:-1]):
+    if any(part.casefold() in IGNORED_DIRS for part in posix.parts):
+        # 含 .git 文件（工作树、子模块的指针）：git 不收这种路径，也不是使用方的内容
         return "ignored"
     return None
 
@@ -620,12 +656,20 @@ def capture_base(
             withheld[item.path] = "secret_name"
         else:
             candidates[item.path] = item
-    folded: dict[str, list[str]] = {}
+    # 只差大小写的路径（文件或任一级目录）在不区分大小写的文件系统上会落到同一处：都扣留
+    spellings: dict[str, set[str]] = {}
     for path in candidates:
-        folded.setdefault(path.casefold(), []).append(path)
-    for group in folded.values():
-        if len(group) > 1:
-            for path in group:
+        parts = PurePosixPath(path).parts
+        for depth in range(1, len(parts) + 1):
+            prefix = "/".join(parts[:depth])
+            spellings.setdefault(prefix.casefold(), set()).add(prefix)
+    clashing = {key for key, names in spellings.items() if len(names) > 1}
+    if clashing:
+        for path in list(candidates):
+            parts = PurePosixPath(path).parts
+            if any(
+                "/".join(parts[:depth]).casefold() in clashing for depth in range(1, len(parts) + 1)
+            ):
                 withheld[path] = "case_conflict"
                 candidates.pop(path)
     total = sum(item.size for item in candidates.values())

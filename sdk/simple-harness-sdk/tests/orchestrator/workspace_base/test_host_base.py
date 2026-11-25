@@ -131,6 +131,8 @@ def test_a_retry_with_the_same_key_keeps_the_original_base(tmp_path):
         ({"base_scope": ["/etc"]}, None, "invalid_request"),
         ({"base_scope": ["ledger/ "]}, None, "invalid_request"),
         ({"base_scope": "ledger/"}, None, "invalid_request"),
+        ({"base_scope": ["../outside"]}, None, "invalid_request"),
+        ({"base_scope": [f"d{i}/" for i in range(21)]}, None, "invalid_request"),
         ({}, HostSettings(lease_seconds=5.0, base_max_files=2), "base_too_large"),
         ({"workspace_seed": {"ledger/book.py": "x"}}, None, "invalid_request"),
     ],
@@ -143,7 +145,13 @@ def test_the_door_refuses_a_bad_base_request(tmp_path, request_extra, settings, 
         async with _host(tmp_path / "root", **options) as host:
             with pytest.raises(HostRequestError) as refused:
                 host.create_mission(
-                    {"goal": "x", "success_criteria": ["file:a.md"], **request_extra}
+                    {
+                        "goal": "x",
+                        "success_criteria": ["file:a.md"],
+                        # 带上幂等键：拒绝必须来自底的检查，而不是缺键
+                        "idempotency_key": "refused",
+                        **request_extra,
+                    }
                 )
             assert refused.value.code == code, refused.value
 
@@ -253,5 +261,96 @@ def test_an_r16_shaped_mission_passes_pytest_on_the_base(tmp_path):
             assert {"ledger/cli.py", "tests/test_cli.py"} <= recorded
             assert not recorded & {"ledger/__init__.py", "ledger/money.py", "ledger/book.py"}
             assert ".env" not in recorded
+
+    asyncio.run(case())
+
+
+BOOK_TEST = (
+    b"from ledger.book import Book\n\n"
+    b"def test_total():\n    book = Book()\n    book.add('1.25')\n    assert book.total() == 125\n"
+)
+LOGO = b"\x89PNG\r\n\x1a\n\x00\x00\x00"
+
+
+def _tampering_worker(request):
+    """先试着改 ``pytest:`` 点名的底测试和二进制底文件（都该被工具层拒掉），
+    再照常写出要求的文件。"""
+
+    tools = sum(1 for message in request.messages if "tool" in str(message.role).lower())
+    if tools == 0:
+        return (
+            "workspace_write_file",
+            {"path": "tests/test_book.py", "content": "def test_x(): pass\n"},
+        )
+    if tools == 1:
+        return ("workspace_write_file", {"path": "assets/logo.png", "content": "not a png"})
+    if tools == 2:
+        return ("workspace_read_file", {"path": "ledger/book.py"})
+    return _r16_worker(_SkipFirst(request, 3))
+
+
+class _SkipFirst:
+    """把前几次工具往来藏起来，交给按工具次数数进度的脚本执行者。"""
+
+    def __init__(self, request, count):
+        self._request, self._count = request, count
+
+    def __getattr__(self, name):
+        if name != "messages":
+            return getattr(self._request, name)
+        seen, kept = 0, []
+        for message in self._request.messages:
+            if "tool" in str(message.role).lower() and seen < self._count:
+                seen += 1
+                continue
+            kept.append(message)
+        return kept
+
+
+def test_protected_base_files_stay_put_and_the_base_is_frozen_into_the_attempt(tmp_path):
+    from agent_orchestrator.planning.htn.observers.workspace import mission_file_view
+
+    files = {**REPO, "tests/test_book.py": BOOK_TEST, "assets/logo.png": LOGO}
+
+    async def case():
+        provider = LayeredScriptedProvider(worker=_tampering_worker)
+        async with _host(
+            tmp_path / "root", provider=provider, workspace_base=InMemoryBase(files)
+        ) as host:
+            if host.policy.code_execution != "sandboxed":
+                pytest.skip("这台机器没有可用的隔离区，pytest: 要求不受理")
+            created = host.create_mission(
+                {
+                    "goal": "写 NOTES.md，并保证原有测试通过",
+                    "success_criteria": ["file:NOTES.md", "pytest:tests/test_book.py"],
+                    "idempotency_key": "protected",
+                }
+            )
+            mission_id = created["mission_id"]
+            final = await host.run_until_settled(mission_id, timeout=120.0)
+            assert str(final["snapshot"]["mission"]["status"]) == "COMPLETED", final["snapshot"]
+            commit = _mission(host, mission_id)["final_report"]["workspace_base"]["commit"]
+            loop = host.orchestrator
+            calls = loop.assembled.gateway.calls
+            refused = {
+                call["arguments"]["path"]
+                for call in calls
+                if call.get("tool") == "workspace_write_file" and call.get("error_code")
+            }
+            assert refused == {"tests/test_book.py", "assets/logo.png"}, calls
+            read = [c for c in calls if c.get("tool") == "workspace_read_file"]
+            assert read and not read[0].get("error_code")  # 执行者读得到底里的原有代码
+
+            store = loop.store
+            attempts = [a for t in store.list_tasks(mission_id) for a in store.list_attempts(t.id)]
+            assert attempts
+            for attempt in attempts:
+                intent = store.get_intent_for_subject(attempt.id)
+                assert intent.config["attempt_execution"]["base_commit"] == commit
+                assert store.get_workspace(attempt.id)["detail"]["base"] == commit
+            view = mission_file_view(store, mission_id, loop.assembled.workspaces.bases)
+            assert {"ledger/book.py", "tests/test_book.py", "assets/logo.png"} <= set(view)
+            recorded = {a["path"] for a in final["snapshot"].get("artifacts", []) if a.get("path")}
+            assert not recorded & {"tests/test_book.py", "assets/logo.png", "ledger/book.py"}
 
     asyncio.run(case())
