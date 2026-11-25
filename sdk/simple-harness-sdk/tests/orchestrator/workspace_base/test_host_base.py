@@ -354,3 +354,27 @@ def test_protected_base_files_stay_put_and_the_base_is_frozen_into_the_attempt(t
             assert not recorded & {"tests/test_book.py", "assets/logo.png", "ledger/book.py"}
 
     asyncio.run(case())
+
+
+def test_a_file_only_mission_is_not_failed_by_the_users_own_red_tests(tmp_path):
+    # 核验第二轮的复现：底里有一条一直红的测试，任务只要求 file:
+    files = {**REPO, "tests/test_needs_network.py": b"def test_fetch():\n    assert False\n"}
+
+    async def case():
+        provider = LayeredScriptedProvider(worker=_r16_worker)
+        async with _host(
+            tmp_path / "root", provider=provider, workspace_base=InMemoryBase(files)
+        ) as host:
+            if host.policy.code_execution != "sandboxed":
+                pytest.skip("这台机器没有可用的隔离区，顺手运行不发生")
+            created = host.create_mission(
+                {
+                    "goal": "加命令行模块",
+                    "success_criteria": ["file:ledger/cli.py"],
+                    "idempotency_key": "file-only",
+                }
+            )
+            final = await host.run_until_settled(created["mission_id"], timeout=120.0)
+            assert str(final["snapshot"]["mission"]["status"]) == "COMPLETED", final["snapshot"]
+
+    asyncio.run(case())

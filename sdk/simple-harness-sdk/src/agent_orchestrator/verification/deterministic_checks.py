@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import logging
 import re
+import uuid
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
@@ -152,8 +153,15 @@ async def code_test(
     executor: Any = None,
     result_id: str | None = None,
     artifacts: Sequence[Artifact] = (),
+    on_base: bool = False,
 ) -> LayerResult:
-    """Run every ``pytest:`` criterion (Task and Mission) in the verification copy."""
+    """Run every ``pytest:`` criterion (Task and Mission) in the verification copy.
+
+    没有 ``pytest:`` 条件时照例顺手跑一次（目标记为 None）。任务有底（``on_base``）时，顺手运行只跑
+    本次登记的产物里的测试文件：验收副本里有使用方仓库原有的全部测试，其中本来就红、要联网或缺依赖的
+    与这一步无关，不能让一个只要求 ``file:`` 的步骤因此反复失败。本次没改测试文件时，在一个空目录上
+    跑（退出码 5），照旧算「不适用、视为满足」。
+    """
 
     manifest = {
         path: sha256_file(verification_copy.resolve(path))
@@ -188,6 +196,15 @@ async def code_test(
                 targets.append(target)
     if not targets:
         targets.append(None)
+    courtesy_paths: list[str] = []
+    if targets == [None] and on_base:
+        courtesy_paths = sorted(
+            {artifact.path for artifact in artifacts if _is_test_file(artifact.path)}
+        )
+        if not courtesy_paths:
+            empty = f".harness-no-tests-{uuid.uuid4().hex[:12]}"
+            (verification_copy.root / empty).mkdir()
+            courtesy_paths = [empty]
     runs: list[dict[str, Any]] = []
     failed = False
     for target in targets:
@@ -205,6 +222,7 @@ async def code_test(
             timeout=timeout,
             executor=executor,
             report_all=True,
+            paths=courtesy_paths if target is None else (),
         )
         # Assurance 1.1 default-ON (2026-09-23): the courtesy whole-tree run that no
         # ``pytest:`` criterion asked for, on a workspace pytest collects nothing from
@@ -225,6 +243,8 @@ async def code_test(
         }
         if no_tests_collected:
             row["no_tests_collected"] = True
+        if target is None and on_base:
+            row["courtesy_paths"] = [p for p in courtesy_paths if not p.startswith(".harness-")]
         runs.append(row)
         failed = failed or not row["passed"]
     summary = (
@@ -258,6 +278,11 @@ async def code_test(
     if bound and unchanged:
         detail["observation_scope"] = scope
     return LayerResult("code_test", FAIL if failed else PASS, summary, detail)
+
+
+def _is_test_file(path: str) -> bool:
+    name = path.rsplit("/", 1)[-1]
+    return name.endswith(".py") and (name.startswith("test_") or name.endswith("_test.py"))
 
 
 def _code_test_failure_nodes(runs: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:

@@ -613,10 +613,18 @@ def _path_problem(path: str) -> str | None:
         or any(part in {"..", "."} for part in posix.parts)
     ):
         return "invalid_path"
+    if any(_git_alias(part) for part in posix.parts):
+        # git 在 Windows / macOS 上把这些写法当成 .git，拒收；不扣会让整次拍底失败
+        return "invalid_path"
     if any(part.casefold() in IGNORED_DIRS for part in posix.parts):
         # 含 .git 文件（工作树、子模块的指针）：git 不收这种路径，也不是使用方的内容
         return "ignored"
     return None
+
+
+def _git_alias(part: str) -> bool:
+    folded = part.casefold()
+    return folded != ".git" and (folded.rstrip(" .") == ".git" or folded == "git~1")
 
 
 def _secret_name(path: str) -> bool:
@@ -678,7 +686,12 @@ def capture_base(
     files: dict[str, bytes] = {}
     executable = []
     for path, item in sorted(candidates.items()):
-        data = item.read()
+        try:
+            data = item.read()
+        except BaseError:
+            # 读不了（没有权限、拍的时候被删掉或换成软链）：扣留这一个，不让整次拍底失败
+            withheld[path] = "unreadable"
+            continue
         if _readable(data) and is_secret(data.decode("utf-8")):
             withheld[path] = "secret_content"
             continue

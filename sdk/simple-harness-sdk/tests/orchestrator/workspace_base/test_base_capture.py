@@ -262,3 +262,51 @@ def test_a_git_pointer_file_is_skipped(tmp_path):
     record = _capture(repo, DirectoryBase(root))
     assert set(repo.manifest(record.commit)) == {"sub/mod.py"}
     assert not list(repo.path.glob("fast_import_crash_*"))
+
+
+def test_an_unreadable_file_and_git_aliases_are_withheld_not_fatal(tmp_path):
+    root = tmp_path / "plain"
+    root.mkdir()
+    (root / "ok.py").write_text("x = 1\n")
+    locked = root / "locked.txt"
+    locked.write_text("secret\n")
+    locked.chmod(0)
+    (root / "git~1").mkdir()
+    (root / "git~1" / "config").write_text("x\n")
+    (root / ".git.").write_text("x\n")
+    try:
+        repo = BaseRepo(tmp_path / "bases" / "work.git")
+        record = _capture(repo, DirectoryBase(root))
+        assert set(repo.manifest(record.commit)) == {"ok.py"}
+        assert record.withheld == {
+            "locked.txt": "unreadable",
+            "git~1/config": "invalid_path",
+            ".git.": "invalid_path",
+        }
+        assert not list(repo.path.glob("fast_import_crash_*"))
+    finally:
+        locked.chmod(0o600)
+
+
+def test_listing_a_users_repo_never_runs_its_fsmonitor(tmp_path):
+    user = tmp_path / "user-repo"
+    user.mkdir()
+    _git(user, "init", "-q")
+    marker = tmp_path / "fsmonitor-ran"
+    hook = tmp_path / "fsmonitor.sh"
+    hook.write_text(f"#!/bin/sh\ntouch {marker}\nexit 1\n")
+    hook.chmod(0o755)
+    _git(user, "config", "core.fsmonitor", str(hook))
+    (user / "app.py").write_text("x = 1\n")
+    repo = BaseRepo(tmp_path / "bases" / "work.git")
+    record = _capture(repo, GitRepoBase(user))
+    assert set(repo.manifest(record.commit)) == {"app.py"}
+    assert not marker.exists()
+
+
+def test_a_long_listing_is_summarised_by_top_level_directory():
+    from agent_orchestrator.artifacts.workspace_base import workspace_listing
+
+    paths = [f"web/asset{i}.js" for i in range(500)] + ["README.md", "ledger/book.py"]
+    assert workspace_listing(paths) == ["README.md", "ledger/ (1 个文件)", "web/ (500 个文件)"]
+    assert workspace_listing(["b.md", "a.md"]) == ["a.md", "b.md"]

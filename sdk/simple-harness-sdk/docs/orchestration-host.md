@@ -954,10 +954,11 @@ host.base  # {"enabled": True, "git": "2.54.0"}；没有 git 2.38+ 时 enabled=F
 | 存在哪 | 数据目录下 `bases/work.git`（SDK 自管的裸仓库）；提交由引用 `refs/harness/base/<提交号>` 保住，工作区目录清掉以后照样能重建验收副本 |
 | 范围 | 会话委派 `delegate_task` 的 `base_scope`（至多 20 个相对路径，目录或文件；不写 = 整个底），由模型判断；`create_mission` 请求里同名字段 |
 | 上限 | `HostSettings.base_max_files` / `base_max_bytes`；超了回 `base_too_large`（说明里带文件数和字节数），模型缩小范围重交 |
-| 扣留（不进底） | 按名字的凭据文件（`.env*`、`*.pem`、`*.key`、`*.p12`、`id_rsa` 等，即使被 git 跟踪）、内容像密钥的文件、软链、只有大小写不同的路径（两个都扣）、SDK 自己用的路径（`sources/`、`.assurance/`、`accepted-outputs/`）与部署禁止的前缀。任务行 `final_report.workspace_base.withheld` 记着路径和原因 |
+| 扣留（不进底） | 按名字的凭据文件（`.env*`、`*.pem`、`*.key`、`*.p12`、`id_rsa` 等，即使被 git 跟踪）、内容像密钥的文件、软链（路径上任一级是软链都算）、读不了的文件、只有大小写不同的路径（文件或目录，都扣）、git 不收的路径、SDK 自己用的路径（`sources/`、`.assurance/`、`accepted-outputs/`）与部署禁止的前缀。任务行 `final_report.workspace_base.withheld` 记着路径和原因 |
 | 只读的底文件 | 二进制或超过 512 KiB 的：原样在工作区里（导入不会断），读工具不给内容，写被拒；`pytest:` 点名的底文件（验收的尺子）。其余底文件都可以改 |
 | 登记什么 | 只登记相对起步状态（底 → 种子 → 上游输入）新建或改过的文件；没动的底文件不是产物 |
-| 错误码 | `base_unavailable`（宿主没接底却带了 `base_scope`，或 git 不可用）、`base_too_large`、`invalid_request`（范围写法不对、种子与底重名） |
+| 顺手跑的测试 | 没写 `pytest:` 条件时，验收只跑这一步新写或改过的测试文件（`test_*.py` / `*_test.py`），不跑使用方仓库原有的测试；一个都没有就算「不适用、视为满足」。写了 `pytest:`（含不带路径的 `pytest:`）照条件跑 |
+| 错误码 | `base_unavailable`（宿主没接底却带了 `base_scope`，或 git 不可用）、`base_too_large`、`invalid_request`（范围写法不对、种子与底重名）、`base_repo_failed`（工作仓库的 git 命令失败，说明里带 git 的报错） |
 | 幂等 | 同一个 `idempotency_key` 重试沿用原任务的底，不重拍 |
 | 还没有的 | 交付改动集与写回（三方比对）、尝试即提交与步骤合并、删除文件的工具——见设计稿 `plans/2026-11-26-workspace-base/` 的 P2 |
 

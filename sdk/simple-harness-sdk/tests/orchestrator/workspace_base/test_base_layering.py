@@ -171,3 +171,72 @@ def test_the_verification_copy_is_rebuilt_from_records_after_the_tree_is_gone(tm
     manager.remove("attempt-1")
     (manager.bases.path.parent / "manifests").rename(tmp_path / "manifests-gone")  # 缓存也丢了
     assert _verify(manager, artifacts, base=record.commit).status == "PASS"
+
+
+BROKEN = {"tests/test_needs_network.py": b"def test_fetch():\n    assert False, 'needs network'\n"}
+
+
+def _file_only_task() -> Task:
+    return Task(
+        id="task-1",
+        mission_id="mission-1",
+        parent_task_ids=(),
+        dependency_ids=(),
+        goal="加命令行模块",
+        rationale="test",
+        success_criteria=("file:ledger/cli.py",),
+        verification_policy=("format_check", "rule_check", "code_test", "critic_review"),
+        allowed_tools=("workspace_write_file",),
+        budget=Budget(max_tokens=1000, max_attempts=1),
+        priority=1.0,
+        status=TaskStatus.ACTIVE,
+        version=1,
+    )
+
+
+def _courtesy(tmp_path, *, write_test: str | None, on_base: bool):
+    manager = WorkspaceManager(tmp_path / "workspaces")
+    record = capture_base(
+        InMemoryBase({**REPO, **BROKEN}),
+        manager.bases,
+        scope=(),
+        limits=CaptureLimits(),
+        is_secret=lambda _t: False,
+    )
+    workspace = manager.create("attempt-1", seed={}, base=record.commit)
+    workspace.write_text("ledger/cli.py", CLI)
+    if write_test is not None:
+        workspace.write_text("tests/test_cli.py", write_test)
+    artifacts = _changed(workspace, manager.bases.manifest(record.commit))
+    copy = manager.verification_copy(
+        "attempt-1", seed={}, inputs={}, artifacts=artifacts, base=record.commit
+    )
+    return asyncio.run(
+        code_test(
+            _file_only_task(),
+            verification_copy=copy,
+            timeout=120,
+            artifacts=artifacts,
+            on_base=on_base,
+        )
+    )
+
+
+def test_the_courtesy_run_on_a_base_ignores_the_users_own_red_tests(tmp_path):
+    # 核验第二轮：只要求 file: 的步骤，顺手运行不该跑到使用方仓库里本来就红的测试
+    whole_tree = _courtesy(tmp_path / "a", write_test=None, on_base=False)
+    assert whole_tree.status == "FAIL"  # 改之前的行为：整棵树都跑
+    nothing_changed = _courtesy(tmp_path / "b", write_test=None, on_base=True)
+    assert nothing_changed.status == "PASS", nothing_changed
+    [run] = nothing_changed.detail["runs"]
+    assert run["target"] is None and run["no_tests_collected"] is True
+    assert run["courtesy_paths"] == []
+    own_test = _courtesy(tmp_path / "c", write_test=TEST, on_base=True)
+    assert own_test.status == "PASS", own_test
+    assert own_test.detail["runs"][0]["courtesy_paths"] == ["tests/test_cli.py"]
+
+
+def test_the_courtesy_run_on_a_base_still_fails_on_the_steps_own_red_test(tmp_path):
+    red = "def test_cli():\n    assert False\n"
+    result = _courtesy(tmp_path, write_test=red, on_base=True)
+    assert result.status == "FAIL", result

@@ -25,6 +25,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from ..artifacts.workspace import Workspace
+from ..artifacts.workspace_base import mission_base_commit
 from ..assurance.codec import AssuranceError, fingerprint
 from ..contracts import Artifact, ContractError, Mission, ResultEnvelope, Task
 from ..contracts.models import VERIFICATION_LAYERS
@@ -243,6 +244,7 @@ class VerifierRouter:
                             executor=self._executor,
                             result_id=envelope.id,
                             artifacts=artifacts,
+                            on_base=mission_base_commit(mission.final_report) is not None,
                         )
                         if local_check_recorder is not None:
                             prepared_code_test = local_check_recorder.record_executor(
@@ -325,6 +327,7 @@ class VerifierRouter:
                     executor=self._executor,
                     result_id=envelope.id,
                     artifacts=artifacts,
+                    on_base=mission_base_commit(mission.final_report) is not None,
                 )
             elif layer == "human_review":  # step 7 (D7-8'): the sixth layer
                 result = human_layer(human)
