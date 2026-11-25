@@ -1,6 +1,6 @@
 {
   "acceptance_evidence": null,
-  "deployment_id": "ff44cc12f7baaf82af4c6e160f79d0dee738bba5aa5af155571b155b60dff5f5",
+  "deployment_id": "5d9a5787a5d4317880e2a77bf388bcef82182146fc81db1f17cd1e7fd98e64af",
   "schema": "taskgraph-htn-wiring-derivation-v1",
   "source_files": {
     "agent_orchestrator/__init__.py": "eb50152258b356bc7866e55823fc45c7209cb6150efe205dd03c40c33beedbc2",
@@ -168,7 +168,7 @@
     "agent_orchestrator/host/delegation.py": "f65310bfdc262de486f53c89ca5e90e7ed0bab21e9434ce935ae684ff734d190",
     "agent_orchestrator/host/embedding.py": "ac37172e30842aec43c0af0ac81a4a7b35094fadda0c5fcae8f8efddcef22d48",
     "agent_orchestrator/host/goals.py": "1c949b8d83d3c09a6bc1a6168193dff051e6e82e2488aa8a51af6e77ae998330",
-    "agent_orchestrator/host/host.py": "406474ec3f1be489403dcdc881efefbc7350f4e3b2a2d5a4eeacd92e24ec0bb9",
+    "agent_orchestrator/host/host.py": "748bc71d457d69f51c177e90bcef839f2acc10bbf679cd53109416758844dd9d",
     "agent_orchestrator/host/inbox.py": "3f37993029f9938ce1551728b0c5b79a5a0d835b279bf3380af649ab9d4249d3",
     "agent_orchestrator/host/instance_lock.py": "4b2f3787ad479e51e45095216e93eac3673340e64caba70d3e8a4a30b7b26e82",
     "agent_orchestrator/host/offline.py": "28cb5277259b6fcbc4f7c9155a4cfd2862a8a50a637d68b9e994d766bb77d02a",
@@ -178,7 +178,7 @@
     "agent_orchestrator/host/sandbox_doctor.py": "b28434e449bee596487d8ed78eca94fef104f76d7ad50d0d6f3a694ef9161eae",
     "agent_orchestrator/host/script_runner.py": "9ac0b54f3487b6367a7f7b7f4f1a5d9acbc177b9620b7d35aceba2c89fa74736",
     "agent_orchestrator/host/session.py": "f6326af3840fb7a6decc79f1744715b0c3bce15aa370c1510df967ab0e372cb2",
-    "agent_orchestrator/host/session_chat.py": "e13c8dd6514e7ef9988d453e8121637520db040d6ee6d5745982d8bc982bd50f",
+    "agent_orchestrator/host/session_chat.py": "da2fef43eca776c6a3d663a3b5ec7945438870fd8b7e6442245e96f0a3425f69",
     "agent_orchestrator/host/session_ledger.py": "7cf37b0aecaf028d8422fe56aaaa0b18afcebd42875d90c358143fea7738030f",
     "agent_orchestrator/host/session_tree.py": "0ff07eadf18603f2907d4b4c38701eb94918484836b9c48d6f991a2808a2c43b",
     "agent_orchestrator/host/sessions.py": "9d15d0e6a7ebf971fa1aec5cf4f25982480782ce6eefb204f163a070d7b4f368",

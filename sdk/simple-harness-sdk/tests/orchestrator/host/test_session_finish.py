@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import os
 import subprocess
 import sys
@@ -69,7 +70,8 @@ def test_model_sees_a_rejected_file_criterion_and_can_resubmit_it_as_a_bare_path
         try:
             reply = await session.send("Write a report", key="report")
             assert reply["state"] == "committed"
-            assert "file_criterion_not_a_path" in seen[0]
+            # 看工具结果里的错误码，不是工具说明里的字样（说明里也写着这个码）
+            assert re.search(r"error_code\W+file_criterion_not_a_path", seen[0]), seen[0][-2000:]
             missions = session._host.missions()
             assert len(missions) == 1
             mission = session._host.snapshot(missions[0]["mission_id"])["snapshot"]["mission"]

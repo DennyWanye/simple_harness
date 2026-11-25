@@ -147,6 +147,15 @@ def test_the_door_refuses_empty_goals_and_secrets(tmp_path):
         "file:/etc/passwd",
         "file:../outside.md",
         "file:docs\\CLI.md",
+        # 首尾空白：验收连同空白一起当路径
+        "file:a.md ",
+        " file:a.md",
+        "file:a.md\n",
+        # 不是规范写法：验收和产物记录按原样比对，对不上
+        "file:.",
+        "file:docs/",
+        "file:./a.md",
+        "file:a//b.md",
     ],
 )
 def test_the_door_refuses_a_file_criterion_that_is_not_a_bare_path(tmp_path, criterion):
@@ -154,6 +163,21 @@ def test_the_door_refuses_a_file_criterion_that_is_not_a_bare_path(tmp_path, cri
         async with _host(tmp_path / "root") as host:
             with pytest.raises(HostRequestError) as refused:
                 host.create_mission({"goal": "x", "success_criteria": [criterion]})
+            assert refused.value.code == "file_criterion_not_a_path"
+
+    asyncio.run(case())
+
+
+def test_amending_requirements_refuses_a_file_criterion_that_is_not_a_bare_path(tmp_path):
+    async def case():
+        async with _host(tmp_path / "root") as host:
+            with pytest.raises(HostRequestError) as refused:
+                host.amend_requirements(
+                    {
+                        "mission_id": "mission-any",
+                        "changes": [{"op": "add", "statement": "file:report.md 按月列出合计"}],
+                    }
+                )
             assert refused.value.code == "file_criterion_not_a_path"
 
     asyncio.run(case())
