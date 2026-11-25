@@ -78,6 +78,13 @@ COMMAND_SCHEMAS = {
                 "minItems": 1,
                 "maxItems": 12,
                 "items": {"type": "string"},
+                "description": (
+                    "每条一个要求。要产出文件就写 file:<工作区相对路径>，冒号后只写路径，"
+                    "对文件内容的要求另起一条，例如 "
+                    '["file:docs/report.md", "report.md 按月列出合计"]；'
+                    '写成 "file:docs/report.md 按月列出合计" 会被拒绝（file_criterion_not_a_path），'
+                    '写成 "file:docs/report.md，按月列出合计" 会被当成一个奇怪的文件名、永远验收不过。'
+                ),
             },
             "reason": {"type": "string"},
             "sources": {

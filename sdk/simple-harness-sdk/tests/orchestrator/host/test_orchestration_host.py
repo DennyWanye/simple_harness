@@ -137,6 +137,87 @@ def test_the_door_refuses_empty_goals_and_secrets(tmp_path):
     asyncio.run(case())
 
 
+@pytest.mark.parametrize(
+    "criterion",
+    [
+        # 真机上主会话写出来的样子：路径后面跟了对文件的说明，验收会把整串当路径，永远判「文件不存在」
+        "file:ledger/csv_io.py 提供 load_csv(path) -> Book 和 save_csv(book, path)",
+        "file: report.md",
+        "file:",
+        "file:/etc/passwd",
+        "file:../outside.md",
+        "file:docs\\CLI.md",
+        # 首尾空白：验收连同空白一起当路径
+        "file:a.md ",
+        " file:a.md",
+        "file:a.md\n",
+        # 不是规范写法：验收和产物记录按原样比对，对不上
+        "file:.",
+        "file:docs/",
+        "file:./a.md",
+        "file:a//b.md",
+    ],
+)
+def test_the_door_refuses_a_file_criterion_that_is_not_a_bare_path(tmp_path, criterion):
+    async def case():
+        async with _host(tmp_path / "root") as host:
+            with pytest.raises(HostRequestError) as refused:
+                host.create_mission({"goal": "x", "success_criteria": [criterion]})
+            assert refused.value.code == "file_criterion_not_a_path"
+
+    asyncio.run(case())
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"op": "add", "statement": "file:report.md 按月列出合计"},
+        {"op": "add", "statement": "file:report.md "},
+        {"op": "rewrite", "criterion_id": "c-1", "statement": " file:report.md"},
+        {"op": "add", "statement": "file:./report.md"},
+    ],
+)
+def test_amending_requirements_refuses_a_file_criterion_that_is_not_a_bare_path(tmp_path, change):
+    async def case():
+        async with _host(tmp_path / "root") as host:
+            with pytest.raises(HostRequestError) as refused:
+                host.amend_requirements({"mission_id": "mission-any", "changes": [change]})
+            assert refused.value.code == "file_criterion_not_a_path"
+
+    asyncio.run(case())
+
+
+def test_the_door_checks_the_statement_of_a_parameterised_criterion_as_stored(tmp_path):
+    async def case():
+        async with _host(tmp_path / "root") as host:
+            with pytest.raises(HostRequestError) as refused:
+                host.create_mission(
+                    {"goal": "x", "success_criteria": [{"statement": "file:a.md ", "params": {}}]}
+                )
+            assert refused.value.code == "file_criterion_not_a_path"
+
+    asyncio.run(case())
+
+
+def test_the_door_accepts_bare_file_paths_beside_prose_criteria(tmp_path):
+    async def case():
+        async with _host(tmp_path / "root") as host:
+            receipt = host.create_mission(
+                {
+                    "goal": "x",
+                    "idempotency_key": "bare-paths",
+                    "success_criteria": [
+                        "file:ledger/csv_io.py",
+                        "file:docs/使用说明.md",
+                        "csv_io.py 提供 load_csv 和 save_csv，带千位逗号的金额能读能写",
+                    ],
+                }
+            )
+            assert receipt["mission_id"]
+
+    asyncio.run(case())
+
+
 def test_a_second_host_on_the_same_directory_stands_aside(tmp_path):
     async def case():
         async with _host(tmp_path / "root") as first:

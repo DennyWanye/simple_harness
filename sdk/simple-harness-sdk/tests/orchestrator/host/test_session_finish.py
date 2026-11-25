@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import os
 import subprocess
 import sys
@@ -48,6 +49,33 @@ def test_rejected_source_batch_does_not_poison_session_or_hold_budget(tmp_path, 
             assert (await session.send("Hello", key="good"))["state"] == "committed"
             turn = session._commit_input("New work", "new")["turn_id"]
             assert (await session._delegations.delegate(turn, "new-call", SPEC))["mission_id"]
+        finally:
+            await session.close()
+
+    asyncio.run(case())
+
+
+def test_model_sees_a_rejected_file_criterion_and_can_resubmit_it_as_a_bare_path(tmp_path):
+    bad = {**SPEC, "success_criteria": ["file:report.md 按月列出合计"]}
+    good = {**SPEC, "success_criteria": ["file:report.md", "report.md 按月列出合计"]}
+    seen = []
+
+    def resubmit(request):
+        seen.append(str(request))
+        return "delegate_task", good
+
+    async def case():
+        script = _chat_script([("delegate_task", bad), resubmit, "Accepted."])
+        session = await Session.open(tmp_path, **options(script))
+        try:
+            reply = await session.send("Write a report", key="report")
+            assert reply["state"] == "committed"
+            # 看工具结果里的错误码，不是工具说明里的字样（说明里也写着这个码）
+            assert re.search(r"error_code\W+file_criterion_not_a_path", seen[0]), seen[0][-2000:]
+            missions = session._host.missions()
+            assert len(missions) == 1
+            mission = session._host.snapshot(missions[0]["mission_id"])["snapshot"]["mission"]
+            assert mission["success_criteria"] == good["success_criteria"]
         finally:
             await session.close()
 

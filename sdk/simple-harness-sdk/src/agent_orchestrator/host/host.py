@@ -26,7 +26,7 @@ import sys
 import time
 from collections.abc import Awaitable, Callable, Iterator, Mapping, Sequence
 from dataclasses import replace
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, Any
 
 import httpx
@@ -224,6 +224,19 @@ def criterion_statement(item: Any) -> str:
     if isinstance(item, Mapping):
         return str(item.get("statement") or "").strip()
     return str(item).strip()
+
+
+def is_bare_relative_path(text: str) -> bool:
+    """``file:`` 条件里的路径：非空、没有空白、正斜杠分隔、不是绝对路径、不含 ``..``，并且已经是
+    规范写法（没有 ``./``、``//``、结尾的 ``/``，不是 ``.``）——验收与产物记录都按原样比对路径，
+    写法不同就对不上。"""
+
+    if not text or any(ch.isspace() for ch in text) or "\\" in text or "\x00" in text:
+        return False
+    path = PurePosixPath(text)
+    return (
+        str(path) == text and text != "." and not path.is_absolute() and ".." not in path.parts
+    )
 
 
 def with_publish_sources(criteria: list[Any]) -> list[Any]:
@@ -1228,8 +1241,21 @@ class OrchestrationHost:
             ) from error
 
     def check_criteria(self, criteria: list[str]) -> None:
-        """这个部署真做得到的要求：``pytest:`` 要沙箱，``action:`` 要启用了的连接器。"""
+        """这个部署真做得到的要求：``file:`` 后面是一个工作区相对路径，``pytest:`` 要沙箱，
+        ``action:`` 要启用了的连接器。``criteria`` 是调用方要存的原文（不去首尾空白）。"""
 
+        for criterion in criteria:
+            text = criterion.strip()
+            if text.startswith("file:") and (
+                criterion != text or not is_bare_relative_path(text[len("file:") :])
+            ):
+                # 验收把 file: 后面整串（连同首尾空白）当路径找；不是纯路径的条件永远判「文件不存在」，
+                # 任务只会反复重做
+                raise HostRequestError(
+                    "file_criterion_not_a_path",
+                    "file: 后面只能写一个工作区内的相对路径（不带空白、不是绝对路径、不含 ..），"
+                    "对文件内容的要求另起一条成功条件",
+                )
         if any(c.strip().startswith("pytest:") for c in criteria) and not (
             self.policy is not None and self.policy.code_execution == "sandboxed"
         ):
@@ -1347,7 +1373,9 @@ class OrchestrationHost:
                 '成功条件不能为空，每行一条（文字，或带参数的 {"statement", "params"}）',
             )
         self.refuse_secrets(body)
-        self.check_criteria([criterion_statement(c) for c in criteria])
+        self.check_criteria(
+            [c if isinstance(c, str) else str(c.get("statement") or "") for c in criteria]
+        )
         body["success_criteria"] = with_publish_sources(criteria)
         self._check_allowed_actions(body.get("allowed_actions"))
         found = (
@@ -1538,12 +1566,13 @@ class OrchestrationHost:
         self._refuse_new_work("编排循环异常，暂不接受改要求")
         self.refuse_secrets(request)
         changes = [dict(item) for item in request.get("changes") or () if isinstance(item, Mapping)]
-        statements = [
-            str(item.get("statement") or "").strip()
-            for item in changes
-            if item.get("statement") and item.get("op") != "goal"
-        ]
-        self.check_criteria(statements)
+        self.check_criteria(
+            [
+                str(item.get("statement") or "")
+                for item in changes
+                if item.get("statement") and item.get("op") != "goal"
+            ]
+        )
         detail = self._call("snapshot", str(request.get("mission_id") or ""))
         workspace = (detail.get("snapshot") or {}).get("operation_workspace") or {}
         current = {
