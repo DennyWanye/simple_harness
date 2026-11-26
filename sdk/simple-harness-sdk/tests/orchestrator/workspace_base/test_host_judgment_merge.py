@@ -24,7 +24,7 @@ FIRST = BASE.replace("true", "false")
 SECOND = BASE.replace("size = 2", "size = 4")
 
 
-def _planner(request):
+def _planner(request, *, children=("configure",)):
     reply = planner_reply(request)
     if reply is None or "PROPOSE_METHOD" not in reply:
         return reply
@@ -32,13 +32,14 @@ def _planner(request):
         reply.removeprefix("<planning_decision>").removesuffix("</planning_decision>")
     )
     method = one_step_method(package_of(request)["method_proposal_contexts"][0])
-    method["steps"].append(dict(method["steps"][0], local_id="configure"))
-    method["composition"]["criterion_links"][1]["child_step"] = "configure"
+    for index, child in enumerate(children, 1):
+        method["steps"].append(dict(method["steps"][0], local_id=child))
+        method["composition"]["criterion_links"][index]["child_step"] = child
     body["payload"]["method_proposal"]["method"] = method
     return "<planning_decision>" + json.dumps(body, ensure_ascii=False) + "</planning_decision>"
 
 
-def _worker(request, *, names=(CONFIG, CONFIG)):
+def _worker(request, *, names=(CONFIG, CONFIG), distinct=False):
     reply = worker_reply(request)
     if isinstance(reply, tuple):
         return reply
@@ -49,7 +50,7 @@ def _worker(request, *, names=(CONFIG, CONFIG)):
     if written == 1:
         return "workspace_write_file", {
             "path": config,
-            "content": FIRST if document == "left.md" else SECOND,
+            "content": document if distinct else (FIRST if document == "left.md" else SECOND),
         }
     body = json.loads(reply.removeprefix("<result_envelope>").removesuffix("</result_envelope>"))
     body["artifacts"].append(config)
@@ -90,21 +91,22 @@ def test_two_independent_steps_deliver_the_judged_file(tmp_path):
 
 
 @pytest.mark.parametrize("names", [(CONFIG.upper(), CONFIG), ("café.ini", "cafe\u0301.ini")])
-def test_ambiguous_delivery_refuses_both_spellings(tmp_path, names):
+def test_ambiguous_delivery_reports_all_three_proposals(tmp_path, names):
     async def case():
         target = tmp_path / "target"
         target.mkdir()
         (target / "keep").write_bytes(b"original")
         provider = LayeredScriptedProvider(
-            planner=_planner, worker=lambda request: _worker(request, names=names)
+            planner=lambda request: _planner(request, children=("second", "third")),
+            worker=lambda request: _worker(request, names=names, distinct=True),
         )
         async with _host(
             tmp_path / "host", provider=provider, workspace_base=DirectoryBase(target)
         ) as host:
             mission_id = host.create_mission(
                 {
-                    "goal": "写两份说明和编辑器配置",
-                    "success_criteria": ["file:left.md", "file:right.md"],
+                    "goal": "写三份说明和编辑器配置",
+                    "success_criteria": ["file:left.md", "file:middle.md", "file:right.md"],
                     "idempotency_key": "alias",
                 }
             )["mission_id"]
@@ -114,8 +116,22 @@ def test_ambiguous_delivery_refuses_both_spellings(tmp_path, names):
             [tree] = list((tmp_path / "host").rglob(f"{mission_id}-judge-*-verify"))
             committed = host._bases().files(view["commit"])
             rows = {row["path"]: row for row in view["files"]}
-            assert set(rows) == {*names, "left.md", "right.md"}
+            assert set(rows) == {*names, "left.md", "middle.md", "right.md"}
+            store = host.orchestrator.store
+            accepted = [
+                store.get_artifact(key)
+                for task in store.list_tasks(mission_id)
+                for key in task.accepted_artifacts
+            ]
+            expected = {(a.path, a.task_id, a.id) for a in accepted if a.path in names}
+            assert len(expected) == 3
+            assert {
+                (name, p["task_id"], p["artifact_id"])
+                for name in names
+                for p in rows[name]["refused_proposals"]
+            } == expected
             receipt = host.apply_delivery(mission_id, operation_key="apply")
+            assert len(receipt["files"]) == len(rows)
             assert {r["path"] for r in receipt["files"]} == set(rows)
             for result in receipt["files"]:
                 name = result["path"]

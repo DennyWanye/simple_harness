@@ -7,7 +7,7 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
@@ -15,14 +15,14 @@ from typing import TYPE_CHECKING, Any, cast
 from simple_harness.agents import AgentConfig, AgentLimits
 
 from ...artifacts.delivery import Produced, build_change_set
-from ...artifacts.input_bindings import MaterialisationEntry, materialise_plan
 from ...artifacts.judgment_merge import (
     JudgmentFile,
     MergeFacts,
     Placement,
     place_judgment_file,
+    refused_spellings,
 )
-from ...artifacts.paths import ambiguous_paths
+from ...artifacts.paths import ambiguous_paths, spelling_key, under_prefix
 from ...artifacts.store import ArtifactStoreError
 from ...artifacts.versioning import ArtifactConflict, UpstreamInput
 from ...artifacts.workspace_base import (
@@ -96,7 +96,6 @@ logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
     from ...contracts.resolution import GoalResolution
     from ...storage.store import Store
-    from ..commit_service import CommitService
 
 
 def _turn_error_code(failure: Mapping[str, Any]) -> str | None:
@@ -176,40 +175,29 @@ def retry_feedback(
     return feedback, verifier_feedback
 
 
-def _frozen_parents(
-    commit: CommitService, store: Store, mission_id: str
-) -> Callable[[Artifact], list[Artifact]]:
-    """查询同一目标的所有已核验绑定，同一尝试只读一次冻结清单。"""
-    inputs_by_attempt: dict[str, dict[str, MaterialisationEntry]] = {}
-
-    def upstream(artifact: Artifact) -> list[Artifact]:
-        attempt_id = artifact.attempt_id
-        if attempt_id not in inputs_by_attempt:
-            try:
-                context = commit.taskgraph_attempt_context(mission_id, attempt_id)
-            except StoreError as error:
-                raise ArtifactConflict(f"尝试 {attempt_id} 的冻结输入无法核验：{error}") from error
-            # 同字节的多个端口可物化成一个文件；用派发当时的规则恢复全部绑定。
-            plan = materialise_plan(context.manifest, context.target_rules)
-            if plan.problems:
-                raise ArtifactConflict(f"尝试 {attempt_id} 的冻结目标有冲突")
-            inputs_by_attempt[attempt_id] = {entry.target.path: entry for entry in plan.entries}
-        entry = inputs_by_attempt[attempt_id].get(artifact.path)
-        if entry is None:
-            return []
-        parents = []
-        for artifact_id in entry.artifact_ids:
-            parent = store.get_artifact(artifact_id)
-            if (
-                parent is not None
-                and parent.id == artifact_id
-                and parent.mission_id == mission_id
-                and parent.content_hash == entry.content_hash
-            ):
-                parents.append(parent)
-        return parents
-
-    return upstream
+def _starts_from_base(store: Store, artifact: Artifact, base: str | None) -> bool:
+    """派发时已冻结底提交、重试来源和所有挂载目标；任一来源不明就保留完整原版。"""
+    intent = store.get_intent_for_subject(artifact.attempt_id)
+    if intent is None or intent.mission_id != artifact.mission_id:
+        return False
+    execution = intent.config.get("attempt_execution")
+    if (
+        not isinstance(execution, Mapping)
+        or execution.get("task_id") != artifact.task_id
+        or execution.get("base_commit") != base
+        or execution.get("retry_of", "") is not None
+    ):
+        return False
+    files = execution.get("files")
+    roots = execution.get("source_roots")
+    if not isinstance(files, Mapping) or not isinstance(roots, list):
+        return False
+    path = artifact.path
+    return (
+        path not in files
+        and path not in ambiguous_paths((*files, path))
+        and not under_prefix(spelling_key(path), [spelling_key(root) for root in roots])
+    )
 
 
 class AttemptJudgmentMixin(OrchestratorCore):
@@ -237,7 +225,7 @@ class AttemptJudgmentMixin(OrchestratorCore):
             base_merges=[
                 {"path": item.path, **item.facts.to_json()}
                 for item in tree
-                if item.facts.merged_steps or item.facts.merge_skipped
+                if item.facts.merged_steps or item.facts.merge_skipped not in (None, "no_base")
             ],
         )
         if superseded:
@@ -255,7 +243,7 @@ class AttemptJudgmentMixin(OrchestratorCore):
         tasks: Sequence[Task],
         sources: Mapping[str, bytes],
     ) -> tuple[list[JudgmentFile], list[dict[str, Any]], int, set[str]]:
-        """只取根结论当前采用的产物。底里已有的同名文本做三方合并；冲突或不能合并时，
+        """只取根结论当前采用的产物。各版本直接从同一底文本起步时才合并；冲突或不能合并时，
         仍按根要求、声明端口、验收次序选版本。根要求引用的原端口证据保留在 SDK 目录。"""
 
         semantics = new_mode.semantics()
@@ -306,12 +294,11 @@ class AttemptJudgmentMixin(OrchestratorCore):
         manifest = {}
         spellings = set()
         if base is not None:
-            manifest = self.assembled.workspaces.bases.manifest(base)
+            manifest = self.assembled.workspaces.bases.materialisable_manifest(base)
             withheld = (mission.final_report or {})["workspace_base"].get("withheld", {})
             seed = (mission.final_report or {}).get("workspace_seed", {})
             spellings = ambiguous_paths((*manifest, *offered, *withheld, *seed, *sources))
 
-        upstream = _frozen_parents(self.commit, self.store, mission.id)
         for path in sorted(offered):
             files, overridden = place_judgment_file(
                 path,
@@ -319,7 +306,7 @@ class AttemptJudgmentMixin(OrchestratorCore):
                 self.assembled.workspaces.bases if base else None,
                 manifest.get(path),
                 path in spellings,
-                upstream,
+                lambda artifact: _starts_from_base(self.store, artifact, base),
             )
             tree.update((file.path, file) for file in files)
             if overridden:
@@ -328,7 +315,18 @@ class AttemptJudgmentMixin(OrchestratorCore):
             # 根要求可能另外保留原端口证据，它们的目录也和种子、资料共享判定副本。
             spellings.update(ambiguous_paths((*manifest, *tree, *withheld, *seed, *sources)))
             for path in spellings.intersection(tree):
-                tree[path] = replace(tree[path], facts=MergeFacts(merge_skipped="path_spelling"))
+                if tree[path].facts.merge_skipped == "path_spelling":
+                    continue
+                if path in offered:
+                    facts = refused_spellings(offered[path])
+                else:
+                    artifact = tree[path].sources[0]
+                    facts = MergeFacts(
+                        merge_skipped="path_spelling",
+                        refused_proposals=((artifact.task_id, artifact.id),),
+                    )
+                tree[path] = replace(tree[path], facts=facts)
+            superseded = [row for row in superseded if row["path"] not in spellings]
         return [tree[path] for path in sorted(tree)], superseded, len(acceptances), spellings
 
     async def _next_attempt(
@@ -1064,8 +1062,23 @@ class AttemptJudgmentMixin(OrchestratorCore):
             if stored is not None and stored.envelope.summary:
                 summaries.append(stored.envelope.summary)
         summary = "\n".join(summaries)
+        statements = current_statements(self.store, mission)
+        guarded = (
+            ambiguous_paths(
+                spellings,
+                queries=(c.removeprefix("file:") for c in statements if c.startswith("file:")),
+            )
+            if spellings
+            else set()
+        )
+        base_commit = mission_base_commit(mission.final_report)
+        exact_base_paths = (
+            self.assembled.workspaces.bases.manifest(base_commit).keys()
+            if guarded and base_commit
+            else ()
+        )
         test_runs: dict[str, dict[str, Any]] = {}
-        for criterion in current_statements(self.store, mission):
+        for criterion in statements:
             if not criterion.startswith("pytest:"):
                 continue
             target = criterion.removeprefix("pytest:").strip() or None
@@ -1096,7 +1109,7 @@ class AttemptJudgmentMixin(OrchestratorCore):
         # the certified grades (Host real model run 20, 2026-09-23).
         assured_grades = self._assured_root_grades(mission, new_mode)
         judgments: list[dict[str, Any]] = []
-        for ordinal, criterion in enumerate(current_statements(self.store, mission)):
+        for criterion in statements:
             if criterion.startswith("pytest:"):
                 outcome = test_runs.get(criterion, {})
                 judgments.append(
@@ -1111,13 +1124,9 @@ class AttemptJudgmentMixin(OrchestratorCore):
                 relative = criterion.removeprefix("file:")
                 try:
                     met = copy.resolve(relative).is_file()
-                    if met and relative in spellings:
-                        # 折叠拼写的磁盘也能用别名读到底文件，只认可底中确实存在的拼写。
-                        base_commit = mission_base_commit(mission.final_report)
-                        met = (
-                            base_commit is not None
-                            and relative in self.assembled.workspaces.bases.manifest(base_commit)
-                        )
+                    if met and relative in guarded:
+                        # 歧义组只物化底中的精确条目，即使条件采用了从未出现过的第三种拼写。
+                        met = relative in exact_base_paths
                 except Exception:  # noqa: BLE001
                     logger.debug("evaluate_criteria_is_file_failed", exc_info=True)
                     met = False

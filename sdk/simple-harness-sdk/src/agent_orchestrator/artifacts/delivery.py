@@ -139,6 +139,12 @@ def build_change_set(
         if under_prefix(item.path.casefold(), folded_reserved):
             continue
         entry = manifest.get(item.path)
+        merge = item.merge
+        if item.path in spellings and merge.merge_skipped != "path_spelling":
+            proposals = (
+                ((item.task_id, item.artifact_id),) if item.task_id and item.artifact_id else ()
+            )
+            merge = MergeFacts(merge_skipped="path_spelling", refused_proposals=proposals)
         row = {
             "path": item.path,
             "op": "add" if entry is None else "modify",
@@ -146,22 +152,19 @@ def build_change_set(
             "base_blob": entry.blob if entry else None,
             "executable": entry is not None and entry.executable,
             "overridden_steps": overridden.get(item.path, []),
-            **item.merge.to_json(),
+            **merge.to_json(),
         }
-        if item.path in spellings or item.merge.merge_skipped == "path_spelling":
+        if merge.merge_skipped == "path_spelling":
             # 判定副本保留底中的精确条目；新增提议没有交付 blob。来源单列，以便追查。
             files.append(
                 {
                     **row,
-                    "refused": "path_spelling",
-                    "merge_skipped": "path_spelling",
                     "blob": row["base_blob"],
                     "sha256": entry.sha256 if entry else None,
                     "size": entry.size if entry else None,
                     "readable": entry is not None and entry.readable,
                     "artifact_id": None,
                     "task_id": None,
-                    "proposed_artifact_id": item.artifact_id,
                 }
             )
             continue

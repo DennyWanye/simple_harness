@@ -777,10 +777,20 @@ class BaseRepo:
         data = self._blobs(sorted({entry.blob for entry in wanted.values()}))
         return {path: data[entry.blob] for path, entry in wanted.items()}
 
+    def materialisable_manifest(self, commit: str) -> dict[str, BaseEntry]:
+        """判定和铺底共用同一检查，避免旧底的两个条目覆盖同一物理文件。"""
+        manifest = self.manifest(commit)
+        if conflicts := ambiguous_paths(manifest):
+            raise BaseError(
+                "base_path_spelling",
+                f"base_path_spelling: 底 {commit} 拼写歧义，判定受阻：{sorted(conflicts)!r}",
+            )
+        return manifest
+
     def materialise(self, commit: str, target: Path, *, skip: Iterable[str] = ()) -> list[str]:
         """把底提交的文件逐字节写进 ``target``（不经任何 git 过滤），返回写了哪些路径。"""
 
-        manifest = self.manifest(commit)
+        manifest = self.materialisable_manifest(commit)
         skipped = frozenset(skip)
         data = self._blobs(sorted({e.blob for p, e in manifest.items() if p not in skipped}))
         written = []

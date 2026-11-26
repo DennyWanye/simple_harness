@@ -157,6 +157,8 @@ def test_paths_the_base_withheld_or_that_clash_are_marked_not_to_be_written(tmp_
         "config/.env.local": "withheld:secret_name",
         "deploy/prod.pem": "secret_name",
     }
+    [alias] = [row for row in change["files"] if row["refused"] == "path_spelling"]
+    assert alias["refused_proposals"] == [{"task_id": "t1", "artifact_id": "art-ledger/money.py"}]
     assert change["counts"]["refused"] == 3
     assert repo.files(change["commit"], ["Ledger/money.py", "ledger/money.py"]) == {
         "Ledger/money.py": MONEY

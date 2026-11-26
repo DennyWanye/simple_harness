@@ -5,14 +5,11 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from functools import lru_cache
-from graphlib import CycleError, TopologicalSorter
 from itertools import combinations
 from typing import Any
 
 from ..contracts import Artifact
 from .store import read_verified
-from .versioning import ArtifactConflict
 from .workspace_base import HARNESS_ROOT, BaseEntry, BaseRepo, _readable
 
 
@@ -21,6 +18,7 @@ class MergeFacts:
     merged_steps: tuple[str, ...] = ()
     merge_conflict: tuple[str, ...] = ()
     merge_skipped: str | None = None
+    refused_proposals: tuple[tuple[str, str], ...] = ()
 
     def to_json(self) -> dict[str, Any]:
         facts: dict[str, Any] = {}
@@ -32,6 +30,10 @@ class MergeFacts:
             facts["merge_skipped"] = self.merge_skipped
             if self.merge_skipped == "path_spelling":
                 facts["refused"] = "path_spelling"
+                facts["refused_proposals"] = [
+                    {"task_id": task, "artifact_id": artifact}
+                    for task, artifact in self.refused_proposals
+                ]
         return facts
 
 
@@ -50,121 +52,6 @@ class JudgmentFile:
         return self.merged if self.merged is not None else read_verified(self.sources[0])
 
 
-def _lineage(
-    versions: Sequence[Artifact], upstream: Callable[[Artifact], Sequence[Artifact]]
-) -> tuple[list[Artifact], dict[str, set[str]], list[Artifact]]:
-    """沿同一目标的冻结绑定回溯。未被根结论选作产出的前身也能证明共同祖先。"""
-    artifacts = {item.id: item for item in versions}
-    parents: dict[str, tuple[str, ...]] = {}
-    pending = list(versions)
-    while pending:
-        item = pending.pop()
-        predecessors = upstream(item)
-        parents[item.id] = tuple(parent.id for parent in predecessors)
-        for parent in predecessors:
-            if parent.id not in artifacts:
-                artifacts[parent.id] = parent
-                pending.append(parent)
-    try:
-        order = list(TopologicalSorter(parents).static_order())
-    except CycleError as error:
-        raise ArtifactConflict("冻结产物的继承关系成环") from error
-    ancestors: dict[str, set[str]] = {}
-    for key in order:
-        ancestors[key] = {key}.union(*(ancestors[parent] for parent in parents[key]))
-    inherited = {key for predecessors in parents.values() for key in predecessors}
-    return (
-        [artifacts[key] for key in reversed(order)],
-        ancestors,
-        [item for item in versions if item.id not in inherited],
-    )
-
-
-@dataclass(frozen=True, slots=True)
-class _Branch:
-    data: bytes
-    heads: tuple[Artifact, ...]
-    ancestors: set[str]
-
-
-def _merge_versions(
-    repo: BaseRepo,
-    entry: BaseEntry,
-    versions: Sequence[Artifact],
-    winner: Artifact,
-    upstream: Callable[[Artifact], Sequence[Artifact]],
-) -> JudgmentFile:
-    """先在最近的共同版本上合并兄弟，再把独立分支合到任务底。"""
-    original = JudgmentFile(entry.path, (winner,))
-    order, ancestors, heads = _lineage(versions, upstream)
-    data = {item.id: read_verified(item) for item in order}
-    if any(not _readable(content) or b"\0" in content for content in data.values()):
-        return original
-    base = repo.blobs([entry.blob])[entry.blob]
-    if b"\0" in base:
-        return original
-
-    def common_base(left: Artifact, right: Artifact) -> bytes:
-        common = ancestors[left.id] & ancestors[right.id]
-        return next((data[item.id] for item in order if item.id in common), base)
-
-    @lru_cache(maxsize=128)
-    def combine(left: bytes, ancestor: bytes, right: bytes) -> bytes | None:
-        if left == right or right == ancestor:
-            return left
-        if left == ancestor:
-            return right
-        return repo.merge_file(left, ancestor, right)
-
-    branches = [_Branch(data[item.id], (item,), ancestors[item.id]) for item in heads]
-    conflicts: set[str] = set()
-    for ancestor in [*order, None]:
-        group = [b for b in branches if ancestor is None or ancestor.id in b.ancestors]
-        if len(group) < 2:
-            continue
-        pivot = base if ancestor is None else data[ancestor.id]
-        current = group[0]
-        for incoming in group[1:]:
-            merged = combine(current.data, pivot, incoming.data)
-            if merged is None:
-                # 逐对区分同处冲突与组合冲突。继续检查后面的分支以保留完整名单。
-                involved = {
-                    item.task_id
-                    for left in current.heads
-                    for right in incoming.heads
-                    if combine(data[left.id], common_base(left, right), data[right.id]) is None
-                    for item in (left, right)
-                }
-                conflicts.update(
-                    involved or {item.task_id for item in (*current.heads, *incoming.heads)}
-                )
-                continue
-            current = _Branch(
-                merged, current.heads + incoming.heads, current.ancestors | incoming.ancestors
-            )
-        # 折叠结果占最早成员的位置，独立分支仍按验收顺序处理。
-        branches = [
-            current if branch is group[0] else branch
-            for branch in branches
-            if branch is group[0] or (ancestor is not None and ancestor.id not in branch.ancestors)
-        ]
-    if conflicts:
-        # 回退后不再有可用于后续合并的冲突字节；从所有原始末版复核其余冲突对。
-        for left, right in combinations(heads, 2):
-            if combine(data[left.id], common_base(left, right), data[right.id]) is None:
-                conflicts.update((left.task_id, right.task_id))
-        steps = tuple(dict.fromkeys(item.task_id for item in heads if item.task_id in conflicts))
-        return JudgmentFile(entry.path, (winner,), facts=MergeFacts(merge_conflict=steps))
-    [result] = branches
-    merged = result.data
-    return JudgmentFile(
-        entry.path,
-        tuple(versions),
-        merged,
-        MergeFacts(merged_steps=tuple(dict.fromkeys(item.task_id for item in versions))),
-    )
-
-
 # 权重依次为根要求、端口、验收序号；同一产物可同时出现在步骤清单和端口索引。
 Placement = tuple[tuple[int, int, int], str, Artifact, str | None]
 
@@ -174,16 +61,63 @@ def _select_file(
     placements: Sequence[Placement],
     repo: BaseRepo | None,
     entry: BaseEntry | None,
-    upstream: Callable[[Artifact], Sequence[Artifact]],
+    starts_from_base: Callable[[Artifact], bool],
 ) -> JudgmentFile:
     winner = placements[0][2]
-    if repo is None or entry is None or not entry.readable:
-        return JudgmentFile(path, (winner,))
+
+    def original(reason: str | None = None, conflicts: tuple[str, ...] = ()) -> JudgmentFile:
+        return JudgmentFile(
+            path, (winner,), facts=MergeFacts(merge_skipped=reason, merge_conflict=conflicts)
+        )
+
     if len({artifact.content_hash for _, _, artifact, _ in placements}) == 1:
-        return JudgmentFile(path, (winner,))
+        return original()
+    if repo is None:
+        return original("no_base")
+    if entry is None:
+        return original("added")
+    if not entry.readable:
+        return original("binary")
+
     by_time = sorted(placements, key=lambda item: item[0][2])
-    versions = {artifact.id: artifact for _, _, artifact, _ in by_time}
-    return _merge_versions(repo, entry, list(versions.values()), winner, upstream)
+    versions = tuple({artifact.id: artifact for _, _, artifact, _ in by_time}.values())
+    # 同字节的独立产物也各自核对起点；只有合并字节时才去重。
+    if not all(starts_from_base(item) for item in versions):
+        return original("lineage")
+    base = repo.blobs([entry.blob])[entry.blob]
+    contents = {item.id: read_verified(item) for item in versions}
+    distinct = list(dict.fromkeys(contents.values()))
+    if b"\0" in base or any(not _readable(data) or b"\0" in data for data in distinct):
+        return original("binary")
+
+    merged = distinct[0]
+    for index, incoming in enumerate(distinct[1:], 1):
+        result = repo.merge_file(merged, base, incoming)
+        if result is None:
+            # 整体回退。逐对复核只用于列名，包含首次冲突之后的版本。
+            involved = set()
+            prefix = distinct[:index]
+            conflict_in_prefix = False
+            for left, right in combinations(distinct, 2):
+                if repo.merge_file(left, base, right) is None:
+                    involved.update((left, right))
+                    if right == incoming and left in prefix:
+                        conflict_in_prefix = True
+            if not conflict_in_prefix:
+                # 单个版本都能和本次输入干净合并，冲突来自已累积的组合。
+                involved.update((*prefix, incoming))
+            steps = tuple(
+                dict.fromkeys(item.task_id for item in versions if contents[item.id] in involved)
+            )
+            return original("conflict", steps)
+        merged = result
+    steps = tuple(dict.fromkeys(item.task_id for item in versions))
+    return JudgmentFile(path, versions, merged, MergeFacts(merged_steps=steps))
+
+
+def refused_spellings(placements: Sequence[Placement]) -> MergeFacts:
+    proposals = tuple(dict.fromkeys((task, artifact.id) for _, task, artifact, _ in placements))
+    return MergeFacts(merge_skipped="path_spelling", refused_proposals=proposals)
 
 
 def place_judgment_file(
@@ -192,21 +126,21 @@ def place_judgment_file(
     repo: BaseRepo | None,
     entry: BaseEntry | None,
     ambiguous: bool,
-    upstream: Callable[[Artifact], Sequence[Artifact]],
+    starts_from_base: Callable[[Artifact], bool],
 ) -> tuple[list[JudgmentFile], dict[str, Any] | None]:
     """放置主路径和根要求引用的原端口文件，单独记录被覆盖的版本。"""
     placements = sorted(offered, key=lambda item: item[0], reverse=True)
     kept_weight, kept_task, winner, _port = placements[0]
     if ambiguous:
         # 没有任何提议写入主路径。根要求引用的原件仍可按端口单独核对。
-        refused = JudgmentFile(path, (winner,), facts=MergeFacts(merge_skipped="path_spelling"))
+        refused = JudgmentFile(path, (winner,), facts=refused_spellings(placements))
         evidence = [
             JudgmentFile(f"{HARNESS_ROOT}accepted-outputs/{task_id}/{port}/{path}", (artifact,))
             for weight, task_id, artifact, port in placements
             if weight[0] and port is not None
         ]
         return [refused, *evidence], None
-    file = _select_file(path, placements, repo, entry, upstream)
+    file = _select_file(path, placements, repo, entry, starts_from_base)
     files = [file]
     losers = []
     seen = {winner.id}

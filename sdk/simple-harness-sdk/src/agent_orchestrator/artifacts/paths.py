@@ -30,24 +30,35 @@ def under_prefix(path: str, prefixes: tuple[str, ...] | list[str]) -> bool:
     return False
 
 
-def ambiguous_paths(paths: Iterable[str]) -> set[str]:
-    """比较文件和每一级目录的原拼写；折叠后的名字只用来发现歧义。"""
-    prefixes: dict[str, list[str]] = {}
+def spelling_key(path: str) -> str:
+    # 有些组合附标在大小写折叠后会变成字母，须先规范分解再折叠。
+    return unicodedata.normalize("NFD", unicodedata.normalize("NFD", path).casefold())
+
+
+def _prefixes(path: str) -> Iterable[str]:
+    parts = path.split("/")
+    for depth in range(1, len(parts) + 1):
+        yield "/".join(parts[:depth])
+
+
+def ambiguous_paths(paths: Iterable[str], *, queries: Iterable[str] = ()) -> set[str]:
+    """从已有路径找出歧义组，附加查询只参与匹配，不引入新的歧义。"""
+    keys_by_path: dict[str, list[str]] = {}
     spelling: dict[str, str] = {}
     ambiguous: set[str] = set()
     for path in paths:
-        parts = path.split("/")
         keys = []
-        for depth in range(1, len(parts) + 1):
-            prefix = "/".join(parts[:depth])
-            # 有些组合附标在大小写折叠后会变成字母，须先规范分解再折叠。
-            decomposed = unicodedata.normalize("NFD", prefix)
-            key = unicodedata.normalize("NFD", decomposed.casefold())
+        for prefix in _prefixes(path):
+            key = spelling_key(prefix)
             if spelling.setdefault(key, prefix) != prefix:
                 ambiguous.add(key)
             keys.append(key)
-        prefixes[path] = keys
-    return {path for path, keys in prefixes.items() if not ambiguous.isdisjoint(keys)}
+        keys_by_path[path] = keys
+    matches = {path for path, keys in keys_by_path.items() if not ambiguous.isdisjoint(keys)}
+    matches.update(
+        path for path in queries if any(spelling_key(p) in ambiguous for p in _prefixes(path))
+    )
+    return matches
 
 
-__all__ = ("ambiguous_paths", "normalise_workspace_path", "under_prefix")
+__all__ = ("ambiguous_paths", "normalise_workspace_path", "spelling_key", "under_prefix")

@@ -961,8 +961,9 @@ host.base  # {"enabled": True, "git": "2.54.0"}；没有 git 2.38+ 时 enabled=F
 | 错误码 | `base_unavailable`（宿主没接底却带了 `base_scope`，或 git 不可用）、`base_too_large`、`invalid_request`（范围写法不对、种子与底重名）、`base_repo_failed`（工作仓库的 git 命令失败，说明里带 git 的报错） |
 | 幂等 | 同一个 `idempotency_key` 重试沿用原任务的底，不重拍 |
 | SDK 自己的路径 | 都在 `.harness/` 下：任务资料 `.harness/sources/`（会话委派带的资料自动放到这里）、执行者草稿 `.harness/scratch/`（照常传给后续步骤，不交给使用方）、判定树里落选的产出 `.harness/accepted-outputs/`。使用方仓库里的 `Sources/`、`sources/` 照常进底。直接带资料建任务时路径写 `.harness/sources/...`（以前是 `sources/...`）；`file:` 条件不能指向 `.harness/`、`.assurance/`（回 `file_criterion_reserved_path`） |
-| 两步改同一个底文件 | 判定按文件追溯每步实际收到的冻结输入。兄弟分支先以共同收到的版本合并，独立分支再以任务底合并。每个目标路径上的全部绑定都按产物 ID 和内容哈希核对。干净合并的字节同时用于任务判定和交付。 |
-| 合并边界 | 底或产物不可读、双方新增文件时沿用覆盖规则。文件名或任一级目录只差大小写、Unicode 规范化拼写时，整组产出记 `refused: "path_spelling"`。判定副本和交付提交保留底中已有的精确条目，跳过新增拼写。 |
+| 同一路径有多个版本 | 根结论采用至少两种不同内容，且底中有该精确路径。底和候选都是不含 NUL、至多 512 KiB 的 UTF-8 文本。每次尝试的冻结起点能证明该路径直接来自同一底提交，文件及各级目录拼写唯一。此时按验收顺序，以底文件作共同祖先逐次运行 `git merge-file`。只有每次都干净才使用合并字节。 |
+| 沿用覆盖规则 | 缺少底、共同新增、不可读、起点无法证明或合并冲突时，按根要求关联优先、其次声明端口、再按验收次序保留一份完整原版。继承同一路径、同字节多绑定、交叉继承或从上次工作区重试都可能改变起点。其他路径的上游挂载不影响本文件。 |
+| 路径拼写歧义 | 文件名或任一级目录只差大小写或 Unicode 规范化时，整组提议拒交，保留底中精确条目。`file:` 对该组只接受精确拼写。如果底提交自身已含歧义条目，SDK 在铺底前报 `base_path_spelling` 并列出路径。任务级判定遇到此底以 `artifact_conflict` 终止，跳过全部 `file:` 和 `pytest:` 条件。清理来源中的冲突拼写后，重新拍底创建任务。 |
 | 还没有的 | 删除文件的工具。 |
 
 ### 交付：改动集与写回
@@ -971,9 +972,9 @@ host.base  # {"enabled": True, "git": "2.54.0"}；没有 git 2.38+ 时 enabled=F
 
 干净合并的文件条目以 `merged_steps` 列出来源步骤，`artifact_id` 和 `task_id` 均为 `null`。用条目的 `blob` 识别交付字节。根要求引用的原端口产物仍可在判定副本的 `.harness/accepted-outputs/` 下查验。
 
-拼写歧义的条目同时带有 `merge_skipped` 和 `refused`。从底保留的文件报告其底 blob、SHA-256 和大小，底中没有该拼写时这三个字段均为 `null`。`proposed_artifact_id` 标识被拒的候选产物。宿主省略这类条目的 diff，全量或点名写回均返回 `refused`。同一交付中的其他文件仍可单独核对和写回。
+拼写歧义按路径列一条 `refused: "path_spelling"`。判定事件、改动集和 `host.delivery()` 都在 `refused_proposals` 数组中逐项给出被拒提议的 `task_id` 和 `artifact_id`。底里已有的条目报告原 blob、SHA-256 和大小，新增拼写的这三个字段均为 `null`。宿主省略这些条目的 diff，每个点名或全量写回的路径各有一条拒写回执。其他文件照常交付。
 
-合并冲突时按根要求、声明端口、验收先后选取原版本。条目的 `merge_conflict` 列出冲突步骤，`overridden_steps` 列出实际被覆盖的步骤，两份名单可能不同。若保留的字节等于底，文件不计为改动。即使 `files` 为空，也可在 `host.delivery(mission_id)["unchanged_merge_facts"]` 和最终改动集的同名字段按路径查到这两份名单。判定事件也留有记录。派发前的写入目标与上游输入冲突检查照常生效，可能先把问题交给规划器。到达任务级判定时根结论已经形成，这里只记录新发现的冲突。
+有多个不同内容时，`merge_skipped` 给出原因。无底为 `no_base`（仅判定事件），底中无该路径为 `added`，不可读文本为 `binary`，继承、重试或缺少冻结起点证明为 `lineage`，Git 冲突为 `conflict`，拼写歧义为 `path_spelling`。冲突输出整体丢弃。`merge_conflict` 列出冲突涉及的步骤，`overridden_steps` 列出与胜出字节不同的落选步骤。选回底字节时，该路径的原因和覆盖名单进入改动集及宿主视图的 `unchanged_merge_facts`，不计入改动文件数。派发前发现写入目标与上游输入冲突时，仍可交给规划器处理。
 
 ```python
 view = host.delivery(mission_id)
