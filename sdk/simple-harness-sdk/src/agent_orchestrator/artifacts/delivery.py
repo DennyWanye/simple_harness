@@ -74,7 +74,8 @@ class Produced:
 
 
 def is_test_config(path: str) -> bool:
-    return PurePosixPath(path).name in _TEST_CONFIG
+    # 不区分大小写的磁盘上 PYTEST.INI、Conftest.py 照样会被 pytest 读到
+    return PurePosixPath(path).name.casefold() in _TEST_CONFIG
 
 
 def is_test_path(path: str) -> bool:
@@ -220,14 +221,22 @@ def delivery_diff(bases: BaseRepo, change_set: Mapping[str, Any], path: str) -> 
 
 
 def same_location(recorded: object, current: str) -> bool:
-    """拍底时记下的位置与现在接的底是不是同一个（同一个目录的不同写法——大小写、firmlink——也算）。"""
+    """拍底时记下的位置与现在接的底是不是同一个。同一个目录的不同写法（大小写、firmlink）算同一个；
+    记下的位置被换成了软链（哪怕指向别的项目）不算——宁可拒写，不写进别的仓库。"""
 
     if not isinstance(recorded, str) or not recorded:
         return False
     if recorded == current:
         return True
+    if not os.path.isabs(recorded):
+        return False
     try:
-        return os.path.isdir(recorded) and os.path.samefile(recorded, current)
+        # 记下的是当时的真实路径：路径上任何一级现在是软链，就不再是当时那个目录
+        parts = Path(recorded).parts
+        through_link = any(
+            os.path.islink(os.path.join(*parts[: depth + 1])) for depth in range(1, len(parts))
+        )
+        return not through_link and os.path.isdir(recorded) and os.path.samefile(recorded, current)
     except OSError:
         return False
 

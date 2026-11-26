@@ -333,15 +333,10 @@ WHITELIST: dict[Site, str] = {
     (
         "entry",
         "orchestrator/orchestrator_domains/attempt_judgment.py",
-        "AttemptJudgmentMixin._judge",
+        "AttemptJudgmentMixin._judge_mission",
         "judge_mission",
-    ): "主循环判定（纯内容任务）：判定只记'满足 / 不满足'，满足走收尾",
-    (
-        "entry",
-        "orchestrator/orchestrator_domains/attempt_judgment.py",
-        "AttemptJudgmentMixin._judge_with_actions",
-        "judge_mission",
-    ): "主循环两段判定（带动作的任务）",
+    ): "主循环判定的唯一入口（纯内容任务的 _judge 与带动作任务的 _judge_with_actions 都经这里）："
+    "判定只记'满足 / 不满足'，满足走收尾；有底的任务同时写改动集",
     (
         "entry",
         "orchestrator/commit_service_domains/mission_lifecycle.py",

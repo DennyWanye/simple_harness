@@ -564,3 +564,50 @@ def test_there_is_no_diff_for_a_path_that_is_not_in_the_commit(tmp_path):
     )
     with pytest.raises(KeyError):
         delivery_diff(repo, change, '"q.py')
+
+
+# ---------------------------------------------------------------- 核验第三轮建议
+
+
+def _one_change(tmp_path, root: Path):
+    repo = BaseRepo(tmp_path / "work.git")
+    return repo, _change_set(repo, _base(repo, DirectoryBase(root)), [_produced("new.py", b"n\n")])
+
+
+def test_a_base_replaced_by_a_link_to_another_project_is_refused(tmp_path):
+    project = tmp_path / "proj-a"
+    other = tmp_path / "proj-b"
+    for root in (project, other):
+        root.mkdir()
+        (root / "x.py").write_bytes(b"x\n")
+    repo, change = _one_change(tmp_path, project)
+    project.rename(tmp_path / "proj-a-moved")
+    project.symlink_to(other, target_is_directory=True)  # 原处换成指向别的项目的软链
+    with pytest.raises(DeliveryRefused) as refused:
+        apply_change_set(DirectoryBase(other), repo, change)
+    assert refused.value.code == "delivery_target_mismatch"
+    assert not (other / "new.py").exists()
+
+
+def test_the_same_directory_spelled_in_another_case_is_the_same_base(tmp_path):
+    user = tmp_path / "Proj"
+    user.mkdir()
+    (user / "x.py").write_bytes(b"x\n")
+    respelled = tmp_path / "proj"
+    if not respelled.exists():
+        pytest.skip("这块磁盘区分大小写，同一目录没有第二种写法")
+    repo, change = _one_change(tmp_path, user)
+    adapter = DirectoryBase(respelled)
+    assert adapter.location() != change["location"]  # 字符串不等，走同一目录的判断
+    [item] = apply_change_set(adapter, repo, change)
+    assert item["status"] == "applied"
+
+
+def test_test_configuration_is_recognised_in_any_case(tmp_path):
+    repo = BaseRepo(tmp_path / "work.git")
+    change = _change_set(
+        repo,
+        _base(repo, InMemoryBase({"a.py": b"a\n"})),
+        [_produced("PYTEST.INI", b"[pytest]\naddopts = -k nothing\n")],
+    )
+    assert [item["test"] for item in change["files"]] == [True]
