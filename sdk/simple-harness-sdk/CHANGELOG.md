@@ -1,3 +1,21 @@
+## 未发布 — 有底的任务交付：改动集与写回（issue #53，2026-11-26）
+
+P1（#51）让任务在「底提交」上干活；这一段把结果交回去。设计见 `plans/2026-11-26-workspace-base/`（本次是 P2a）。
+
+- **改动集**：有底的任务判定时，用判定树同一份产物（底 + 验收通过的步骤产物）对照底提交，得到新增 / 修改的文件，
+  写进 `final_report.change_set`；工作仓库里钉交付提交（父提交 = 底提交，引用 `refs/harness/delivery/<提交号>`）。
+  改了底里已有的测试单列（`test: true`）；扣留过的路径、凭据文件名、与底只差大小写的标 `refused`、不写回；SDK
+  自己的路径（`accepted-outputs/` 等）不算交付；判定树里被覆盖掉的步骤记在 `overridden_steps`。
+- **宿主方法**：`OrchestrationHost.delivery(mission_id)` 看改动（文本文件附相对底的 unified diff）与以前的写回回执；
+  `apply_delivery(mission_id, operation_key=, paths=None)` 写回全部或一部分文件。模型没有写回工具。
+- **写回**：逐文件三方比对（现状仍是底 → 写；已是新内容 → `already`；其他 → `conflict` 不写），写完按现状复核；
+  `GitRepoBase` / `DirectoryBase` 只写工作目录文件（临时文件 + 原子改名），不碰 `.git`、索引、分支；软链、大小写
+  撞名 `refused`。账本 `bases/deliveries/`：同一操作键不重放，同键不同参数 `idempotency_conflict`，写到一半重调
+  靠三方比对不写两遍。底适配器要写回另实现 `WritableBase`（三个自带适配器都实现了），否则 `delivery_unsupported`。
+- **还没有（P2b）**：删除工具、步骤之间同一底文件的三方合并、执行者草稿不交付（`.harness/`）、尝试改 git 工作树。
+
+独立核验第一轮（FAIL）查出并已修：交付提交把模型写的文件名原样拼进 `git fast-import` 流，带换行的文件名能把别的文件在交付提交里换成另一份——人看到的 diff 与写回的字节不是同一份，回执还是 applied；引号开头或带换行的名字也会让整个改动集算不出来 → 路径不合法的改动不进交付提交（改动集里照列，`refused: invalid_path`，不给 diff、不写回），`commit_on` 拒这种路径，并在写完后核对交付提交 = 父提交的树叠上要写的文件（一个不多、一个不少、blob 一致）。同时采纳的建议：写回核对底的身份（`WritableBase.location()`，自带适配器拍底时记进 `source.location`），换了项目回 `delivery_target_mismatch`；改名前再比一次现状（比对后使用方刚存的盘不被覆盖）；账本写入 fsync，读不了的记录不拖垮别的任务（同一键的记录读不了回 `delivery_ledger_unreadable`）；写回中途读交付内容或写账本出错回 `delivery_failed`，复核读不出来记 `failed`；父路径是文件时原因记 `not_a_directory`；`conftest.py`、`pytest.ini`、`tox.ini`、`.coveragerc` 也算测试改动；可读产物做内容级密钥扫描（`refused: secret_content`）；补了状态门、权限保留、目录占位、写回目标等用例。独立核验第二轮 PASS；采纳的建议：新增或修改测试配置（`conftest.py`、`pytest.ini`、`tox.ini`、`.coveragerc`、`pyproject.toml`、`setup.cfg`）都标 `test`，不让自动写回绕过人；底的身份比对在字符串不等时用 `samefile` 兜一次（同一目录的大小写 / firmlink 写法不误拒），`delivery()` 返回 `location`；`InMemoryBase` 自定义来源也带 `location`；复核读不出来记 `verify_failed`（不说核对不符）；两条判定路径（带不带 `action:` 要求）共用一个判定入口，都写改动集；补了对应用例。独立核验第三轮（增量）PASS；采纳的建议：底的身份比对收紧——记下的位置路径上任一级现在是软链（例如原处换成指向别的项目的软链）就拒写，同一目录的大小写 / firmlink 写法仍认作同一个；测试配置文件名不分大小写（`PYTEST.INI`、`Conftest.py`）；判定入口合并后更新终态写入点白名单（`AttemptJudgmentMixin._judge_mission`）。
+
 ## 未发布 — 后台任务在「底提交」上干活（issue #51，2026-11-26）
 
 宿主真机局（R16）里任务工作区是空的：执行者能用只读工具看到用户仓库，验收副本里却没有仓库原有文件，新写的测试

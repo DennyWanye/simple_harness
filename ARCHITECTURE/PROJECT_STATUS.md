@@ -1,3 +1,5 @@
+最后更新：2026-11-26（有底的任务交付：改动集与写回，issue #53，分支 `sdk/delivery`，未发版）。P1（#51，PR #52 已合并）让任务在「底提交」上干活；这一段把结果交回去：判定时给出相对底的改动集（`final_report.change_set`，测试改动单列、不能写回的标原因），宿主 `delivery()` 看 diff、`apply_delivery()` 逐文件三方比对写回（冲突不写、同一操作键不重放、写完复核），`GitRepoBase` 只写工作目录、不碰 `.git`。删除工具、步骤间同一底文件的合并、`.harness/` 保留根在 P2b。
+
 最后更新：2026-11-26（后台任务在「底提交」上干活，issue #51，分支 `sdk/workspace-base`，未发版）。宿主 OneOneTalk 真机局里任务工作区是空的、验收副本没有用户仓库原有文件；宿主现在可以给 SDK 一个底，建任务时拍成 SDK 自管 git 仓库里的提交，执行、验收、判定树、规划器都在「底 + 本任务改动」上，只登记真改动。设计 `plans/2026-11-26-workspace-base/`（P1；交付改动集与写回在 P2）。细节见 `AGENT_ORCHESTRATION.md` 同日条目。
 
 最后更新：2026-11-25（SDK opt.230 本地发版及 Host 钉版：file: 成功条件只认纯路径，issue #49 / PR #50）。宿主 OneOneTalk 真机局里主会话把成功条件写成「file:路径 + 说明」，验收把整串当路径、第一步 6 次全判文件不存在、取消前结算约 436 万 token；改为建任务、会话委派、改要求三处入口拒绝非纯路径的 file: 条件（码 file_criterion_not_a_path），delegate_task 参数说明写明格式。重试策略不变。独立核验第一轮 FAIL（首尾空白漏过）、修后第二轮 PASS（报告 .local-test-evidence/2026-11-25/review-opt230-b/）。细节见 [AGENT_ORCHESTRATION.md](AGENT_ORCHESTRATION.md) 顶部。

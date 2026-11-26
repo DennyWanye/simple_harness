@@ -960,7 +960,36 @@ host.base  # {"enabled": True, "git": "2.54.0"}；没有 git 2.38+ 时 enabled=F
 | 顺手跑的测试 | 一条 `pytest:` 都没写时，验收只跑这一步新写或改过的测试文件（`test_*.py` / `*_test.py`，每个文件各跑一次），不跑使用方仓库原有的测试；收集不到测试的文件（没有测试函数、被仓库配置反选，pytest 退出码 5）不算失败；仓库的 pytest 配置或根目录 `conftest.py` 在隔离区里加载不了（例如要装了才有的插件，退出码 4）照样判失败；一个有测试的都没有就在空目录里跑一次（不加载仓库的 pytest 配置与 `conftest.py`），算「不适用、视为满足」。写了 `pytest:`（含不带路径的 `pytest:`，那是要求跑整棵树）照条件跑 |
 | 错误码 | `base_unavailable`（宿主没接底却带了 `base_scope`，或 git 不可用）、`base_too_large`、`invalid_request`（范围写法不对、种子与底重名）、`base_repo_failed`（工作仓库的 git 命令失败，说明里带 git 的报错） |
 | 幂等 | 同一个 `idempotency_key` 重试沿用原任务的底，不重拍 |
-| 还没有的 | 交付改动集与写回（三方比对）、尝试即提交与步骤合并、删除文件的工具——见设计稿 `plans/2026-11-26-workspace-base/` 的 P2 |
+| 还没有的 | 删除文件的工具；两个互不依赖的步骤改同一个底文件时的三方合并（现在判定树取后验收的那一版，被覆盖的步骤记在改动集的 `overridden_steps`）；执行者草稿不交付（`.harness/` 保留根）——见设计稿 `plans/2026-11-26-workspace-base/` 的 P2b |
+
+### 交付：改动集与写回
+
+有底的任务判定时，SDK 用判定树同一份产物（底 + 验收通过的步骤产物）算出**改动集**，写进
+`final_report.change_set`（会话的 `tasks()` 快照里就能看到），同时在工作仓库里钉一个交付提交（父提交 = 底提交）。
+判定树就是底 + 这些改动（另有任务的种子与资料，它们不交付）：验的就是交的。
+
+```python
+view = host.delivery(mission_id)
+# {"base_commit", "commit", "counts": {"files", "added", "modified", "tests", "refused"},
+#  "files": [{"path", "op": "add"|"modify", "test", "refused", "diff", "base_blob", "blob",
+#             "overridden_steps", "artifact_id", "task_id", ...}], "applies": [以前的写回回执]}
+
+receipt = host.apply_delivery(mission_id, operation_key="点击-123", paths=None)  # 或只写几个文件
+# {"files": [{"path", "status": "applied"|"already"|"conflict"|"refused"|"failed", "reason",
+#             "base_blob", "blob", "current_blob"}], "counts": {...}, "repeat": False, ...}
+```
+
+| 事 | 说明 |
+|---|---|
+| 改动集里有什么 | 判定树里和底提交内容不同的文件：新增（`add`）或修改（`modify`）。没动的底文件、SDK 自己的路径（`accepted-outputs/` 等）不在里面。`test: true` = 改了底里**已有的**测试文件，或新增 / 修改测试配置（`conftest.py`、`pytest.ini`、`tox.ini`、`.coveragerc`、`pyproject.toml`、`setup.cfg`）；新写的测试文件不算。交付时单列给人看，自动写回的规则不要放过它们 |
+| 不能写回的 | `refused` 写着原因：底拍快照时扣留过的路径（`withheld:<原因>`）、凭据文件名（`secret_name`）、内容像密钥（`secret_content`；按通用模式判，解析 PEM 的代码、示例 `Bearer` 串也会被拦，这类文件请人手动处理）、与底里已有路径只差大小写（`case_conflict`）。它们照样在交付提交和 diff 里，只是不写回。路径本身不合法的（带换行、引号开头、git 不收的写法，`invalid_path`）只列出来，不进交付提交、没有 diff |
+| 看 diff | `delivery()` 给每个文本文件附相对底的 unified diff（工作仓库里两个提交之间算，不走用户的外部 diff 配置）；二进制或超过 512 KiB 的文件、超过 20 万字符的 diff 不附（`diff_omitted`） |
+| 谁能写回 | 只有宿主：人点了，或宿主自己的档位规则。模型没有这个工具。任务完成（`COMPLETED`）后才能写，否则 `delivery_not_ready` |
+| 怎么写 | 逐文件三方比对：现在的文件仍是底里那一版 → 写；已经是新内容 → `already`；其他（任务进行时使用方改过）→ `conflict`，不写，回执带三个 blob 号供界面显示三方差异。临时文件写好以后、改名之前再比一次现状，比对之后使用方刚存的盘不会被覆盖（只剩改名那一下的窗口：写回时别同时编辑这些文件）。写完按现状复核，核不上记 `failed`（`verify_mismatch`；读不回来记 `verify_failed`） |
+| 写到哪 | `GitRepoBase` / `DirectoryBase`：只写工作目录里的文件（同目录临时文件 + 原子改名，改过的文件保留原权限），不碰 `.git`、索引、分支——写回后是使用方仓库里**未提交的改动**。路径上任一级是软链（`symlink`）、与已有文件或目录只差大小写（`case_conflict`）、上级是个文件（`not_a_directory`）的，一律 `refused`；要写的地方是个目录记 `conflict`。只写进拍底的那个目录：底记录里有它的位置（`delivery()` 返回的 `location`；同一目录的不同写法认作同一个，那个位置被换成软链——哪怕指向的还是同一个项目——就拒写），宿主换了项目开回 `delivery_target_mismatch` |
+| 幂等 | 同一个 `operation_key` 再调返回原回执（`repeat: true`），不重放；同键不同参数（换了任务或文件）回 `idempotency_conflict`。写到一半进程没了，同键重调会重新执行：已经写过的文件三方比对认得出（`already`），不会写两遍。账本在数据目录 `bases/deliveries/` |
+| 自定义底 | 要能写回，底适配器另外实现 `WritableBase`：`location()`（底的身份，拍底时同一个值记进 `BaseCapture.source["location"]`）、`current_hashes(paths)`（git blob 号，没有为 None）与 `write_file(path, data, *, expected, executable) -> FileWrite`（自己做「现状仍是 expected 才写」）。没实现的回 `delivery_unsupported`，`delivery()` 照样能看 |
+| 错误码 | `no_delivery`（没有接底、还没判定、或改动集没算出来）、`delivery_not_ready`、`delivery_unsupported`、`delivery_target_mismatch`、`invalid_request`（`paths` 里有改动集外的路径、`operation_key` 写法不对）、`idempotency_conflict`、`delivery_ledger_unreadable`（这个键的账本记录坏了，先查明再写）、`delivery_failed`（读交付内容或写账本出错；同一个键重调是安全的）、`not_found` |
 
 ## 5. 要求怎么写
 

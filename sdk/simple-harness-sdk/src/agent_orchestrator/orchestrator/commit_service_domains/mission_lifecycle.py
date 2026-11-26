@@ -632,7 +632,12 @@ class MissionLifecycleCommitsMixin(CommitServiceCore):
         return cancelled
 
     def judge_mission(
-        self, mission_id: str, *, judgments: Sequence[Mapping[str, Any]], summary: str
+        self,
+        mission_id: str,
+        *,
+        judgments: Sequence[Mapping[str, Any]],
+        summary: str,
+        change_set: Mapping[str, Any] | None = None,
     ) -> Mission:
         """Mission-level success judgment, independent of the Task PASS (D21, ORCH §12.4).
 
@@ -642,6 +647,9 @@ class MissionLifecycleCommitsMixin(CommitServiceCore):
         ``judgments`` carries one entry per ``Mission.success_criteria`` item with
         ``met: bool``; all met → COMPLETED, otherwise FAILED(mission_criteria_unmet)
         while the Task stays COMPLETED.
+
+        ``change_set``（有底的任务才有）：判定树相对底提交的改动，原样写进报告，宿主按它看 diff、
+        写回。
         """
 
         # P2.3c part 2c / review F6: the mode gate — *before* the transaction, because the
@@ -736,6 +744,8 @@ class MissionLifecycleCommitsMixin(CommitServiceCore):
                     terminal_task_id=None if finalizer is None else finalizer.id,
                 ),
             }
+            if change_set is not None:
+                report["change_set"] = dict(change_set)
             judged = self._emit(
                 "MissionSuccessJudged",
                 mission_id,

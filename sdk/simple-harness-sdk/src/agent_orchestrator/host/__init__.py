@@ -24,8 +24,10 @@ from ..artifacts.workspace_base import (
     BaseCapture,
     BaseFile,
     DirectoryBase,
+    FileWrite,
     GitRepoBase,
     WorkspaceBase,
+    WritableBase,
 )
 from ..governance.permissions import Principal
 from ..runtime.domain_tools import DomainTool, ToolCallContext
@@ -75,8 +77,10 @@ __all__ = (
     "BaseCapture",
     "BaseFile",
     "DirectoryBase",
+    "FileWrite",
     "GitRepoBase",
     "WorkspaceBase",
+    "WritableBase",
     "CONTEXT_INPUT_CHOICES",
     "NO_COUNTER_REASON",
     "ChatRequestError",
