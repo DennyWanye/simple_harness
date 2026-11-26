@@ -14,6 +14,7 @@ from typing import Any
 from simple_harness.agents import AgentConfig
 from simple_harness.contracts import canonical_json
 
+from ..artifacts.workspace_base import mission_base_commit
 from ..contracts.models import sha256_hex
 from ..contracts.state_machines import TERMINAL_ATTEMPT, TERMINAL_TASK
 from ..governance.policies import DeploymentPolicy, effective_tools
@@ -111,6 +112,7 @@ class TaskGraphExecutionImports:
                                     role_tools=role_tools,
                                     deployment=deployment,
                                     read_only_leaf=read_only,
+                                    on_base=mission_base_commit(mission.final_report) is not None,
                                 )
                             ),
                         },

@@ -71,6 +71,7 @@ from ..occurrence_tasks import read_only_leaf, read_only_rewrites
 from ..operation_completion import OperationCompletionError
 from ..planning_repair_requests import record_request
 from ..resolution_commits import ResolutionCommitRejected
+from ..result_deletions import result_deletions
 from ..review_adjudication import adjudication_of
 from .core import OrchestratorCore
 from .support import _under_source_root, logger, sha256_hex_text
@@ -338,6 +339,8 @@ class VerificationMixin(OrchestratorCore):
                 )
                 return
 
+        # 起步时在、现在不在的文件：只有删除工具删得掉（跑代码在一次性副本里）
+        deleted = sorted(path for path in initial if path not in known)
         try:
             self.commit.record_result(
                 attempt.id,
@@ -346,6 +349,7 @@ class VerificationMixin(OrchestratorCore):
                 artifacts=referenced,
                 usage_refs=tuple(result.usage_refs),
                 port_claims=self._attempts.port_claims.get(envelope.id, ()),
+                deleted=deleted,
             )
         except OperationCompletionError as error:
             if error.code != "OP_COMPLETION_PORT_CLAIMS_UNAVAILABLE":
@@ -790,6 +794,7 @@ class VerificationMixin(OrchestratorCore):
             inputs=self._input_files(attempt),
             artifacts=artifacts,
             base=mission_base_commit(mission.final_report),
+            deleted=result_deletions(self.store, attempt.mission_id, attempt.result_id),
         )
         self._register_copy(
             "verify",
@@ -1053,6 +1058,7 @@ class VerificationMixin(OrchestratorCore):
             inputs=self._input_files(attempt),
             artifacts=artifacts,
             base=mission_base_commit(mission.final_report),
+            deleted=result_deletions(self.store, attempt.mission_id, attempt.result_id),
         )
 
         async def recorder(layer: LayerResult) -> None:

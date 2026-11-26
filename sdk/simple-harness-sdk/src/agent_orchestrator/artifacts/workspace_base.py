@@ -149,6 +149,10 @@ class WritableBase(Protocol):
         self, path: str, data: bytes, *, expected: str | None, executable: bool
     ) -> FileWrite: ...
 
+    def delete_file(self, path: str, *, expected: str) -> FileWrite:
+        """现状已经没有 → ``already``；现状 == ``expected`` → 删；其他 → ``conflict``，不删。"""
+        ...
+
 
 def git_blob_id(data: bytes) -> str:
     """git 给这段字节的 blob 号（SHA-1 对象格式）。写回的三方比对只认这个号。"""
@@ -351,6 +355,28 @@ class DirectoryBase:
                 Path(temporary).unlink(missing_ok=True)
         return FileWrite("applied", current)
 
+    def delete_file(self, path: str, *, expected: str) -> FileWrite:
+        if _path_problem(path) is not None:
+            return FileWrite("refused", None, "invalid_path")
+        if _through_link(self.root, path):
+            return FileWrite("refused", None, "symlink")
+        spelling = _spelling_problem(self.root, path)
+        if spelling == "case_conflict":
+            return FileWrite("refused", None, spelling)
+        try:
+            current = None if spelling == "not_a_directory" else self._current(path)
+        except (OSError, ArtifactStoreError) as error:
+            return FileWrite("failed", None, f"read_failed: {type(error).__name__}")
+        if current is None:
+            return FileWrite("already", None)
+        if current != expected:
+            return FileWrite("conflict", current)
+        try:
+            (self.root / path).unlink()
+        except OSError as error:
+            return FileWrite("failed", current, f"delete_failed: {type(error).__name__}")
+        return FileWrite("applied", current)
+
 
 class GitRepoBase(DirectoryBase):
     """用户的 git 仓库：工作目录里受版本管理的文件 + 未被忽略的新文件（没提交的改动算在内）。
@@ -446,6 +472,15 @@ class InMemoryBase:
         self.files[path] = data
         if executable and current is None:
             self.executable = self.executable | {path}
+        return FileWrite("applied", current)
+
+    def delete_file(self, path: str, *, expected: str) -> FileWrite:
+        current = self.current_hashes([path])[path]
+        if current is None:
+            return FileWrite("already", None)
+        if current != expected:
+            return FileWrite("conflict", current)
+        del self.files[path]
         return FileWrite("applied", current)
 
 
@@ -590,12 +625,14 @@ class BaseRepo:
         files: Mapping[str, bytes],
         *,
         executable: Iterable[str] = (),
+        deleted: Iterable[str] = (),
         message: str = "delivery\n",
     ) -> str:
-        """在 ``parent`` 上叠一组文件（新增或整份替换），提交人、时间固定：同样的改动得到同一个
-        提交号。引用 ``refs/harness/delivery/<提交号>`` 保住它。"""
+        """在 ``parent`` 上叠一组文件（新增或整份替换）、删掉 ``deleted``，提交人、时间固定：同样的
+        改动得到同一个提交号。引用 ``refs/harness/delivery/<提交号>`` 保住它。"""
 
-        for path in files:
+        deleted = sorted(set(deleted))
+        for path in (*files, *deleted):
             # 路径原样进 fast-import 流：换行、引号开头的名字会被 git 读成别的命令
             if _path_problem(path) is not None:
                 raise BaseError("base_repo_failed", f"交付提交不收这个路径：{path!r}")
@@ -612,6 +649,8 @@ class BaseRepo:
             data = files[path]
             mode = "100755" if path in executable else "100644"
             stream += f"M {mode} inline {path}\ndata {len(data)}\n".encode() + data + b"\n"
+        for path in deleted:
+            stream += f"D {path}\n".encode()
         stream += b"done\n"
         self._git("fast-import", "--quiet", "--done", input=bytes(stream))
         commit = self._git("rev-parse", "--verify", temporary).decode().strip()
@@ -619,6 +658,8 @@ class BaseRepo:
         # 写完核对：交付提交 = 父提交的树叠上这些文件，一个不多、一个不少、字节一致
         expected = {path: blob for path, (blob, _mode) in self._tree(parent).items()}
         expected.update({path: git_blob_id(data) for path, data in files.items()})
+        for path in deleted:
+            expected.pop(path, None)
         got = {path: blob for path, (blob, _mode) in self._tree(commit).items()}
         if got != expected:
             raise BaseError("base_repo_failed", "交付提交与要写的文件对不上")

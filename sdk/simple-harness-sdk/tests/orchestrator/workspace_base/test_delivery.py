@@ -107,7 +107,14 @@ def test_the_change_set_is_the_real_changes_against_the_base(tmp_path):
     assert files["tests/test_cli.py"]["test"] is False
     assert files["ledger/money.py"]["test"] is False
     assert change["base_commit"] == base["commit"]
-    assert change["counts"] == {"files": 4, "added": 2, "modified": 2, "tests": 1, "refused": 0}
+    assert change["counts"] == {
+        "files": 4,
+        "added": 2,
+        "modified": 2,
+        "deleted": 0,
+        "tests": 1,
+        "refused": 0,
+    }
     # 交付提交的父提交是底提交；改过的文件保留原来的可执行位
     work = tmp_path / "work.git"
     assert _git(work, "rev-parse", f"{change['commit']}^").strip() == base["commit"]

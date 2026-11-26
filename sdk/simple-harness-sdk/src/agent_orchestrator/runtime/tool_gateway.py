@@ -107,6 +107,17 @@ TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
         "required": ["path", "content"],
         "additionalProperties": False,
     },
+    "workspace_delete_file": {
+        "type": "object",
+        "properties": {
+            "path": {
+                "type": "string",
+                "description": "要删掉的文件（工作区内相对路径；只删文件，不删目录）",
+            },
+        },
+        "required": ["path"],
+        "additionalProperties": False,
+    },
     "workspace_list": {"type": "object", "properties": {}, "additionalProperties": False},
     "run_tests": {
         "type": "object",
@@ -196,6 +207,8 @@ ASSURANCE_EVIDENCE_TOOLS = ("assurance_find_evidence", "assurance_read_evidence"
 #: 按审阅所在任务的范围、只列当前有效；用户 10-02："审阅员通过黑板自己去取"）。
 ASSURANCE_REVIEWER_TOOLS = (*ASSURANCE_EVIDENCE_TOOLS, "knowledge_list", "knowledge_read")
 WORKER_TOOLS = ("workspace_read_file", "workspace_write_file", "workspace_list", "run_tests")
+#: 改动工作区文件的工具：受保护的输入、只读叶子已有的文件，两者同一套拦截
+WRITING_TOOLS = frozenset({"workspace_write_file", "workspace_delete_file"})
 CRITIC_TOOLS = ("workspace_read_file", "workspace_list")
 #: P2.3u P2-2: consecutive ``read_only_existing_file`` refusals on one Attempt
 #: before the Attempt ends as ``read_only_leaf_kept_writing``.  Same width as
@@ -878,6 +891,11 @@ class WorkspaceToolGateway:
                     "path": arguments["path"],
                     "bytes": len(arguments["content"].encode("utf-8")),
                 }
+            elif call.name == "workspace_delete_file":
+                if not binding.writable:
+                    raise WorkspaceError("workspace is read-only")
+                _attempt_workspace(workspace).delete_file(arguments["path"])
+                value = {"path": arguments["path"], "deleted": True}
             elif call.name == "workspace_list":
                 files = _attempt_workspace(workspace).list_files()
                 if binding.denied_prefixes:
@@ -1179,7 +1197,7 @@ class WorkspaceToolGateway:
                     stage="policy",
                     message=f"{path} is denied by the deployment policy",
                 )
-            if call.name == "workspace_write_file" and (
+            if call.name in WRITING_TOOLS and (
                 canonical.casefold()
                 in {
                     _canonical(p).casefold()
@@ -1198,7 +1216,7 @@ class WorkspaceToolGateway:
                     stage="policy",
                     message=f"{path} is a read-only input from an upstream Task",
                 )
-            if call.name == "workspace_write_file" and binding.read_only_writes_blocked:
+            if call.name in WRITING_TOOLS and binding.read_only_writes_blocked:
                 return self._reject(
                     call,
                     record,
@@ -1210,7 +1228,7 @@ class WorkspaceToolGateway:
                         "from; every write is refused"
                     ),
                 )
-            if call.name == "workspace_write_file" and binding.read_only_existing:
+            if call.name in WRITING_TOOLS and binding.read_only_existing:
                 existing = {_canonical(p).casefold() for p in binding.read_only_existing}
                 if canonical.casefold() in existing:
                     streak = self._read_only_existing_streak.get(run_id, 0) + 1

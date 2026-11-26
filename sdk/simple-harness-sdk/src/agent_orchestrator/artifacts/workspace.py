@@ -125,6 +125,15 @@ def _source_bytes(source: Path | bytes, label: str) -> bytes:
         raise WorkspaceError(f"{error.reason}: {label}") from error
 
 
+def _remove(workspace: Workspace, deleted: Sequence[str]) -> None:
+    """按记录删掉尝试删过的文件（已经不在的不算错）。"""
+
+    for relative in deleted:
+        target = workspace.resolve(relative)
+        if target.is_file() and not target.is_symlink():
+            target.unlink()
+
+
 @dataclass(frozen=True, slots=True)
 class Workspace:
     root: Path
@@ -189,6 +198,19 @@ class Workspace:
         except OSError as error:  # 上级是个文件、权限等：交给工具层当作这次调用的错误
             raise WorkspaceError(f"cannot write file {relative}: {error}") from error
         return target
+
+    def delete_file(self, relative: str) -> None:
+        """删一个已有的普通文件（不跟随软链，不删目录）。"""
+
+        if not self.writable:
+            raise WorkspaceError("workspace is read-only")
+        target = self.resolve(relative)
+        if target.is_symlink() or not target.is_file():
+            raise WorkspaceError(f"no such file: {relative}")
+        try:
+            target.unlink()
+        except OSError as error:
+            raise WorkspaceError(f"cannot delete file {relative}: {error}") from error
 
     def write_bytes(self, relative: str, data: bytes) -> Path:
         if not self.writable:
@@ -392,6 +414,7 @@ class WorkspaceManager:
         seed: Mapping[str, str],
         files: Mapping[str, Path | bytes],
         base: str | None = None,
+        deleted: Sequence[str] = (),
     ) -> Workspace:
         """The Mission-level judgment tree (D3-9'): the seed plus every accepted
         artifact of every Task applied in topological order; rebuilt each time and
@@ -409,6 +432,7 @@ class WorkspaceManager:
             for relative, source in files.items():
                 data = source if isinstance(source, bytes) else _source_bytes(source, relative)
                 copy.write_bytes(relative, data)
+            _remove(copy, deleted)
         except WorkspaceError:
             shutil.rmtree(target, ignore_errors=True)
             raise
@@ -429,6 +453,7 @@ class WorkspaceManager:
         inputs: Mapping[str, Path | bytes] | None = None,
         artifacts: Sequence[Artifact] | None = None,
         base: str | None = None,
+        deleted: Sequence[str] = (),
     ) -> Workspace:
         """An independent copy for the Verifier (D12').
 
@@ -465,6 +490,7 @@ class WorkspaceManager:
                     except ArtifactStoreError as error:
                         raise WorkspaceError(f"artifact_unreadable: {error}") from error
                     rebuilt.write_bytes(artifact.path, data)
+                _remove(rebuilt, deleted)
             except WorkspaceError:
                 shutil.rmtree(target, ignore_errors=True)
                 raise

@@ -137,11 +137,13 @@ def build_change_set(
     reserved: Sequence[str],
     superseded: Mapping[str, Sequence[str]] | None = None,
     is_secret: Callable[[str], bool] | None = None,
+    deleted: Mapping[str, str] | None = None,
 ) -> dict[str, Any]:
     """改动集：``produced`` 里和底提交不同的文件（SDK 自己的保留路径不算交付）。
 
     ``base`` 是任务行里的底记录（``final_report["workspace_base"]``）；``superseded`` 是判定树
-    里被覆盖掉的版本（路径 → 那些步骤），照实写进改动集；``is_secret`` 判内容像不像密钥。改动
+    里被覆盖掉的版本（路径 → 那些步骤），照实写进改动集；``is_secret`` 判内容像不像密钥；
+    ``deleted`` 是验收通过的步骤删掉的文件（路径 → 步骤），只认底里有、判定树里没有的。改动
     （含不能写回的，路径本身不合法的除外）叠成交付提交：判定树 = 底 + 种子 + 资料 + 这些改动，种子与
     资料不交付。"""
 
@@ -190,10 +192,46 @@ def build_change_set(
                 "refused": refused,
             }
         )
+    produced_paths = {item.path for item in produced}
+    removed: list[str] = []
+    for path, task_id in sorted(dict(deleted or {}).items()):
+        entry = manifest.get(path)
+        if entry is None or path in produced_paths:
+            continue
+        refused = _refusal(
+            path,
+            b"",
+            exists=True,
+            withheld=withheld,
+            spellings=spellings,
+            is_secret=None,
+        )
+        removed.append(path)
+        files.append(
+            {
+                "path": path,
+                "op": "delete",
+                "test": is_test_path(path),
+                "base_blob": entry.blob,
+                "blob": None,
+                "sha256": None,
+                "size": 0,
+                "readable": entry.readable,
+                "executable": entry.executable,
+                "artifact_id": None,
+                "task_id": task_id,
+                "overridden_steps": [],
+                "refused": refused,
+            }
+        )
+    files.sort(key=lambda item: item["path"])
     commit = bases.commit_on(
         base_commit,
         changed,
-        executable=[item["path"] for item in files if item["executable"]],
+        executable=[
+            item["path"] for item in files if item["executable"] and item["op"] != "delete"
+        ],
+        deleted=removed,
     )
     return {
         "base_commit": base_commit,
@@ -205,6 +243,7 @@ def build_change_set(
             "files": len(files),
             "added": sum(item["op"] == "add" for item in files),
             "modified": sum(item["op"] == "modify" for item in files),
+            "deleted": sum(item["op"] == "delete" for item in files),
             "tests": sum(bool(item["test"]) for item in files),
             "refused": sum(item["refused"] is not None for item in files),
         },
@@ -267,7 +306,11 @@ def apply_change_set(
         if unknown:
             raise DeliveryRefused("invalid_request", f"这些路径不在改动集里：{unknown[:5]}")
         chosen = sorted(set(paths))
-    writable = [path for path in chosen if entries[path]["refused"] is None]
+    writable = [
+        path
+        for path in chosen
+        if entries[path]["refused"] is None and entries[path]["op"] != "delete"
+    ]
     blobs = bases.blobs(sorted({str(entries[path]["blob"]) for path in writable}))
     receipt: list[dict[str, Any]] = []
     for path in chosen:
@@ -283,12 +326,15 @@ def apply_change_set(
             )
             continue
         try:
-            outcome = target.write_file(
-                path,
-                blobs[str(entry["blob"])],
-                expected=entry["base_blob"],
-                executable=bool(entry["executable"]),
-            )
+            if entry["op"] == "delete":
+                outcome = target.delete_file(path, expected=str(entry["base_blob"]))
+            else:
+                outcome = target.write_file(
+                    path,
+                    blobs[str(entry["blob"])],
+                    expected=entry["base_blob"],
+                    executable=bool(entry["executable"]),
+                )
         except Exception as error:  # noqa: BLE001 - 宿主的适配器出什么错都记成这个文件写失败
             receipt.append(
                 {

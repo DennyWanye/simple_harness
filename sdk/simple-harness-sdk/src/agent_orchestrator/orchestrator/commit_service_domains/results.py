@@ -129,8 +129,11 @@ class ResultCommitsMixin(CommitServiceCore):
         artifacts: Sequence[Artifact],
         usage_refs: Sequence[str],
         port_claims: Sequence[Any] = (),
+        deleted: Sequence[str] = (),
     ) -> StoredResult:
         """ResultSubmitted (§16.2): Attempt RUNNING → SUBMITTED, Task ACTIVE → VERIFYING.
+
+        ``deleted``：这次尝试删掉的起步文件（有底的任务才会有），记在事件里，没有就不加键。
 
         Idempotent on ``(attempt_id, turn_id)``: a duplicate delivery returns the
         stored result and appends nothing (§17.4).
@@ -232,6 +235,7 @@ class ResultCommitsMixin(CommitServiceCore):
                     "result_id": envelope.id,
                     "outcome": str(envelope.outcome),
                     "artifacts": list(stored.artifacts),
+                    **({"deleted": sorted(deleted)} if deleted else {}),
                     "claims": len(envelope.claims),
                     **(
                         {"completion_port_claims": list(completion_claims)}

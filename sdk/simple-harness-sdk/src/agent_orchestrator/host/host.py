@@ -787,6 +787,9 @@ class OrchestrationHost:
             if sandboxed
             else (*WORKSPACE_TOOLS, *KNOWLEDGE_TOOLS, "session_history_read")
         )
+        if self._workspace_base is not None:
+            # 接了底的宿主：有底的任务里能写的执行者也能删（见 governance.policies.effective_tools）
+            base_tools = (*base_tools, "workspace_delete_file")
         runtime_tools = dict(self.tools)
         if sandboxed:
             command = sandbox_run_tool(self.executor, self.root / "workspaces")

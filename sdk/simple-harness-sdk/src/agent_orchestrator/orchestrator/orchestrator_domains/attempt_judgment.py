@@ -77,6 +77,7 @@ from ..hierarchical_dispatch import HierarchicalDispatch, WriteConflictPending
 from ..occurrence_tasks import read_only_leaf
 from ..planning_retry import pending_retry_permit, retry_decision_required
 from ..planning_runtime_block import pending_block
+from ..result_deletions import result_deletions
 from ..scoped_content_review import task_content_prompt_scope
 from ..worker_context import parent_goal as read_parent_goal
 from ..worker_context import upstream_steps
@@ -178,7 +179,7 @@ class AttemptJudgmentMixin(OrchestratorCore):
         """The judgment tree (:meth:`_judgment_tree`), with what it superseded recorded once
         per Mission judgment tree."""
 
-        tree, superseded, contributions = self._judgment_tree(mission, new_mode, tasks)
+        tree, superseded, contributions, _deleted = self._judgment_tree(mission, new_mode, tasks)
         self.commit.record_artifact_merge_not_applicable(
             mission.id,
             subject=f"{mission.id}:judge:artifact-merge",
@@ -196,8 +197,10 @@ class AttemptJudgmentMixin(OrchestratorCore):
 
     def _judgment_tree(
         self, mission: Mission, new_mode: HierarchicalDispatch, tasks: Sequence[Task]
-    ) -> tuple[list[UpstreamInput], list[dict[str, Any]], int]:
+    ) -> tuple[list[UpstreamInput], list[dict[str, Any]], int, dict[str, str]]:
         """The Mission Judge's tree for a hierarchical Mission (P2.3k / defect N3).
+
+        第四个返回值：这些验收删掉的起步文件（路径 → 步骤），判定树里没有别的产出再写它的才算。
 
         Read from what the root ``GoalResolution`` was formed out of and nothing else:
         the CURRENT acceptances of the adopted plan (``root_contributions``), each
@@ -245,12 +248,16 @@ class AttemptJudgmentMixin(OrchestratorCore):
             weight = (int(task_id in linked), int(port is not None), rank)
             offered.setdefault(artifact.path, []).append((weight, task_id, artifact, port))
 
+        deletions: dict[str, str] = {}
         for acceptance in acceptances:
             task_id = str(acceptance.task_id)
             rank = rank_of[str(acceptance.acceptance_id)]
             task = tasks_by_id.get(task_id) or self.store.get_task(task_id)
             for artifact_id in () if task is None else task.accepted_artifacts:
                 place(task_id, self.store.get_artifact(artifact_id), rank, None)
+            if task is not None:
+                for path in result_deletions(self.store, mission.id, task.accepted_result_id):
+                    deletions.setdefault(path, task_id)
         for row in semantics.list_acceptance_outputs(mission.id):
             acceptance_id = str(row.get("acceptance_id", ""))
             if acceptance_id not in rank_of:
@@ -315,7 +322,8 @@ class AttemptJudgmentMixin(OrchestratorCore):
                     "superseded": losers,
                 }
             )
-        return [tree[path] for path in sorted(tree)], superseded, len(acceptances)
+        deleted = {path: task for path, task in deletions.items() if path not in tree}
+        return [tree[path] for path in sorted(tree)], superseded, len(acceptances), deleted
 
     async def _next_attempt(
         self,
@@ -478,6 +486,15 @@ class AttemptJudgmentMixin(OrchestratorCore):
         # D6-7: Mission ∩ Task ∩ Role ∩ Deployment, frozen into the intent below
         # P2.3u: a hierarchical read-only leaf also drops patch/apply-class tools.
         read_only, allowed = self._leaf_tools(mission, task, role, new_mode)
+        if "workspace_delete_file" in allowed:
+            # 有底的任务多一件删除工具（见 effective_tools）：任务包的工具清单照实写上，并说明用法
+            granted = dict(package.package.get("tools_and_permissions") or {})
+            granted["allowed_tools"] = [*granted.get("allowed_tools", ()), "workspace_delete_file"]
+            granted["delete_file"] = (
+                "workspace_delete_file(path) 删掉工作区里的一个文件（仓库原有的也可以）；"
+                "删除和修改一样会逐个交给使用方审核"
+            )
+            package = _seal({**dict(package.package), "tools_and_permissions": granted})
         # D6-8: the Attempt's tool-call cap = the deployment's per-turn cap, narrowed by the
         # Task budget's own dimension; it is reserved up front and enforced at the gateway
         tool_cap = self._config.max_tool_calls_per_turn
@@ -815,6 +832,7 @@ class AttemptJudgmentMixin(OrchestratorCore):
             role_tools=(*role.tool_names, *self._config.domain_tools),
             deployment=self._config.deployment_policy,
             read_only_leaf=read_only,
+            on_base=mission_base_commit(mission.final_report) is not None,
         )
         if operator_tool_limit is not None:
             allowed = tuple(name for name in allowed if name in operator_tool_limit)
@@ -941,7 +959,9 @@ class AttemptJudgmentMixin(OrchestratorCore):
         if not isinstance(base, Mapping) or new_mode is None:
             return None
         try:
-            tree, superseded, _contributions = self._judgment_tree(mission, new_mode, tasks)
+            tree, superseded, _contributions, deleted = self._judgment_tree(
+                mission, new_mode, tasks
+            )
             produced = []
             for item in tree:
                 artifact = self.store.get_artifact(item.artifact_id)
@@ -962,6 +982,7 @@ class AttemptJudgmentMixin(OrchestratorCore):
                     str(row["path"]): list(row["superseded_task_ids"]) for row in superseded
                 },
                 is_secret=lambda text: bool(find_secrets(text)),
+                deleted=deleted,
             )
         except (ArtifactConflict, ArtifactStoreError, BaseError) as error:
             logger.debug("change_set_failed", exc_info=True)
@@ -1020,7 +1041,11 @@ class AttemptJudgmentMixin(OrchestratorCore):
         # running pytest in its own; the judgment Commit itself is idempotent
         view_id = f"{mission.id}-judge-{self._owner}"
         copy = self.assembled.workspaces.integrated_copy(
-            view_id, seed=seed, files=files, base=mission_base_commit(mission.final_report)
+            view_id,
+            seed=seed,
+            files=files,
+            base=mission_base_commit(mission.final_report),
+            deleted=sorted(self._judgment_tree(mission, new_mode, tasks)[3]),
         )
         self._register_copy(
             "judge",

@@ -300,6 +300,7 @@ def effective_tools(
     role_tools: Sequence[str],
     deployment: DeploymentPolicy,
     read_only_leaf: bool = False,
+    on_base: bool = False,
 ) -> tuple[str, ...]:
     """Mission ∩ Task ∩ Role ∩ Deployment, in the Role template's order (plan §6.1).
 
@@ -317,6 +318,14 @@ def effective_tools(
             if name not in READ_ONLY_LEAF_HIDDEN_TOOLS
             and (name not in deployment.domain_tools or name in deployment.domain_read_only_tools)
         )
+    if (
+        on_base
+        and "workspace_write_file" in names
+        and "workspace_delete_file" in deployment.allowed_tools
+        and not read_only_leaf
+    ):
+        # 有底的任务：能写就能删（删除和把文件写空是同一种权限）；删除交付时照样逐文件三方比对
+        names = (*names, "workspace_delete_file")
     return names
 
 

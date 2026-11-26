@@ -1,3 +1,5 @@
+最后更新：2026-11-26（删除文件，P2b 第 2 项，分支 `sdk/delete-file`，未发版）。有底任务里能写的执行者也能删文件；删除跟着结果登记，验收副本与判定树里那个文件不在；改动集多一种 `delete`，写回仍是底那一版才删。删除暂不传给下游步骤。
+
 最后更新：2026-11-26（SDK 自己的路径搬到 `.harness/`，P2b 第 1 项，分支 `sdk/harness-root`，未发版）。资料根 `sources/` → `.harness/sources/`、草稿 `.harness/scratch/` 不交付、判定树落选产出 `.harness/accepted-outputs/`；Swift 包仓库根目录的 `Sources/` 不再被当成 SDK 保留路径扣留。
 
 最后更新：2026-11-26（有底的任务交付：改动集与写回，issue #53，分支 `sdk/delivery`，未发版）。P1（#51，PR #52 已合并）让任务在「底提交」上干活；这一段把结果交回去：判定时给出相对底的改动集（`final_report.change_set`，测试改动单列、不能写回的标原因），宿主 `delivery()` 看 diff、`apply_delivery()` 逐文件三方比对写回（冲突不写、同一操作键不重放、写完复核），`GitRepoBase` 只写工作目录、不碰 `.git`。删除工具、步骤间同一底文件的合并、`.harness/` 保留根在 P2b。
