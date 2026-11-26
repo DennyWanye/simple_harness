@@ -7,7 +7,7 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
@@ -15,12 +15,14 @@ from typing import TYPE_CHECKING, Any, cast
 from simple_harness.agents import AgentConfig, AgentLimits
 
 from ...artifacts.delivery import Produced, build_change_set
+from ...artifacts.input_bindings import MaterialisationEntry, materialise_plan
 from ...artifacts.judgment_merge import (
     JudgmentFile,
+    MergeFacts,
     Placement,
-    ambiguous_paths,
     place_judgment_file,
 )
+from ...artifacts.paths import ambiguous_paths
 from ...artifacts.store import ArtifactStoreError
 from ...artifacts.versioning import ArtifactConflict, UpstreamInput
 from ...artifacts.workspace_base import (
@@ -93,6 +95,8 @@ logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from ...contracts.resolution import GoalResolution
+    from ...storage.store import Store
+    from ..commit_service import CommitService
 
 
 def _turn_error_code(failure: Mapping[str, Any]) -> str | None:
@@ -172,18 +176,58 @@ def retry_feedback(
     return feedback, verifier_feedback
 
 
+def _frozen_parents(
+    commit: CommitService, store: Store, mission_id: str
+) -> Callable[[Artifact], list[Artifact]]:
+    """查询同一目标的所有已核验绑定，同一尝试只读一次冻结清单。"""
+    inputs_by_attempt: dict[str, dict[str, MaterialisationEntry]] = {}
+
+    def upstream(artifact: Artifact) -> list[Artifact]:
+        attempt_id = artifact.attempt_id
+        if attempt_id not in inputs_by_attempt:
+            try:
+                context = commit.taskgraph_attempt_context(mission_id, attempt_id)
+            except StoreError as error:
+                raise ArtifactConflict(f"尝试 {attempt_id} 的冻结输入无法核验：{error}") from error
+            # 同字节的多个端口可物化成一个文件；用派发当时的规则恢复全部绑定。
+            plan = materialise_plan(context.manifest, context.target_rules)
+            if plan.problems:
+                raise ArtifactConflict(f"尝试 {attempt_id} 的冻结目标有冲突")
+            inputs_by_attempt[attempt_id] = {entry.target.path: entry for entry in plan.entries}
+        entry = inputs_by_attempt[attempt_id].get(artifact.path)
+        if entry is None:
+            return []
+        parents = []
+        for artifact_id in entry.artifact_ids:
+            parent = store.get_artifact(artifact_id)
+            if (
+                parent is not None
+                and parent.id == artifact_id
+                and parent.mission_id == mission_id
+                and parent.content_hash == entry.content_hash
+            ):
+                parents.append(parent)
+        return parents
+
+    return upstream
+
+
 class AttemptJudgmentMixin(OrchestratorCore):
     """Judgment inputs, next-attempt selection and criteria evaluation."""
 
     __slots__ = ()
 
     def _hierarchical_judgment_inputs(
-        self, mission: Mission, new_mode: HierarchicalDispatch, tasks: Sequence[Task]
-    ) -> list[JudgmentFile]:
-        """The judgment tree (:meth:`_judgment_tree`), with what it superseded recorded once
-        per Mission judgment tree."""
-
-        tree, superseded, contributions = self._judgment_tree(mission, new_mode, tasks)
+        self,
+        mission: Mission,
+        new_mode: HierarchicalDispatch,
+        tasks: Sequence[Task],
+        sources: Mapping[str, bytes],
+    ) -> tuple[list[JudgmentFile], set[str]]:
+        """记录本次判定的版本选择，并把需要扣留的拼写传给判定副本。"""
+        tree, superseded, contributions, spellings = self._judgment_tree(
+            mission, new_mode, tasks, sources
+        )
         self.commit.record_artifact_merge_not_applicable(
             mission.id,
             subject=f"{mission.id}:judge:artifact-merge",
@@ -202,11 +246,15 @@ class AttemptJudgmentMixin(OrchestratorCore):
                 f"port / last writer of {[item['path'] for item in superseded]}; a linked loser "
                 "is kept under .harness/accepted-outputs/; the legacy merge is not applied"
             )
-        return tree
+        return tree, spellings
 
     def _judgment_tree(
-        self, mission: Mission, new_mode: HierarchicalDispatch, tasks: Sequence[Task]
-    ) -> tuple[list[JudgmentFile], list[dict[str, Any]], int]:
+        self,
+        mission: Mission,
+        new_mode: HierarchicalDispatch,
+        tasks: Sequence[Task],
+        sources: Mapping[str, bytes],
+    ) -> tuple[list[JudgmentFile], list[dict[str, Any]], int, set[str]]:
         """只取根结论当前采用的产物。底里已有的同名文本做三方合并；冲突或不能合并时，
         仍按根要求、声明端口、验收次序选版本。根要求引用的原端口证据保留在 SDK 目录。"""
 
@@ -260,22 +308,10 @@ class AttemptJudgmentMixin(OrchestratorCore):
         if base is not None:
             manifest = self.assembled.workspaces.bases.manifest(base)
             withheld = (mission.final_report or {})["workspace_base"].get("withheld", {})
-            spellings = ambiguous_paths((*manifest, *offered, *withheld))
+            seed = (mission.final_report or {}).get("workspace_seed", {})
+            spellings = ambiguous_paths((*manifest, *offered, *withheld, *seed, *sources))
 
-        upstream_by_attempt: dict[str, Sequence[UpstreamInput]] = {}
-
-        def upstream(artifact: Artifact) -> Sequence[UpstreamInput]:
-            attempt_id = artifact.attempt_id
-            if attempt_id not in upstream_by_attempt:
-                try:
-                    context = self.commit.taskgraph_attempt_context(mission.id, attempt_id)
-                except StoreError as error:
-                    raise ArtifactConflict(
-                        f"尝试 {attempt_id} 的冻结输入无法核验：{error}"
-                    ) from error
-                upstream_by_attempt[attempt_id] = context.upstream
-            return upstream_by_attempt[attempt_id]
-
+        upstream = _frozen_parents(self.commit, self.store, mission.id)
         for path in sorted(offered):
             files, overridden = place_judgment_file(
                 path,
@@ -288,7 +324,12 @@ class AttemptJudgmentMixin(OrchestratorCore):
             tree.update((file.path, file) for file in files)
             if overridden:
                 superseded.append(overridden)
-        return [tree[path] for path in sorted(tree)], superseded, len(acceptances)
+        if base is not None:
+            # 根要求可能另外保留原端口证据，它们的目录也和种子、资料共享判定副本。
+            spellings.update(ambiguous_paths((*manifest, *tree, *withheld, *seed, *sources)))
+            for path in spellings.intersection(tree):
+                tree[path] = replace(tree[path], facts=MergeFacts(merge_skipped="path_spelling"))
+        return [tree[path] for path in sorted(tree)], superseded, len(acceptances), spellings
 
     async def _next_attempt(
         self,
@@ -914,7 +955,9 @@ class AttemptJudgmentMixin(OrchestratorCore):
         if not isinstance(base, Mapping) or new_mode is None:
             return None
         try:
-            tree, superseded, _contributions = self._judgment_tree(mission, new_mode, tasks)
+            tree, superseded, _, _ = self._judgment_tree(
+                mission, new_mode, tasks, self._current_source_files(mission)
+            )
             produced = []
             for item in tree:
                 artifact = item.artifact
@@ -961,7 +1004,10 @@ class AttemptJudgmentMixin(OrchestratorCore):
         if new_mode is None:
             raise ContractError("hierarchical_assembly_missing: no judgment without the assembly")
         try:
-            merged = self._hierarchical_judgment_inputs(mission, new_mode, tasks)
+            sources = self._current_source_files(mission)
+            merged, spellings = self._hierarchical_judgment_inputs(
+                mission, new_mode, tasks, sources
+            )
         except (ArtifactConflict, ArtifactStoreError, BaseError) as error:
             self._commit_fail_mission(
                 mission.id,
@@ -970,18 +1016,25 @@ class AttemptJudgmentMixin(OrchestratorCore):
             )
             self._note(f"mission {mission.id} failed at judgment: {error}")
             return None
-        seed = dict((mission.final_report or {}).get("workspace_seed", {}))
+        seed = {
+            path: value
+            for path, value in (mission.final_report or {}).get("workspace_seed", {}).items()
+            if path not in spellings
+        }
         files: dict[str, Path | bytes] = {}
         artifacts: list[Artifact] = []
         try:
             for item in merged:
+                if item.path in spellings:
+                    continue
                 files[item.path] = item.read()
                 artifacts.extend(item.sources)
             # 2026-10-06 真实模型验收（编程题）：每次尝试的工作区都带着任务的资料，模型写的测试读它们；
             # 任务级判定树却只有产物，pytest 在这里找不到 sources/ 就全红，任务被判"要求未满足"。
             # 判定树同样带现行版本的资料（产物从不写在资料根下，不会覆盖）。
-            for path, data in self._current_source_files(mission).items():
-                files.setdefault(path, data)
+            for path, data in sources.items():
+                if path not in spellings:
+                    files.setdefault(path, data)
         except ArtifactStoreError as error:
             self._commit_fail_mission(
                 mission.id,
@@ -1058,6 +1111,13 @@ class AttemptJudgmentMixin(OrchestratorCore):
                 relative = criterion.removeprefix("file:")
                 try:
                     met = copy.resolve(relative).is_file()
+                    if met and relative in spellings:
+                        # 折叠拼写的磁盘也能用别名读到底文件，只认可底中确实存在的拼写。
+                        base_commit = mission_base_commit(mission.final_report)
+                        met = (
+                            base_commit is not None
+                            and relative in self.assembled.workspaces.bases.manifest(base_commit)
+                        )
                 except Exception:  # noqa: BLE001
                     logger.debug("evaluate_criteria_is_file_failed", exc_info=True)
                     met = False

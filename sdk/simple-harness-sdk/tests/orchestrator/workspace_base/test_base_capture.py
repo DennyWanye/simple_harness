@@ -314,3 +314,11 @@ def test_a_long_listing_is_summarised_by_top_level_directory():
     paths = [f"web/asset{i}.js" for i in range(500)] + ["README.md", "ledger/book.py"]
     assert workspace_listing(paths) == ["README.md", "ledger/ (1 个文件)", "web/ (500 个文件)"]
     assert workspace_listing(["b.md", "a.md"]) == ["a.md", "b.md"]
+
+
+def test_canonical_unicode_aliases_are_withheld_before_materialising_the_base(tmp_path):
+    repo = BaseRepo(tmp_path / "work.git")
+    files = {"café/one.md": b"one", "cafe\u0301/two.md": b"two", "safe.md": b"safe"}
+    record = _capture(repo, InMemoryBase(files))
+    assert repo.files(record.commit) == {"safe.md": b"safe"}
+    assert set(record.withheld) == set(files) - {"safe.md"}

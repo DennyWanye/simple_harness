@@ -1,3 +1,7 @@
+最后更新：2026-11-27（SDK 判定树三方合并核验补修，分支 `sdk/judgment-merge`，未发版）。
+
+有底任务现按每条路径的冻结继承关系合并，整组扣留拼写歧义，宿主可查选回底字节时的冲突及覆盖步骤。判定副本、交付 blob 与目录写回已有接缝回归，三项脚本宿主整局待沙箱外复验。[编排架构与本机证据索引](AGENT_ORCHESTRATION.md)
+
 最后更新：2026-11-26（SDK 判定树按底合并，分支 `sdk/judgment-merge`，工作目录实现，未发版）。
 
 有底任务的并行步骤修改同一文本时，判定副本、改动集与交付提交使用合并字节；冲突、来源步骤及拼写歧义可查。真实 Git 和判定副本的接缝测试已通过，宿主整局在受限环境中停于恢复阶段，待沙箱外验证。实现状态与边界见 [编排架构](AGENT_ORCHESTRATION.md) 和 [判定合并测试](../sdk/simple-harness-sdk/tests/orchestrator/workspace_base/test_judgment_merge.py)。

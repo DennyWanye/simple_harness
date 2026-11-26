@@ -36,7 +36,7 @@ from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 from typing import Protocol, runtime_checkable
 
-from .paths import under_prefix
+from .paths import ambiguous_paths, under_prefix
 from .store import ArtifactStoreError, read_nofollow
 
 GIT_MIN_VERSION = (2, 38)
@@ -905,22 +905,11 @@ def capture_base(
             withheld[item.path] = "secret_name"
         else:
             candidates[item.path] = item
-    # 只差大小写的路径（文件或任一级目录）在不区分大小写的文件系统上会落到同一处：都扣留
-    spellings: dict[str, set[str]] = {}
-    for path in candidates:
-        parts = PurePosixPath(path).parts
-        for depth in range(1, len(parts) + 1):
-            prefix = "/".join(parts[:depth])
-            spellings.setdefault(prefix.casefold(), set()).add(prefix)
-    clashing = {key for key, names in spellings.items() if len(names) > 1}
-    if clashing:
-        for path in list(candidates):
-            parts = PurePosixPath(path).parts
-            if any(
-                "/".join(parts[:depth]).casefold() in clashing for depth in range(1, len(parts) + 1)
-            ):
-                withheld[path] = "case_conflict"
-                candidates.pop(path)
+    # 底也会铺到折叠大小写或规范化 Unicode 的磁盘，须先扣留整组歧义路径。
+    for path in ambiguous_paths((*candidates, *withheld)):
+        if path in candidates:
+            withheld[path] = "case_conflict"
+            candidates.pop(path)
     total = sum(item.size for item in candidates.values())
     if len(candidates) > limits.max_files or total > limits.max_bytes:
         raise BaseTooLarge(len(candidates), total, limits)

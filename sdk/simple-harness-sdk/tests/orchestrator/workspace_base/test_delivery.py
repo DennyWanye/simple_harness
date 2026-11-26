@@ -153,11 +153,14 @@ def test_paths_the_base_withheld_or_that_clash_are_marked_not_to_be_written(tmp_
     )
     refused = {item["path"]: item["refused"] for item in change["files"]}
     assert refused == {
-        "ledger/money.py": "case_conflict",
+        "ledger/money.py": "path_spelling",
         "config/.env.local": "withheld:secret_name",
         "deploy/prod.pem": "secret_name",
     }
     assert change["counts"]["refused"] == 3
+    assert repo.files(change["commit"], ["Ledger/money.py", "ledger/money.py"]) == {
+        "Ledger/money.py": MONEY
+    }
 
 
 def test_steps_whose_version_was_overridden_are_named(tmp_path):

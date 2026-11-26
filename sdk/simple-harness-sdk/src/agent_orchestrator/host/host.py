@@ -1860,6 +1860,8 @@ class OrchestrationHost:
             row["diff"] = None
             if item.get("refused") in {"invalid_path", "ignored"}:
                 row["diff_omitted"] = "invalid_path"  # 路径不合法，不在交付提交里
+            elif item.get("refused") == "path_spelling":
+                row["diff_omitted"] = "path_spelling"
             elif not item.get("readable"):
                 row["diff_omitted"] = "binary_or_large"
             else:
@@ -1877,6 +1879,7 @@ class OrchestrationHost:
             "location": change.get("location"),
             "counts": change["counts"],
             "files": files,
+            "unchanged_merge_facts": change.get("unchanged_merge_facts", []),
             "applies": self._deliveries().receipts(mission_id),
         }
 

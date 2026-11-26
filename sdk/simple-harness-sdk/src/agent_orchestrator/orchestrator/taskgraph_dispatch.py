@@ -262,6 +262,7 @@ class TaskGraphAttemptContext:
     manifest: InputManifest
     network: TaskNetworkSnapshot
     upstream: tuple[UpstreamInput, ...]
+    target_rules: TargetRules
 
 
 ExecutionRecheck = Callable[
@@ -462,6 +463,7 @@ class TaskGraphDispatchBinding:
                 manifest=manifest,
                 network=network,
                 upstream=upstream,
+                target_rules=decode_target_rules(_frozen_binding(intent)["target_rules"]),
             )
 
     def record(

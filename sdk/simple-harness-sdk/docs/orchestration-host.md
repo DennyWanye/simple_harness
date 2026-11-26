@@ -961,8 +961,8 @@ host.base  # {"enabled": True, "git": "2.54.0"}；没有 git 2.38+ 时 enabled=F
 | 错误码 | `base_unavailable`（宿主没接底却带了 `base_scope`，或 git 不可用）、`base_too_large`、`invalid_request`（范围写法不对、种子与底重名）、`base_repo_failed`（工作仓库的 git 命令失败，说明里带 git 的报错） |
 | 幂等 | 同一个 `idempotency_key` 重试沿用原任务的底，不重拍 |
 | SDK 自己的路径 | 都在 `.harness/` 下：任务资料 `.harness/sources/`（会话委派带的资料自动放到这里）、执行者草稿 `.harness/scratch/`（照常传给后续步骤，不交给使用方）、判定树里落选的产出 `.harness/accepted-outputs/`。使用方仓库里的 `Sources/`、`sources/` 照常进底。直接带资料建任务时路径写 `.harness/sources/...`（以前是 `sources/...`）；`file:` 条件不能指向 `.harness/`、`.assurance/`（回 `file_criterion_reserved_path`） |
-| 两步改同一个底文件 | 判定时，以底提交中的文本为共同祖先，按验收顺序合并。同一路径已冻结给下游的上游版本由后继承接。干净合并的字节同时用于任务判定和交付。 |
-| 合并边界 | 底或产物不可读、双方新增文件时沿用覆盖规则。路径任一级只差大小写或 Unicode 规范化拼写时，保留原拼写，并记 `merge_skipped: "path_spelling"`。 |
+| 两步改同一个底文件 | 判定按文件追溯每步实际收到的冻结输入。兄弟分支先以共同收到的版本合并，独立分支再以任务底合并。每个目标路径上的全部绑定都按产物 ID 和内容哈希核对。干净合并的字节同时用于任务判定和交付。 |
+| 合并边界 | 底或产物不可读、双方新增文件时沿用覆盖规则。文件名或任一级目录只差大小写、Unicode 规范化拼写时，整组产出记 `refused: "path_spelling"`。判定副本和交付提交保留底中已有的精确条目，跳过新增拼写。 |
 | 还没有的 | 删除文件的工具。 |
 
 ### 交付：改动集与写回
@@ -971,7 +971,9 @@ host.base  # {"enabled": True, "git": "2.54.0"}；没有 git 2.38+ 时 enabled=F
 
 干净合并的文件条目以 `merged_steps` 列出来源步骤，`artifact_id` 和 `task_id` 均为 `null`。用条目的 `blob` 识别交付字节。根要求引用的原端口产物仍可在判定副本的 `.harness/accepted-outputs/` 下查验。
 
-合并冲突时按根要求、声明端口、验收先后选取原版本。条目的 `merge_conflict` 列出冲突步骤，`overridden_steps` 列出实际被覆盖的步骤，两份名单可能不同。若保留的字节等于底，事实列在 `change_set.unchanged_merge_facts`。判定事件也留有记录。派发前的写入目标与上游输入冲突检查照常生效，可能先把问题交给规划器。到达任务级判定时根结论已经形成，这里只记录新发现的冲突。
+拼写歧义的条目同时带有 `merge_skipped` 和 `refused`。从底保留的文件报告其底 blob、SHA-256 和大小，底中没有该拼写时这三个字段均为 `null`。`proposed_artifact_id` 标识被拒的候选产物。宿主省略这类条目的 diff，全量或点名写回均返回 `refused`。同一交付中的其他文件仍可单独核对和写回。
+
+合并冲突时按根要求、声明端口、验收先后选取原版本。条目的 `merge_conflict` 列出冲突步骤，`overridden_steps` 列出实际被覆盖的步骤，两份名单可能不同。若保留的字节等于底，文件不计为改动。即使 `files` 为空，也可在 `host.delivery(mission_id)["unchanged_merge_facts"]` 和最终改动集的同名字段按路径查到这两份名单。判定事件也留有记录。派发前的写入目标与上游输入冲突检查照常生效，可能先把问题交给规划器。到达任务级判定时根结论已经形成，这里只记录新发现的冲突。
 
 ```python
 view = host.delivery(mission_id)
@@ -986,8 +988,8 @@ receipt = host.apply_delivery(mission_id, operation_key="点击-123", paths=None
 
 | 事 | 说明 |
 |---|---|
-| 改动集里有什么 | 判定树里和底提交内容不同的文件：新增（`add`）或修改（`modify`）。没动的底文件、SDK 自己的路径（`.harness/` 下的资料、草稿、落选产出）不在里面。`test: true` = 改了底里**已有的**测试文件，或新增 / 修改测试配置（`conftest.py`、`pytest.ini`、`tox.ini`、`.coveragerc`、`pyproject.toml`、`setup.cfg`）；新写的测试文件不算。交付时单列给人看，自动写回的规则不要放过它们 |
-| 不能写回的 | `refused` 写着原因：底拍快照时扣留过的路径（`withheld:<原因>`）、凭据文件名（`secret_name`）、内容像密钥（`secret_content`；按通用模式判，解析 PEM 的代码、示例 `Bearer` 串也会被拦，这类文件请人手动处理）、与底里已有路径只差大小写（`case_conflict`）。它们照样在交付提交和 diff 里，只是不写回。路径本身不合法的（带换行、引号开头、git 不收的写法，`invalid_path`）只列出来，不进交付提交、没有 diff |
+| 改动集里有什么 | 判定树里和底提交内容不同的文件：新增（`add`）或修改（`modify`）。拼写歧义的提议也逐条列出并计入 `refused`。其余没动的底文件、SDK 自己的路径（`.harness/` 下的资料、草稿、落选产出）不在里面。`test: true` = 改了底里**已有的**测试文件，或新增 / 修改测试配置（`conftest.py`、`pytest.ini`、`tox.ini`、`.coveragerc`、`pyproject.toml`、`setup.cfg`）；新写的测试文件不算。交付时单列给人看，自动写回的规则不要放过它们 |
+| 不能写回的 | `refused` 写着原因：底拍快照时扣留过的路径（`withheld:<原因>`）、凭据文件名（`secret_name`）、内容像密钥（`secret_content`；按通用模式判，解析 PEM 的代码、示例 `Bearer` 串也会被拦，这类文件请人手动处理）。这些条目可在交付提交和 diff 里查看。拼写歧义按 `path_spelling` 扣留整组，见上文。路径本身不合法的（带换行、引号开头、git 不收的写法，`invalid_path`）只列出来，不进交付提交、没有 diff |
 | 看 diff | `delivery()` 给每个文本文件附相对底的 unified diff（工作仓库里两个提交之间算，不走用户的外部 diff 配置）；二进制或超过 512 KiB 的文件、超过 20 万字符的 diff 不附（`diff_omitted`） |
 | 谁能写回 | 只有宿主：人点了，或宿主自己的档位规则。模型没有这个工具。任务完成（`COMPLETED`）后才能写，否则 `delivery_not_ready` |
 | 怎么写 | 逐文件三方比对：现在的文件仍是底里那一版 → 写；已经是新内容 → `already`；其他（任务进行时使用方改过）→ `conflict`，不写，回执带三个 blob 号供界面显示三方差异。临时文件写好以后、改名之前再比一次现状，比对之后使用方刚存的盘不会被覆盖（只剩改名那一下的窗口：写回时别同时编辑这些文件）。写完按现状复核，核不上记 `failed`（`verify_mismatch`；读不回来记 `verify_failed`） |

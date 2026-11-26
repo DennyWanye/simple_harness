@@ -3,11 +3,13 @@
 
 import asyncio
 import json
+from hashlib import sha256
 from pathlib import Path
 
+import pytest
 from test_host_base import _host, _mission
 
-from agent_orchestrator.artifacts.workspace_base import InMemoryBase, git_blob_id
+from agent_orchestrator.artifacts.workspace_base import DirectoryBase, InMemoryBase, git_blob_id
 from agent_orchestrator.testing.fixtures import package_of
 from agent_orchestrator.testing.scripted_replies import (
     LayeredScriptedProvider,
@@ -36,21 +38,22 @@ def _planner(request):
     return "<planning_decision>" + json.dumps(body, ensure_ascii=False) + "</planning_decision>"
 
 
-def _worker(request):
+def _worker(request, *, names=(CONFIG, CONFIG)):
     reply = worker_reply(request)
     if isinstance(reply, tuple):
         return reply
     contract = package_of(request)["task_contract"]
     [document] = contract["outputs"]
+    config = names[0 if document == "left.md" else 1]
     written = sum("tool" in str(message.role).lower() for message in request.messages)
     if written == 1:
         return "workspace_write_file", {
-            "path": CONFIG,
+            "path": config,
             "content": FIRST if document == "left.md" else SECOND,
         }
     body = json.loads(reply.removeprefix("<result_envelope>").removesuffix("</result_envelope>"))
-    body["artifacts"].append(CONFIG)
-    body["evidence"].append(CONFIG)
+    body["artifacts"].append(config)
+    body["evidence"].append(config)
     body["cost"]["tool_calls"] = 2
     return "<result_envelope>" + json.dumps(body, ensure_ascii=False) + "</result_envelope>"
 
@@ -82,5 +85,60 @@ def test_two_independent_steps_deliver_the_judged_file(tmp_path):
                 == host._bases().read(change["commit"], CONFIG)
                 == expected
             )
+
+    asyncio.run(case())
+
+
+@pytest.mark.parametrize("names", [(CONFIG.upper(), CONFIG), ("café.ini", "cafe\u0301.ini")])
+def test_ambiguous_delivery_refuses_both_spellings(tmp_path, names):
+    async def case():
+        target = tmp_path / "target"
+        target.mkdir()
+        (target / "keep").write_bytes(b"original")
+        provider = LayeredScriptedProvider(
+            planner=_planner, worker=lambda request: _worker(request, names=names)
+        )
+        async with _host(
+            tmp_path / "host", provider=provider, workspace_base=DirectoryBase(target)
+        ) as host:
+            mission_id = host.create_mission(
+                {
+                    "goal": "写两份说明和编辑器配置",
+                    "success_criteria": ["file:left.md", "file:right.md"],
+                    "idempotency_key": "alias",
+                }
+            )["mission_id"]
+            await host.run_until_settled(mission_id, timeout=120)
+            assert _mission(host, mission_id)["status"] == "COMPLETED"
+            view = host.delivery(mission_id)
+            [tree] = list((tmp_path / "host").rglob(f"{mission_id}-judge-*-verify"))
+            committed = host._bases().files(view["commit"])
+            rows = {row["path"]: row for row in view["files"]}
+            assert set(rows) == {*names, "left.md", "right.md"}
+            receipt = host.apply_delivery(mission_id, operation_key="apply")
+            assert {r["path"] for r in receipt["files"]} == set(rows)
+            for result in receipt["files"]:
+                name = result["path"]
+                row = rows[name]
+                if name in names:
+                    assert (
+                        result["status"] == "refused"
+                        and result["reason"] == row["refused"] == "path_spelling"
+                    )
+                    assert row["blob"] is None and row["diff"] is None
+                    assert (
+                        name not in committed
+                        and not (tree / name).exists()
+                        and not (target / name).exists()
+                    )
+                else:
+                    assert result["status"] == "applied"
+                    data = (tree / name).read_bytes()
+                    assert data == committed[name] == (target / name).read_bytes()
+                    assert (
+                        row["blob"] == git_blob_id(data)
+                        and row["sha256"] == sha256(data).hexdigest()
+                    )
+            assert (target / "keep").read_bytes() == b"original"
 
     asyncio.run(case())

@@ -26,13 +26,13 @@ import re
 import tempfile
 import threading
 import time
-from collections.abc import Callable, Iterable, Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Any
 
 from .judgment_merge import MergeFacts
-from .paths import under_prefix
+from .paths import ambiguous_paths, under_prefix
 from .workspace_base import (
     BaseRepo,
     WritableBase,
@@ -89,25 +89,11 @@ def is_test_path(path: str) -> bool:
     )
 
 
-def _case_spellings(paths: Iterable[str]) -> dict[str, str]:
-    """底里每一级路径（文件与目录）：忽略大小写的写法 → 底里的写法。"""
-
-    spellings: dict[str, str] = {}
-    for path in paths:
-        parts = PurePosixPath(path).parts
-        for depth in range(1, len(parts) + 1):
-            prefix = "/".join(parts[:depth])
-            spellings.setdefault(prefix.casefold(), prefix)
-    return spellings
-
-
 def _refusal(
     path: str,
     data: bytes,
     *,
-    exists: bool,
     withheld: Mapping[str, str],
-    spellings: Mapping[str, str],
     is_secret: Callable[[str], bool] | None,
 ) -> str | None:
     """这个改动为什么不能写回（None = 可以写）。``invalid_path`` / ``ignored`` 的不进交付提交。"""
@@ -121,13 +107,6 @@ def _refusal(
         return "secret_name"
     if is_secret is not None and _readable(data) and is_secret(data.decode("utf-8")):
         return "secret_content"
-    if not exists:
-        parts = PurePosixPath(path).parts
-        for depth in range(1, len(parts) + 1):
-            prefix = "/".join(parts[:depth])
-            known = spellings.get(prefix.casefold())
-            if known is not None and known != prefix:
-                return "case_conflict"
     return None
 
 
@@ -144,13 +123,13 @@ def build_change_set(
 
     ``base`` 是任务行里的底记录（``final_report["workspace_base"]``）；``superseded`` 是判定树
     里被覆盖掉的版本（路径 → 那些步骤），照实写进改动集；``is_secret`` 判内容像不像密钥。改动
-    （含不能写回的，路径本身不合法的除外）叠成交付提交：判定树 = 底 + 种子 + 资料 + 这些改动，种子与
+    （排除非法路径及拼写歧义）叠成交付提交：判定树 = 底 + 种子 + 资料 + 这些改动，种子与
     资料不交付。"""
 
     base_commit = str(base["commit"])
     manifest = bases.manifest(base_commit)
     withheld = {str(k): str(v) for k, v in dict(base.get("withheld") or {}).items()}
-    spellings = _case_spellings(manifest)
+    spellings = ambiguous_paths((*manifest, *withheld, *(item.path for item in produced)))
     folded_reserved = tuple(prefix.casefold() for prefix in reserved)
     overridden = {path: list(steps) for path, steps in dict(superseded or {}).items()}
     files: list[dict[str, Any]] = []
@@ -160,18 +139,44 @@ def build_change_set(
         if under_prefix(item.path.casefold(), folded_reserved):
             continue
         entry = manifest.get(item.path)
+        row = {
+            "path": item.path,
+            "op": "add" if entry is None else "modify",
+            "test": (entry is not None and is_test_path(item.path)) or is_test_config(item.path),
+            "base_blob": entry.blob if entry else None,
+            "executable": entry is not None and entry.executable,
+            "overridden_steps": overridden.get(item.path, []),
+            **item.merge.to_json(),
+        }
+        if item.path in spellings or item.merge.merge_skipped == "path_spelling":
+            # 判定副本保留底中的精确条目；新增提议没有交付 blob。来源单列，以便追查。
+            files.append(
+                {
+                    **row,
+                    "refused": "path_spelling",
+                    "merge_skipped": "path_spelling",
+                    "blob": row["base_blob"],
+                    "sha256": entry.sha256 if entry else None,
+                    "size": entry.size if entry else None,
+                    "readable": entry is not None and entry.readable,
+                    "artifact_id": None,
+                    "task_id": None,
+                    "proposed_artifact_id": item.artifact_id,
+                }
+            )
+            continue
         blob = git_blob_id(item.data)
         if entry is not None and entry.blob == blob:
             # 覆盖规则可能恰好选回底字节。事实写进报告，避免制造一个可写回的假改动。
             if facts := item.merge.to_json():
-                unchanged_facts.append({"path": item.path, **facts})
+                unchanged_facts.append(
+                    {"path": item.path, "overridden_steps": overridden.get(item.path, []), **facts}
+                )
             continue
         refused = _refusal(
             item.path,
             item.data,
-            exists=entry is not None,
             withheld=withheld,
-            spellings=spellings,
             is_secret=is_secret,
         )
         if refused not in {"invalid_path", "ignored"}:
@@ -179,21 +184,13 @@ def build_change_set(
             changed[item.path] = item.data
         files.append(
             {
-                "path": item.path,
-                "op": "add" if entry is None else "modify",
-                # 改了底里已有的测试，或新增 / 修改测试配置：交付时单列，交给人判断
-                "test": (entry is not None and is_test_path(item.path))
-                or is_test_config(item.path),
-                "base_blob": None if entry is None else entry.blob,
+                **row,
                 "blob": blob,
                 "sha256": hashlib.sha256(item.data).hexdigest(),
                 "size": len(item.data),
                 "readable": _readable(item.data),
-                "executable": entry is not None and entry.executable,
                 "artifact_id": item.artifact_id,
                 "task_id": item.task_id,
-                "overridden_steps": overridden.get(item.path, []),
-                **item.merge.to_json(),
                 "refused": refused,
             }
         )
@@ -223,7 +220,7 @@ def delivery_diff(bases: BaseRepo, change_set: Mapping[str, Any], path: str) -> 
     """改动集里一个文件相对底的 unified diff；不在改动集里的路径抛 ``KeyError``。"""
 
     entry = next((item for item in change_set.get("files", ()) if item["path"] == path), None)
-    if entry is None or entry["refused"] in {"invalid_path", "ignored"}:
+    if entry is None or entry["refused"] in {"invalid_path", "ignored", "path_spelling"}:
         raise KeyError(path)
     return bases.diff(str(change_set["base_commit"]), str(change_set["commit"]), path)
 
