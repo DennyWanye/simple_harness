@@ -13,6 +13,7 @@ import { asText, newRequestKey, type MissionsChannel } from "../stores/missionsS
 import { useDepsChanged } from "../hooks/useDepsChanged";
 import { useLatestRef } from "../hooks/useLatestRef";
 import "./MissionSources.styles.css";
+import { SOURCE_ROOT } from "./sourceRoot";
 
 type Json = Record<string, unknown>;
 type Channel = MissionsChannel | null;
@@ -69,7 +70,7 @@ export function SourceDrafts({
             reader.readAsText(file, "UTF-8");
           });
           return {
-            path: `sources/${file.name}`,
+            path: `${SOURCE_ROOT}${file.name}`,
             content,
             kind: /\.md$/i.test(file.name) ? "markdown" : "text",
           };
@@ -96,7 +97,7 @@ export function SourceDrafts({
               className="sh-MissionSources-2"
               disabled={disabled || loading}
               onClick={() =>
-                onChange([...sources, { path: "sources/", content: "", kind: "markdown" }])
+                onChange([...sources, { path: SOURCE_ROOT, content: "", kind: "markdown" }])
               }
             >
               添加来源
@@ -256,7 +257,7 @@ export function MissionSources({
     setExpected(asText(source?.version_hash));
     setDrafts([
       {
-        path: asText(source?.path) || "sources/",
+        path: asText(source?.path) || SOURCE_ROOT,
         content: "",
         kind: asText(source?.kind) || "markdown",
       },
@@ -376,7 +377,7 @@ export function MissionSources({
               importing ||
               !channel ||
               !drafts[0]?.path ||
-              drafts[0]?.path === "sources/" ||
+              drafts[0]?.path === SOURCE_ROOT ||
               (operation === "revoke" ? !reason.trim() : !drafts[0]?.content) ||
               drafts.length !== 1
             }

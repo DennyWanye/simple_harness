@@ -65,7 +65,7 @@ export interface MissionCreateFormProps {
     | "请至少写一条成功条件"
     | "正在导入来源资料…"
     | "严格引用需要至少一份资料：在「参考资料」里点「添加来源」粘贴正文，或「导入来源文件」；不需要就在高级设置里取消勾选"
-    | "每份来源资料都要填写路径（如 sources/笔记.md）和正文"
+    | "每份来源资料都要填写路径（如 .harness/sources/笔记.md）和正文"
     | "请检查上面标红的设置";
   missingMaterialHint:
     | ""

@@ -49,6 +49,7 @@ import { MissionListAside } from "./MissionListAside";
 import { MissionCreateForm } from "./MissionCreateForm";
 import { MissionDetailPanel } from "./MissionDetailPanel";
 import "./MissionsView.styles.css";
+import { SOURCE_ROOT } from "./sourceRoot";
 
 export interface MissionsViewProps {
   channel: MissionsChannel | null;
@@ -457,7 +458,7 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
   const canAttachSources = domains.atomic_source_create === true;
   const sourcesComplete = sources.every(
     (source) =>
-      source.path.trim().length > 0 && source.path !== "sources/" && source.content.length > 0,
+      source.path.trim().length > 0 && source.path !== SOURCE_ROOT && source.content.length > 0,
   );
   const submittable =
     validCaps &&
@@ -491,7 +492,7 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
               : strictQuotes && sources.length === 0
                 ? "严格引用需要至少一份资料：在「参考资料」里点「添加来源」粘贴正文，或「导入来源文件」；不需要就在高级设置里取消勾选"
                 : !sourcesComplete
-                  ? "每份来源资料都要填写路径（如 sources/笔记.md）和正文"
+                  ? "每份来源资料都要填写路径（如 .harness/sources/笔记.md）和正文"
                   : "请检查上面标红的设置";
 
   const submit = () => {
@@ -516,10 +517,10 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
       ...(selectedContext ? { runtime_profile_id: selectedContext.profile_id } : {}),
       ...(Object.keys(budget).length ? { budget } : {}),
     };
-    // 2026-09-25 UI 全量点击：来源路径写成 notes.md（没有 sources/ 前缀）时后端报"找不到这个对象"。
+    // 2026-09-25 UI 全量点击：来源路径写成 notes.md（没有资料根前缀）时后端报"找不到这个对象"。
     const sourcesOut = sources.map((source) => {
       const path = source.path.trim().replace(/^\/+/, "");
-      return { ...source, path: path.startsWith("sources/") ? path : `sources/${path}` };
+      return { ...source, path: path.startsWith(SOURCE_ROOT) ? path : `${SOURCE_ROOT}${path}` };
     });
     const withSources = sourcesOut.length > 0;
     const fingerprint = JSON.stringify([spec, withSources ? sourcesOut : []]);

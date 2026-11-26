@@ -50,7 +50,7 @@ class Channel {
   }
 }
 const SOURCE = {
-  path: "sources/a.md",
+  path: ".harness/sources/a.md",
   version_hash: "old-version-hash",
   kind: "markdown",
   revoked: false,
@@ -70,12 +70,12 @@ afterEach(cleanup);
 describe("mission reference material", () => {
   it("supersede/revoke bind the selected expected version and only refresh on acknowledgment", () => {
     const { channel, onChanged } = setup();
-    fireEvent.click(screen.getByRole("button", { name: "替换 sources/a.md" }));
+    fireEvent.click(screen.getByRole("button", { name: "替换 .harness/sources/a.md" }));
     fireEvent.change(screen.getByLabelText("来源正文 1"), { target: { value: "new content" } });
     fireEvent.click(screen.getByRole("button", { name: "提交" }));
     expect(channel.last("mission_source_supersede").payload).toEqual({
       mission_id: "m1",
-      path: "sources/a.md",
+      path: ".harness/sources/a.md",
       content: "new content",
       kind: "markdown",
       expected_version_hash: "old-version-hash",
@@ -84,12 +84,12 @@ describe("mission reference material", () => {
     expect(onChanged).not.toHaveBeenCalled();
     channel.reply(channel.last("mission_source_supersede"), { approval_required: true });
     expect(onChanged).toHaveBeenCalledOnce();
-    fireEvent.click(screen.getByRole("button", { name: "撤销 sources/a.md" }));
+    fireEvent.click(screen.getByRole("button", { name: "撤销 .harness/sources/a.md" }));
     fireEvent.change(screen.getByLabelText("撤销理由"), { target: { value: "outdated" } });
     fireEvent.click(screen.getByRole("button", { name: "提交" }));
     expect(channel.last("mission_source_revoke").payload).toEqual({
       mission_id: "m1",
-      path: "sources/a.md",
+      path: ".harness/sources/a.md",
       expected_version_hash: "old-version-hash",
       reason: "outdated",
       idempotency_key: expect.any(String),
@@ -99,13 +99,13 @@ describe("mission reference material", () => {
   it("registers one source through its explicit command and retries with the same key", () => {
     const { channel, onChanged } = setup();
     fireEvent.click(screen.getByRole("button", { name: "登记新资料" }));
-    fireEvent.change(screen.getByLabelText("来源路径 1"), { target: { value: "sources/new.md" } });
+    fireEvent.change(screen.getByLabelText("来源路径 1"), { target: { value: ".harness/sources/new.md" } });
     fireEvent.change(screen.getByLabelText("来源正文 1"), { target: { value: "new evidence" } });
     fireEvent.click(screen.getByRole("button", { name: "提交" }));
     const request = channel.last("mission_source_register");
     expect(request.payload).toEqual({
       mission_id: "m1",
-      path: "sources/new.md",
+      path: ".harness/sources/new.md",
       content: "new evidence",
       kind: "markdown",
       idempotency_key: expect.any(String),
@@ -131,7 +131,7 @@ describe("mission reference material", () => {
   it("a reconnect turns an in-flight request into a visible unknown outcome", () => {
     const { channel } = setup();
     fireEvent.click(screen.getByRole("button", { name: "登记新资料" }));
-    fireEvent.change(screen.getByLabelText("来源路径 1"), { target: { value: "sources/new.md" } });
+    fireEvent.change(screen.getByLabelText("来源路径 1"), { target: { value: ".harness/sources/new.md" } });
     fireEvent.change(screen.getByLabelText("来源正文 1"), { target: { value: "x" } });
     fireEvent.click(screen.getByRole("button", { name: "提交" }));
     channel.changeState("disconnected" as ConnectionState);
@@ -140,7 +140,7 @@ describe("mission reference material", () => {
 
   it("换了任务就清空资料操作的草稿：操作面板关掉，理由与原版本不带到新任务", () => {
     const { channel, onChanged, rerender } = setup();
-    fireEvent.click(screen.getByRole("button", { name: "撤销 sources/a.md" }));
+    fireEvent.click(screen.getByRole("button", { name: "撤销 .harness/sources/a.md" }));
     fireEvent.change(screen.getByLabelText("撤销理由"), { target: { value: "outdated" } });
     expect(screen.getByText(/原版本 old-version-/)).toBeTruthy();
 
@@ -153,14 +153,14 @@ describe("mission reference material", () => {
 
     // 新任务里打开登记，草稿是空的。
     fireEvent.click(screen.getByRole("button", { name: "登记新资料" }));
-    expect((screen.getByLabelText("来源路径 1") as HTMLInputElement).value).toBe("sources/");
+    expect((screen.getByLabelText("来源路径 1") as HTMLInputElement).value).toBe(".harness/sources/");
     expect((screen.getByLabelText("来源正文 1") as HTMLTextAreaElement).value).toBe("");
   });
 
   it("换了任务就清掉上一个任务的资料错误提示", () => {
     const { channel, onChanged, rerender } = setup();
     fireEvent.click(screen.getByRole("button", { name: "登记新资料" }));
-    fireEvent.change(screen.getByLabelText("来源路径 1"), { target: { value: "sources/new.md" } });
+    fireEvent.change(screen.getByLabelText("来源路径 1"), { target: { value: ".harness/sources/new.md" } });
     fireEvent.change(screen.getByLabelText("来源正文 1"), { target: { value: "x" } });
     fireEvent.click(screen.getByRole("button", { name: "提交" }));
     channel.reply(channel.last("mission_source_register"), {}, false, "conflict");
@@ -184,7 +184,7 @@ describe("source import oracle", () => {
     expect(onBusy).toHaveBeenLastCalledWith(true);
     await vi.waitFor(() => expect(onChange).toHaveBeenCalled());
     expect(onChange.mock.calls[0][0]).toEqual([
-      { path: "sources/a.md", content: "first\r\n😀\rlast", kind: "markdown" },
+      { path: ".harness/sources/a.md", content: "first\r\n😀\rlast", kind: "markdown" },
     ]);
     expect(onBusy).toHaveBeenLastCalledWith(false);
   });
