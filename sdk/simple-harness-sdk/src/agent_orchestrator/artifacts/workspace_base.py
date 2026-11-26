@@ -36,7 +36,7 @@ from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 from typing import Protocol, runtime_checkable
 
-from .paths import ambiguous_paths, under_prefix
+from .paths import ambiguous_paths, spelling_key, under_prefix
 from .store import ArtifactStoreError, read_nofollow
 
 GIT_MIN_VERSION = (2, 38)
@@ -136,7 +136,7 @@ class WritableBase(Protocol):
     """能把交付写回去的底。blob 号是 git 的（见 :func:`git_blob_id`），没有这个文件为 None。
 
     ``write_file`` 自己做比对：现状 == 新内容 → ``already``；现状 == ``expected`` → 写；
-    其他 → ``conflict``，不写。路径经过软链、与已有文件只差大小写的，一律 ``refused``。
+    其他 → ``conflict``，不写。磁盘路径经过软链或有大小写、Unicode 规范化别名时，一律 ``refused``。
 
     ``location()`` 是这个底的身份（例如目录的真实路径）；适配器拍底时要把同一个值记进
     ``BaseCapture.source["location"]``，写回时 SDK 核对两者一致，不把一个项目的交付写进另一个。"""
@@ -157,8 +157,7 @@ def git_blob_id(data: bytes) -> str:
 
 
 def _spelling_problem(root: Path, relative: str) -> str | None:
-    """路径上已经存在的每一级，名字的大小写与要写的一致（不区分大小写的文件系统上，只差大小写的
-    名字会落到别人的文件上），且上级都是目录。"""
+    """逐级核对目录项。只用碰撞键发现别名，文件名保留磁盘上的原拼写。"""
 
     current = root
     for part in PurePosixPath(relative).parts:
@@ -168,8 +167,10 @@ def _spelling_problem(root: Path, relative: str) -> str | None:
             return None
         except NotADirectoryError:
             return "not_a_directory"
-        if part not in names and any(name.casefold() == part.casefold() for name in names):
-            return "case_conflict"
+        key = spelling_key(part)
+        for name in names:
+            if name != part and spelling_key(name) == key:
+                return "case_conflict" if name.casefold() == part.casefold() else "spelling_alias"
         current = current / part
     return None
 
@@ -300,7 +301,11 @@ class DirectoryBase:
         return git_blob_id(read_nofollow(target))
 
     def current_hashes(self, paths: Sequence[str]) -> dict[str, str | None]:
-        return {path: self._current(path) for path in paths}
+        # 写后换过名字时，别名的内容即使相同也不能作为原路径的回执。
+        return {
+            path: self._current(path) if _spelling_problem(self.root, path) is None else None
+            for path in paths
+        }
 
     def write_file(
         self, path: str, data: bytes, *, expected: str | None, executable: bool
@@ -340,6 +345,9 @@ class DirectoryBase:
             os.chmod(temporary, mode)
             # 比对之后到这里，使用方可能刚存了盘：改名前再比一次，把窗口缩到改名那一下
             now = self._current(path)
+            spelling = _spelling_problem(self.root, path)
+            if spelling is not None:
+                return FileWrite("refused", current, spelling)
             if now != current:
                 return FileWrite("conflict", now)
             os.replace(temporary, target)

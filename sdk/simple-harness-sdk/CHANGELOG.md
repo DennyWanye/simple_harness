@@ -2,7 +2,8 @@
 
 - 同一精确路径有至少两种内容，各版本都从同一份可读底文本直接起步，文件和目录拼写唯一时，才以底逐次运行 `git merge-file`。全部干净才交付合并字节。
 - 继承同一路径、起点不明、共同新增、二进制或超限、合并冲突时，按根要求、端口、验收次序取完整原版。`merge_skipped` 记录原因，选回底字节的覆盖步骤仍可查。
-- 大小写或 Unicode 拼写歧义整组拒交。事件、改动集、宿主视图逐项列出被拒步骤及产物 ID，写回回执按路径记录。`file:` 按组核对精确路径。已有底自身含歧义条目时，铺底前报 `base_path_spelling`，判定受阻。[宿主交付说明](docs/orchestration-host.md#交付改动集与写回)
+- 大小写或 Unicode 拼写歧义整组拒交。事件、改动集、宿主视图逐项列出被拒步骤及产物 ID，写回回执按路径记录。已有底自身含歧义条目时，铺底前报 `base_path_spelling`，判定受阻。[宿主交付说明](docs/orchestration-host.md#交付改动集与写回)
+- 有底任务的每条 `file:` 按最终判定树的精确相对路径判定。目录及 Git 工作区写回前逐级核对拼写，遇到大小写别名报 `refused/case_conflict`，遇到 Unicode 规范化别名报 `refused/spelling_alias`。写后换名导致原路径无法复核时，回执为 `failed/verify_mismatch`。
 
 ## 未发布 — SDK 自己的路径搬到 `.harness/`（工作区以底为基础 P2b，2026-11-26）
 

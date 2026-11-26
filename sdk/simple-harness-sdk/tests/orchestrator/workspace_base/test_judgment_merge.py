@@ -47,6 +47,7 @@ def judge(
     aliases=(),
     frozen=None,
     seed=None,
+    sources=None,
     adopted=None,
     criteria=None,
     blocked=False,
@@ -195,7 +196,7 @@ def judge(
         _register_copy=Mock(),
         _commit_fail_mission=Mock(),
         _reimport_unsettled=lambda _: None,
-        _current_source_files=lambda _: {},
+        _current_source_files=lambda _: sources or {},
         _assured_root_grades=lambda *_: {},
         _config=SimpleNamespace(
             deployment_policy=SimpleNamespace(

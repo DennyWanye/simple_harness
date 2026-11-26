@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from collections.abc import Mapping, Sequence
 from dataclasses import replace
 from pathlib import Path
@@ -1044,8 +1045,9 @@ class AttemptJudgmentMixin(OrchestratorCore):
         # P0-2: one judgment tree per orchestrator instance — another instance may be
         # running pytest in its own; the judgment Commit itself is idempotent
         view_id = f"{mission.id}-judge-{self._owner}"
+        base_commit = mission_base_commit(mission.final_report)
         copy = self.assembled.workspaces.integrated_copy(
-            view_id, seed=seed, files=files, base=mission_base_commit(mission.final_report)
+            view_id, seed=seed, files=files, base=base_commit
         )
         self._register_copy(
             "judge",
@@ -1063,20 +1065,14 @@ class AttemptJudgmentMixin(OrchestratorCore):
                 summaries.append(stored.envelope.summary)
         summary = "\n".join(summaries)
         statements = current_statements(self.store, mission)
-        guarded = (
-            ambiguous_paths(
-                spellings,
-                queries=(c.removeprefix("file:") for c in statements if c.startswith("file:")),
-            )
-            if spellings
-            else set()
-        )
-        base_commit = mission_base_commit(mission.final_report)
-        exact_base_paths = (
-            self.assembled.workspaces.bases.manifest(base_commit).keys()
-            if guarded and base_commit
-            else ()
-        )
+        exact_paths = None
+        if base_commit is not None and any(c.startswith("file:") for c in statements):
+            # 在运行判定测试前记下组装好的文件名，包括底、种子、产物和资料。
+            exact_paths = {
+                (Path(directory) / name).relative_to(copy.root).as_posix()
+                for directory, _, names in os.walk(copy.root)
+                for name in names
+            }
         test_runs: dict[str, dict[str, Any]] = {}
         for criterion in statements:
             if not criterion.startswith("pytest:"):
@@ -1122,14 +1118,14 @@ class AttemptJudgmentMixin(OrchestratorCore):
                 )
             elif criterion.startswith("file:"):
                 relative = criterion.removeprefix("file:")
-                try:
-                    met = copy.resolve(relative).is_file()
-                    if met and relative in guarded:
-                        # 歧义组只物化底中的精确条目，即使条件采用了从未出现过的第三种拼写。
-                        met = relative in exact_base_paths
-                except Exception:  # noqa: BLE001
-                    logger.debug("evaluate_criteria_is_file_failed", exc_info=True)
-                    met = False
+                if exact_paths is not None:
+                    met = relative in exact_paths
+                else:
+                    try:
+                        met = copy.resolve(relative).is_file()
+                    except Exception:  # noqa: BLE001
+                        logger.debug("evaluate_criteria_is_file_failed", exc_info=True)
+                        met = False
                 judgments.append(
                     {
                         "criterion": criterion,
