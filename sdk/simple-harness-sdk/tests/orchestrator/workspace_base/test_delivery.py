@@ -405,21 +405,19 @@ def test_a_delivery_is_written_only_to_the_base_it_was_taken_from(tmp_path):
 
 def test_a_save_between_the_check_and_the_rename_is_not_overwritten(tmp_path, monkeypatch):
     # 核验第一轮建议 2：比对之后、改名之前用户存了盘
-    import agent_orchestrator.artifacts.workspace_base as module
-
     user = tmp_path / "user"
     user.mkdir()
     (user / "a.py").write_bytes(b"a\n")
     repo = BaseRepo(tmp_path / "work.git")
     adapter = DirectoryBase(user)
     change = _change_set(repo, _base(repo, adapter), [_produced("a.py", b"task\n")])
-    real = module.tempfile.mkstemp
+    real = os.chmod
 
     def editor_saves(*args, **kwargs):
         (user / "a.py").write_bytes(b"saved by me\n")
         return real(*args, **kwargs)
 
-    monkeypatch.setattr(module.tempfile, "mkstemp", editor_saves)
+    monkeypatch.setattr(os, "chmod", editor_saves)
     [item] = apply_change_set(adapter, repo, change)
     assert item["status"] == "conflict"
     assert (user / "a.py").read_bytes() == b"saved by me\n"

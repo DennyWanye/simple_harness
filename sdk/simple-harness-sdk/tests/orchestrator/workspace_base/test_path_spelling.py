@@ -13,6 +13,7 @@ from test_judgment_merge import judge
 
 from agent_orchestrator.artifacts.delivery import apply_change_set
 from agent_orchestrator.artifacts.workspace_base import BaseRepo, DirectoryBase
+from agent_orchestrator.host import HostRequestError
 from agent_orchestrator.testing.scripted_replies import LayeredScriptedProvider
 
 
@@ -145,5 +146,14 @@ def test_host_refuses_a_replaced_unicode_directory(tmp_path):
             [row] = host.apply_delivery(mission_id, operation_key="apply", paths=[path])["files"]
             assert (row["status"], row["reason"]) == ("refused", "spelling_alias")
             assert replacement.read_text() == BASE
+
+            # 同键重放也须先核对底身份，不能把旧回执交给同路径的新项目。
+            root.rename(tmp_path / "original-project")
+            root.mkdir()
+            (root / "marker").write_bytes(b"new project")
+            with pytest.raises(HostRequestError) as refused:
+                host.apply_delivery(mission_id, operation_key="apply", paths=[path])
+            assert refused.value.code == "delivery_target_mismatch"
+            assert os.listdir(root) == ["marker"]
 
     asyncio.run(case())

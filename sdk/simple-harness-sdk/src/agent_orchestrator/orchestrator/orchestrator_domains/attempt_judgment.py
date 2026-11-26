@@ -10,7 +10,7 @@ import logging
 import os
 from collections.abc import Mapping, Sequence
 from dataclasses import replace
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, Any, cast
 
 from simple_harness.agents import AgentConfig, AgentLimits
@@ -97,6 +97,36 @@ logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
     from ...contracts.resolution import GoalResolution
     from ...storage.store import Store
+
+
+def _based_file_checks(root: Path, statements: Sequence[str]) -> dict[str, tuple[bool, str]]:
+    """在运行判定测试前记录精确文件名和无法列举的子树。"""
+    unreadable: dict[str, str] = {}
+
+    def record_error(error: OSError) -> None:
+        folder = Path(error.filename) if error.filename else root
+        unreadable[folder.relative_to(root).as_posix()] = type(error).__name__
+
+    exact_paths = {
+        (Path(directory) / name).relative_to(root).as_posix()
+        for directory, _, names in os.walk(root, onerror=record_error)
+        for name in names
+    }
+    checks = {}
+    for criterion in statements:
+        if not criterion.startswith("file:"):
+            continue
+        relative = criterion.removeprefix("file:")
+        met = relative in exact_paths
+        reason = "file exists" if met else "file missing"
+        if unreadable and not met:
+            for parent in PurePosixPath(relative).parents:
+                folder = parent.as_posix()
+                if folder in unreadable:
+                    reason = f"file unverifiable: {folder} ({unreadable[folder]})"
+                    break
+        checks[criterion] = met, reason
+    return checks
 
 
 def _turn_error_code(failure: Mapping[str, Any]) -> str | None:
@@ -1065,14 +1095,9 @@ class AttemptJudgmentMixin(OrchestratorCore):
                 summaries.append(stored.envelope.summary)
         summary = "\n".join(summaries)
         statements = current_statements(self.store, mission)
-        exact_paths = None
+        file_checks = {}
         if base_commit is not None and any(c.startswith("file:") for c in statements):
-            # 在运行判定测试前记下组装好的文件名，包括底、种子、产物和资料。
-            exact_paths = {
-                (Path(directory) / name).relative_to(copy.root).as_posix()
-                for directory, _, names in os.walk(copy.root)
-                for name in names
-            }
+            file_checks = _based_file_checks(copy.root, statements)
         test_runs: dict[str, dict[str, Any]] = {}
         for criterion in statements:
             if not criterion.startswith("pytest:"):
@@ -1117,21 +1142,22 @@ class AttemptJudgmentMixin(OrchestratorCore):
                     }
                 )
             elif criterion.startswith("file:"):
-                relative = criterion.removeprefix("file:")
-                if exact_paths is not None:
-                    met = relative in exact_paths
+                if criterion in file_checks:
+                    met, reason = file_checks[criterion]
                 else:
+                    relative = criterion.removeprefix("file:")
                     try:
                         met = copy.resolve(relative).is_file()
                     except Exception:  # noqa: BLE001
                         logger.debug("evaluate_criteria_is_file_failed", exc_info=True)
                         met = False
+                    reason = "file exists" if met else "file missing"
                 judgments.append(
                     {
                         "criterion": criterion,
                         "met": met,
                         "judge": "rule_check",
-                        "reason": "file exists" if met else "file missing",
+                        "reason": reason,
                     }
                 )
             elif criterion.startswith(ACTION_PREFIX):

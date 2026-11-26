@@ -50,6 +50,7 @@ def judge(
     sources=None,
     adopted=None,
     criteria=None,
+    reasons=None,
     blocked=False,
     execution_updates=None,
 ):
@@ -69,7 +70,7 @@ def judge(
     if base is not None:
         report["workspace_base"] = {
             "commit": manager.bases.commit_files(base),
-            "source": {"location": target.location()},
+            "source": target.capture(()).source,
         }
     mission = SimpleNamespace(id="mission", final_report=report)
     tasks, artifacts, ports, acceptances = [], {}, [], []
@@ -225,6 +226,8 @@ def judge(
         assert not (manager.root / "mission-judge-owner-verify").exists()
         return None
     judgments, _ = result
+    if reasons:
+        assert {row["criterion"]: row["reason"] for row in judgments} == reasons
     if criteria:
         assert {item["criterion"]: item["met"] for item in judgments} == criteria
     elif not aliases and not seed:
