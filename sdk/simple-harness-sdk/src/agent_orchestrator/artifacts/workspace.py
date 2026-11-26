@@ -183,16 +183,22 @@ class Workspace:
         if len(content.encode("utf-8")) > MAX_FILE_BYTES:
             raise WorkspaceError("content too large")
         target = self.resolve(relative)
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(content, encoding="utf-8")
+        try:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(content, encoding="utf-8")
+        except OSError as error:  # 上级是个文件、权限等：交给工具层当作这次调用的错误
+            raise WorkspaceError(f"cannot write file {relative}: {error}") from error
         return target
 
     def write_bytes(self, relative: str, data: bytes) -> Path:
         if not self.writable:
             raise WorkspaceError("workspace is read-only")
         target = self.resolve(relative)
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_bytes(data)
+        try:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(data)
+        except OSError as error:
+            raise WorkspaceError(f"cannot write file {relative}: {error}") from error
         return target
 
     def materialise_manifest(

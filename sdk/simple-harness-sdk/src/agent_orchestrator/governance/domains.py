@@ -119,8 +119,8 @@ class DomainProfileV1:
 
 
 #: The general task (code domain).  User decision 2026-09-26: it may carry reference
-#: material under ``.harness/sources/``（2026-11-26 起；以前是 ``sources/``，和使用方仓库根目录的
-#: ``Sources/`` 撞名）, frozen per Attempt, mounted read-only and citable as
+#: material under ``.harness/sources/`` (inside the SDK's own root, so it never clashes with a
+#: user's ``Sources/``), frozen per Attempt, mounted read-only and citable as
 #: ``source`` evidence.  Strict citation (the removed document domain) became a
 #: requirement the reviewer judges (user decision 2026-10-02, option A).
 CODE_PROFILE = DomainProfileV1(

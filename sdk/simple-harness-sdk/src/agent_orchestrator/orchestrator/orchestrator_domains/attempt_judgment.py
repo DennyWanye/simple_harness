@@ -280,8 +280,7 @@ class AttemptJudgmentMixin(OrchestratorCore):
                 seen_artifacts.add(artifact.id)
                 kept_at = None
                 if weight[0] and port is not None:
-                    # I05: evidence a root criterion was judged on stays in the judgment tree
-                    # (under the SDK's own root: it is never part of the delivered change set).
+                    # 根要求据以判定的证据留在判定树里；放在 SDK 自己的根下，不进交付的改动集
                     kept_at = f"{HARNESS_ROOT}accepted-outputs/{task_id}/{port}/{path}"
                     tree[kept_at] = UpstreamInput(
                         task_id, kept_at, artifact.content_hash, artifact.id

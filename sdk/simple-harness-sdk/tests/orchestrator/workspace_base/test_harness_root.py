@@ -36,6 +36,7 @@ SWIFT = {
     "Sources/App/main.swift": b'print("hi")\n',
     "Tests/AppTests/AppTests.swift": b"import XCTest\n",
     ".harness/old/notes.md": b"left over\n",
+    ".HARNESS/sources/x.md": b"case variant\n",
 }
 
 
@@ -54,7 +55,10 @@ def test_a_swift_package_keeps_its_sources_and_the_harness_root_is_withheld(tmp_
         "Sources/App/main.swift",
         "Tests/AppTests/AppTests.swift",
     }
-    assert record.withheld == {".harness/old/notes.md": "reserved_path"}
+    assert record.withheld == {
+        ".harness/old/notes.md": "reserved_path",
+        ".HARNESS/sources/x.md": "reserved_path",  # 不区分大小写的磁盘上就是同一个目录
+    }
     assert CODE_PROFILE.source_roots == (".harness/sources/",)
 
 
@@ -183,6 +187,18 @@ def test_a_worker_cannot_block_the_harness_root_with_a_file(tmp_path):
                 {"run_id": "w"},
             )
             assert result.value is None and result.error_code, result
+        # 草稿根被写成文件以后，往下写是一次工具错误，不是异常
+        await gateway.execute(
+            ToolCall(CallId("f"), "workspace_write_file", {"path": "x/scratch", "content": "x"}),
+            {"run_id": "w"},
+        )
+        nested = await gateway.execute(
+            ToolCall(
+                CallId("n"), "workspace_write_file", {"path": "x/scratch/a.md", "content": "x"}
+            ),
+            {"run_id": "w"},
+        )
+        assert nested.value is None and nested.error_code, nested
         ok = await gateway.execute(
             ToolCall(
                 CallId("s"),
@@ -203,7 +219,7 @@ def test_a_file_criterion_cannot_point_into_the_harness_root(tmp_path):
 
     async def case():
         async with _host(tmp_path / "root", workspace_base=InMemoryBase(SWIFT)) as host:
-            for path in (".harness/scratch/plan.md", ".HARNESS/sources/a.md"):
+            for path in (".harness/scratch/plan.md", ".HARNESS/sources/a.md", ".assurance/R.md"):
                 with pytest.raises(HostRequestError) as refused:
                     host.create_mission(
                         {"goal": "g", "success_criteria": [f"file:{path}"], "idempotency_key": path}

@@ -1359,12 +1359,13 @@ class OrchestrationHost:
                     "对文件内容的要求另起一条成功条件",
                 )
             if text.startswith("file:") and under_prefix(
-                text[len("file:") :].casefold(), (HARNESS_ROOT,)
+                text[len("file:") :].casefold(), RESERVED_BASE_PREFIXES
             ):
-                # .harness/ 下是 SDK 自己的东西（资料、草稿），不交付：拿它当要求，任务完成了也交不出东西
+                # 保留路径（.harness/、.assurance/）是 SDK 自己的东西，不交付：拿它当要求，任务完成了也交不出东西
                 raise HostRequestError(
                     "file_criterion_reserved_path",
-                    "file: 不能指向 .harness/（那是 SDK 的资料与草稿，不交给使用方），写要交付的文件路径",
+                    "file: 不能指向 .harness/ 或 .assurance/（SDK 自己的资料、草稿与材料，不交给使用方），"
+                    "写要交付的文件路径",
                 )
         if any(c.strip().startswith("pytest:") for c in criteria) and not (
             self.policy is not None and self.policy.code_execution == "sandboxed"

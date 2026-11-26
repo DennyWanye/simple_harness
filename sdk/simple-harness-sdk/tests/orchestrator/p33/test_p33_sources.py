@@ -182,13 +182,14 @@ def test_source_commands_refuse_caller_supplied_authority(env, field):
 @pytest.mark.parametrize(
     "path",
     [
-        "../sources/a.md",
-        "/sources/a.md",
+        "../.harness/sources/a.md",
+        "/.harness/sources/a.md",
         ".harness/sources/../a.md",
         ".harness/sources//a.md",
-        "./sources/a.md",
-        "sources\\a.md",
+        "./.harness/sources/a.md",
+        ".harness\\sources\\a.md",
         "notes/a.md",
+        "sources/a.md",
     ],
 )
 def test_source_paths_are_canonical_and_inside_frozen_domain_roots(env, path):
