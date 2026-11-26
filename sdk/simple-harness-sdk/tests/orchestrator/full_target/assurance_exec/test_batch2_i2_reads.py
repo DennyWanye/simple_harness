@@ -76,7 +76,7 @@ def _source(store, revision=1):
         (
             MISSION,
             TENANT,
-            "sources/spec.md",
+            ".harness/sources/spec.md",
             HASH,
             "markdown",
             "untrusted_external",
@@ -86,7 +86,7 @@ def _source(store, revision=1):
             revision,
         ),
     )
-    return AssuranceRef("source", Pin("sources/spec.md", revision, HASH))
+    return AssuranceRef("source", Pin(".harness/sources/spec.md", revision, HASH))
 
 
 def _receipt(

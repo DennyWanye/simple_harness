@@ -405,7 +405,7 @@ PLANNER_HIERARCHICAL = RoleTemplate(
         "采用一个做法：\n"
         '{"schema_version":1,"decision_type":"REFINE","subject_key":"subject-root",'
         '"rationale":"这个做法的步骤覆盖了全部要求。","reason_refs":[],'
-        '"assumptions":[{"key":"source-is-current","statement":"sources/policy.md 是当前版本。",'
+        '"assumptions":[{"key":"source-is-current","statement":".harness/sources/policy.md 是当前版本。",'
         '"required_for":["REFINE"],"risk":"LOW","suggested_predicate_key":null}],'
         '"payload":{"method_ref":{"kind":"method","id":"doc.write-from-source","semantic_revision":1,'
         '"content_hash":"__HASH__"},"bindings":{"target":"summary.md"}},'

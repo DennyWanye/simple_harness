@@ -93,7 +93,7 @@ def _bind(assembled, profile, *, content=TEXT):
         "work",
         False,
         CRITIC_TOOLS,
-        untrusted_sources=("sources/",),
+        untrusted_sources=(".harness/sources/",),
         context_policy=profile.context_policy,
         tokenizer=profile.tokenizer,
     )
@@ -135,7 +135,7 @@ def test_large_source_reaches_the_actual_worker_in_two_or_three_reads(tmp_path):
         async with product_world(tmp_path / "root", provider) as world:
             body = {
                 "mission": {
-                    "goal": "完整读完来源 sources/条件.md，写 NOTES.md 摘要",
+                    "goal": "完整读完来源 .harness/sources/条件.md，写 NOTES.md 摘要",
                     "success_criteria": ["file:NOTES.md"],
                     "idempotency_key": "large-read",
                     "budget": {"max_tokens": 8_000_000, "max_attempts": 12},

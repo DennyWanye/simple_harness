@@ -49,7 +49,7 @@ def _worker():  # type: ignore[no-untyped-def]
     )
 
 
-PATH = "sources/data.csv"
+PATH = ".harness/sources/data.csv"
 
 
 def _events(loop, mission_id: str, event_type: str):  # type: ignore[no-untyped-def]
@@ -121,7 +121,7 @@ def test_a_superseded_source_waits_for_the_running_attempt_and_is_only_noted_whe
             control.register_source(
                 {
                     "mission_id": mission.id,
-                    "path": "sources/extra.md",
+                    "path": ".harness/sources/extra.md",
                     "content": "extra",
                     "kind": "markdown",
                     "idempotency_key": "reg-extra-1",

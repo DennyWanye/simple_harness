@@ -23,7 +23,7 @@ from agent_orchestrator.artifacts.workspace_base import (
     capture_base,
 )
 
-RESERVED = ("sources/", ".assurance/", "accepted-outputs/")
+RESERVED = (".harness/sources/", ".assurance/", ".harness/accepted-outputs/")
 
 
 def _no_secrets(_text: str) -> bool:
@@ -89,7 +89,7 @@ def test_withheld_files_never_enter_the_commit(tmp_path):
         "config/.env.local": b"X=1\n",
         "keys/server.pem": b"not really\n",
         "notes.txt": b"token sk-ABCDEFGHIJKLMNOPQRSTUVWXYZ012345\n",
-        "sources/brief.md": b"collides with the SDK's reference root\n",
+        ".harness/sources/brief.md": b"collides with the SDK's reference root\n",
         "Readme.md": b"a\n",
         "README.md": b"b\n",
         "bad\udcffname.txt": b"not utf-8 on disk\n",
@@ -106,7 +106,7 @@ def test_withheld_files_never_enter_the_commit(tmp_path):
         "config/.env.local": "secret_name",
         "keys/server.pem": "secret_name",
         "notes.txt": "secret_content",
-        "sources/brief.md": "reserved_path",
+        ".harness/sources/brief.md": "reserved_path",
         "Readme.md": "case_conflict",
         "README.md": "case_conflict",
         "bad\udcffname.txt": "invalid_path",

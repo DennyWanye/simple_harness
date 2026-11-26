@@ -184,7 +184,7 @@ class ActionExecutor:
         """
         if action["connector"] != "file_publish":
             return None
-        # Every Mission's profile now carries ``sources/`` (general task with material,
+        # Every Mission's profile now carries ``.harness/sources/`` (general task with material,
         # 2026-09-26), so the overlap check always runs; it never decodes another
         # Mission's frozen domain (one this build cannot read would refuse every publish).
         root = getattr(self._connectors.get("file_publish"), "root", None)

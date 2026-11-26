@@ -38,7 +38,7 @@ from agent_orchestrator.artifacts.workspace_base import (
     capture_base,
 )
 
-RESERVED = ("sources/", ".assurance/", "accepted-outputs/")
+RESERVED = (".harness/sources/", ".assurance/", ".harness/accepted-outputs/")
 MONEY = b"def cents(x):\n    return int(x * 100)\n"
 MONEY_NEW = b"def cents(x):\n    return round(x * 100)\n"
 TEST_OLD = b"def test_cents():\n    assert True\n"
@@ -88,7 +88,7 @@ def test_the_change_set_is_the_real_changes_against_the_base(tmp_path):
             _produced("tests/test_money.py", TEST_OLD + b"# more\n"),
             _produced("tests/test_cli.py", b"def test_cli():\n    pass\n"),
             _produced("README.md", b"hi\n"),  # 与底相同：不是改动
-            _produced("accepted-outputs/t2/report/REPORT.md", b"kept\n"),  # SDK 自己的路径
+            _produced(".harness/accepted-outputs/t2/report/REPORT.md", b"kept\n"),  # SDK 自己的路径
         ],
     )
     files = {item["path"]: item for item in change["files"]}

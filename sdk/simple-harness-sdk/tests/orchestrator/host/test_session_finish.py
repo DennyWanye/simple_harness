@@ -483,7 +483,7 @@ def test_legacy_rejected_intent_is_finalized_during_the_first_reopen(tmp_path):
         with session._store.transaction():
             [row] = session._store.rows("delegations")
             row["sources"].append(
-                {"path": "sources/a.md/child.md", "content": "sample", "kind": "markdown"}
+                {"path": ".harness/sources/a.md/child.md", "content": "sample", "kind": "markdown"}
             )
             session._store.put("delegations", row["key"], row)
             turn["receipt"] = {"state": "committed", "text": "Rejected."}

@@ -123,7 +123,7 @@ def test_an_answer_with_material_is_registered_as_a_source_the_next_attempt_moun
     """架构方案 C（2026-09-30）：用户回答里给的数据登记成任务资料，不只是一条备注。
 
     真机第 4、5 轮：回答只进规划器和备注，执行者拿不到文件；"换输入"决定绑不到资料。资料是
-    按每次尝试冻结、只读挂载的，所以把回答登记为 sources/answers/<问题 id>.md，规划器让那一步
+    按每次尝试冻结、只读挂载的，所以把回答登记为 .harness/sources/answers/<问题 id>.md，规划器让那一步
     原样重试，新尝试自动挂上它。回答与登记同一事务、同按问题 id 幂等；选项式问题不附资料。"""
 
     from agent_orchestrator.api.planning_answers import answer_planning_question, answer_source_path
@@ -171,7 +171,7 @@ def test_an_answer_with_material_is_registered_as_a_source_the_next_attempt_moun
             )
             receipt = answer_planning_question(loop, **call)
 
-            path = answer_source_path("sources/", question["decision_id"])
+            path = answer_source_path(".harness/sources/", question["decision_id"])
             assert receipt["source"]["path"] == path
             sources = {s["path"]: s for s in loop.store.list_sources(mission.id, active_only=True)}
             assert sources[path]["version_hash"] == receipt["source"]["version_hash"]

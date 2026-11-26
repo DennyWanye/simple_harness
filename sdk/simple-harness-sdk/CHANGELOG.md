@@ -1,3 +1,15 @@
+## 未发布 — SDK 自己的路径搬到 `.harness/`（工作区以底为基础 P2b，2026-11-26）
+
+- 通用任务（代码领域，版本 7）的资料根从 `sources/` 改为 `.harness/sources/`，会话委派带的资料自动放到这里。以前拍底
+  按不分大小写扣留 SDK 的 `sources/`，Swift 包仓库根目录的 `Sources/` 整个被扣（执行者看不到、交付不含）；现在照常进底。
+- 执行者草稿写 `.harness/scratch/`（写文件工具的说明里写明）：照常登记、传给后续步骤，不进改动集、不写回。
+- 判定树里落选的产出放 `.harness/accepted-outputs/`。拍底的保留前缀改为 `.harness/`、`.assurance/`。
+- 测试里写死的 `sources/` 路径随之改成 `.harness/sources/`。
+- **宿主要跟着改（升到含这次改动的 SDK 时）**：直接调 `register_source` / 建任务时带资料的，路径前缀从 `sources/` 换成 `.harness/sources/`（会话委派 `delegate_task` 的资料 SDK 自动补前缀，不用改）。本仓库桌面端（`tauri-app` 的 `MissionsView`、`MissionSources`）与后端测试里写死的 `sources/` 要在后端换钉版的同一次提交里改；桌面端的改动在分支 `release/tauri-harness-root`（视图测试通过），现在不合进来，因为后端还钉着 opt.230。
+- `file:` 成功条件指向 `.harness/`、`.assurance/` 回 `file_criterion_reserved_path`；执行者不能把 `.harness` 写成文件；写文件时上级是个文件等系统错误收成这次工具调用的错误（以前是未处理的异常）。独立核验第二轮 PASS，以上为跟进的建议。
+
+独立核验第一轮（FAIL）查出并已修：保证通道接缝脚本 `scripts/assurance_seams/evidence-tools-seam.py` 还写着旧资料根，`test_a_assurance.py::test_extra_evidence_exposure` 因此失败 → 改成 `.harness/sources/`。同时采纳的建议：执行者不能把 `.harness` 写成文件（会堵死资料与草稿根）；`file:` 成功条件指向 `.harness/` 回 `file_criterion_reserved_path`（那里的东西不交付，任务完成了也交不出来）；判定树落选产出的路径改用同一个常量 `HARNESS_ROOT` 拼，不会和保留前缀分家；补了委派资料落在领域资料根、改动集不分大小写排除 `.HARNESS/` 的用例；几处注释跟上。
+
 ## 未发布 — 有底的任务交付：改动集与写回（issue #53，2026-11-26）
 
 P1（#51）让任务在「底提交」上干活；这一段把结果交回去。设计见 `plans/2026-11-26-workspace-base/`（本次是 P2a）。

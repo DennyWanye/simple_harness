@@ -56,6 +56,7 @@ from simple_harness.tools.schema import ArgumentsValidationError, validate_argum
 
 from ..artifacts.paths import under_prefix
 from ..artifacts.workspace import Workspace, WorkspaceError, WorkspaceManager
+from ..artifacts.workspace_base import HARNESS_ROOT
 from .sandbox import ExecutionReceipt, ProcessOnlyExecutor, SandboxExecutorPort, SandboxSpec
 
 TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
@@ -94,7 +95,13 @@ TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
     "workspace_write_file": {
         "type": "object",
         "properties": {
-            "path": {"type": "string", "description": "工作区内相对路径"},
+            "path": {
+                "type": "string",
+                "description": (
+                    "工作区内相对路径。只给自己或后续步骤看的草稿（笔记、中间结果）写在 "
+                    ".harness/scratch/ 下：照常传给后续步骤，但不交给使用方"
+                ),
+            },
             "content": {"type": "string", "description": "完整文件内容（覆盖写入）"},
         },
         "required": ["path", "content"],
@@ -863,6 +870,9 @@ class WorkspaceToolGateway:
             elif call.name == "workspace_write_file":
                 if not binding.writable:
                     raise WorkspaceError("workspace is read-only")
+                if _canonical(str(arguments["path"])).casefold() == HARNESS_ROOT.rstrip("/"):
+                    # 写成文件就把 SDK 的目录（资料、草稿）堵死了
+                    raise WorkspaceError(".harness 是 SDK 的目录，不能写成文件")
                 _attempt_workspace(workspace).write_text(arguments["path"], arguments["content"])
                 value = {
                     "path": arguments["path"],

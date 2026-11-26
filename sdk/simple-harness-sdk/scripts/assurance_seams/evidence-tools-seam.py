@@ -22,8 +22,8 @@ from tempfile import TemporaryDirectory
 
 from agent_orchestrator.assurance.codec import decode
 
-EXTRA = ("sources/notes/extra.md", "# extra evidence\nnote the user attached to the task\n")
-SECOND = ("sources/notes/second.md", "# second note\nanother attached note\n")
+EXTRA = (".harness/sources/notes/extra.md", "# extra evidence\nnote the user attached to the task\n")
+SECOND = (".harness/sources/notes/second.md", "# second note\nanother attached note\n")
 
 
 def find_label(request, path):  # type: ignore[no-untyped-def]
@@ -53,7 +53,7 @@ def batches(store, review_key):  # type: ignore[no-untyped-def]
 
 async def complete_read(root, report) -> None:  # type: ignore[no-untyped-def]
     provider = StepReviewer({"TASK_CONTENT": [
-        ("assurance_find_evidence", {"query": "sources/notes/"}),
+        ("assurance_find_evidence", {"query": ".harness/sources/notes/"}),
         lambda request, data: ("assurance_read_evidence", {"label": find_label(request, EXTRA[0])}),
         lambda request, data: ("assurance_read_evidence", {"label": find_label(request, SECOND[0])}),
         lambda request, data: cite(data, read_labels(request)),
@@ -136,7 +136,7 @@ async def partial_read(root, report) -> None:  # type: ignore[no-untyped-def]
 
 async def mission_final(root, report) -> None:  # type: ignore[no-untyped-def]
     provider = StepReviewer({"MISSION_FINAL": [
-        ("assurance_find_evidence", {"query": "sources/notes/"}),
+        ("assurance_find_evidence", {"query": ".harness/sources/notes/"}),
         lambda request, data: ("assurance_read_evidence", {"label": find_label(request, EXTRA[0])}),
         lambda request, data: cite(data, read_labels(request)),
     ]})

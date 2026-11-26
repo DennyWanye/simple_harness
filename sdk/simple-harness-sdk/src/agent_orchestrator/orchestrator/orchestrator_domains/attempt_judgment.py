@@ -18,6 +18,7 @@ from ...artifacts.delivery import Produced, build_change_set
 from ...artifacts.store import ArtifactStoreError, read_verified
 from ...artifacts.versioning import ArtifactConflict, UpstreamInput
 from ...artifacts.workspace_base import (
+    HARNESS_ROOT,
     RESERVED_BASE_PREFIXES,
     BaseError,
     mission_base_commit,
@@ -189,7 +190,7 @@ class AttemptJudgmentMixin(OrchestratorCore):
             self._note(
                 f"hierarchical mission {mission.id}: judgment tree keeps the criterion-linked / "
                 f"port / last writer of {[item['path'] for item in superseded]}; a linked loser "
-                "is kept under accepted-outputs/; the legacy merge is not applied"
+                "is kept under .harness/accepted-outputs/; the legacy merge is not applied"
             )
         return tree
 
@@ -212,7 +213,7 @@ class AttemptJudgmentMixin(OrchestratorCore):
         delivered"): an output a root criterion is linked to is **never dropped**.
         When two criterion-linked port outputs land on one path — C1-r1's ``verify``
         ``report`` and ``summarize`` ``summary`` were both ``REPORT.md`` — the loser
-        keeps its bytes in the tree under ``accepted-outputs/<task>/<port>/<path>``,
+        keeps its bytes in the tree under ``.harness/accepted-outputs/<task>/<port>/<path>``,
         and the record names both artifacts.  Nothing raises; what was superseded
         and where it was kept is written down once, in
         ``ArtifactMergeNotApplicableUnderHierarchical``.
@@ -279,8 +280,8 @@ class AttemptJudgmentMixin(OrchestratorCore):
                 seen_artifacts.add(artifact.id)
                 kept_at = None
                 if weight[0] and port is not None:
-                    # I05: evidence a root criterion was judged on stays deliverable.
-                    kept_at = f"accepted-outputs/{task_id}/{port}/{path}"
+                    # 根要求据以判定的证据留在判定树里；放在 SDK 自己的根下，不进交付的改动集
+                    kept_at = f"{HARNESS_ROOT}accepted-outputs/{task_id}/{port}/{path}"
                     tree[kept_at] = UpstreamInput(
                         task_id, kept_at, artifact.content_hash, artifact.id
                     )

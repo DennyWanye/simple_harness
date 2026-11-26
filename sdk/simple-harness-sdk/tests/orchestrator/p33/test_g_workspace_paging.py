@@ -37,7 +37,7 @@ from simple_harness.agents.ports import AgentRuntimePorts, AllowAllAuthorization
 from simple_harness.contracts import CallId, Message, MessageRole, canonical_json, thaw_json
 from simple_harness.tools import ToolCall, ToolResult
 
-PATH = "sources/条件.md"
+PATH = ".harness/sources/条件.md"
 
 
 def _gateway(tmp_path, data, **binding_options):
@@ -52,7 +52,7 @@ def _gateway(tmp_path, data, **binding_options):
         "work",
         True,
         CRITIC_TOOLS,
-        untrusted_sources=("sources/",),
+        untrusted_sources=(".harness/sources/",),
         **binding_options,
     )
     gateway.bind("agent", binding)
@@ -362,7 +362,7 @@ def test_continuation_rechecks_permissions_and_tool_budget(tmp_path, restriction
         elif restriction == "allowlist":
             gateway.bind("agent", replace(binding, allowed_tools=()))
         elif restriction == "denied":
-            gateway.bind("agent", replace(binding, denied_prefixes=("sources/",)))
+            gateway.bind("agent", replace(binding, denied_prefixes=(".harness/sources/",)))
         else:
             gateway.executed_counter = lambda _: 1  # durable count after reopening the gateway
             gateway.bind("agent", replace(binding, max_tool_calls=1))
@@ -403,7 +403,7 @@ def test_readonly_verification_pages_do_not_grant_write(tmp_path):
             "verify",
             False,
             CRITIC_TOOLS,
-            untrusted_sources=("sources/",),
+            untrusted_sources=(".harness/sources/",),
         ),
     )
     first = asyncio.run(_read(gateway, agent="critic"))

@@ -304,7 +304,7 @@ def test_a_world_that_moves_under_the_final_review_supersedes_the_package_and_re
                         world.control.register_source(
                             {
                                 "mission_id": mission_id,
-                                "path": "sources/late.md",
+                                "path": ".harness/sources/late.md",
                                 "content": "后来补的资料",
                                 "kind": "markdown",
                                 "idempotency_key": "late-source-1",
@@ -439,7 +439,7 @@ def test_a_spent_recut_budget_stops_the_final_review_and_is_recorded_once(tmp_pa
 
 
 SPEC_PATH, SPEC_OLD, SPEC_NEW = (
-    "sources/spec.md",
+    ".harness/sources/spec.md",
     "# 规格\n价格：每月 18 元\n",
     "# 规格\n价格：每月 25 元\n",
 )

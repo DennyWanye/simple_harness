@@ -30,7 +30,7 @@ from agent_orchestrator.testing.scripted_replies import (
     reviewer_reply,
 )
 
-PATH = "sources/spec.md"
+PATH = ".harness/sources/spec.md"
 OLD, NEW = "# 规格\n价格：每月 18 元\n", "# 规格\n价格：每月 25 元\n"
 
 

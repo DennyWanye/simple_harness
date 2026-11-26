@@ -44,7 +44,9 @@ from ..artifacts.delivery import (
     delivery_diff,
     same_location,
 )
+from ..artifacts.paths import under_prefix
 from ..artifacts.workspace_base import (
+    HARNESS_ROOT,
     RESERVED_BASE_PREFIXES,
     BaseError,
     BaseRepo,
@@ -1355,6 +1357,15 @@ class OrchestrationHost:
                     "file_criterion_not_a_path",
                     "file: 后面只能写一个工作区内的相对路径（不带空白、不是绝对路径、不含 ..），"
                     "对文件内容的要求另起一条成功条件",
+                )
+            if text.startswith("file:") and under_prefix(
+                text[len("file:") :].casefold(), RESERVED_BASE_PREFIXES
+            ):
+                # 保留路径（.harness/、.assurance/）是 SDK 自己的东西，不交付：拿它当要求，任务完成了也交不出东西
+                raise HostRequestError(
+                    "file_criterion_reserved_path",
+                    "file: 不能指向 .harness/ 或 .assurance/（SDK 自己的资料、草稿与材料，不交给使用方），"
+                    "写要交付的文件路径",
                 )
         if any(c.strip().startswith("pytest:") for c in criteria) and not (
             self.policy is not None and self.policy.code_execution == "sandboxed"
