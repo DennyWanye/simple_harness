@@ -19,7 +19,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from test_host_base import _host, _mission  # noqa: E402
 
-from agent_orchestrator.artifacts.workspace_base import GitRepoBase, InMemoryBase  # noqa: E402
+from agent_orchestrator.artifacts.workspace_base import (
+    DirectoryBase,
+    GitRepoBase,
+    InMemoryBase,
+    git_blob_id,
+)  # noqa: E402
 from agent_orchestrator.host import HostRequestError  # noqa: E402
 from agent_orchestrator.testing.scripted_replies import (  # noqa: E402
     LayeredScriptedProvider,
@@ -133,6 +138,56 @@ def test_a_finished_mission_hands_back_its_changes_to_the_users_repo(tmp_path):
                 ("ledger/money.py", "applied")
             ]
             assert (user / "ledger/money.py").read_text() == MONEY_NEW
+
+    asyncio.run(case())
+
+
+@pytest.mark.parametrize("kind", [DirectoryBase, GitRepoBase])
+def test_completed_mission_replays_delivery_during_compile(tmp_path, monkeypatch, kind):
+    user = _user_repo(tmp_path / "user")
+    adapter = kind(user)
+
+    async def case():
+        provider = LayeredScriptedProvider(worker=_worker)
+        async with _host(tmp_path / "root", provider=provider, workspace_base=adapter) as host:
+            mission_id = await _finished(host)
+            read = adapter._current
+            source = user / "ledger/book.py"
+            compiled = source.with_suffix(".pyc")
+            changes = []
+
+            def build_during_read(path):
+                blob = read(path)
+                # 新文件最终比对时编译兄弟模块，已有文件写后复核时清掉编译产物。
+                if path == "ledger/cli.py" and not changes and any(source.parent.glob("*.harness")):
+                    subprocess.run(
+                        [sys.executable, "-m", "compileall", "-q", "-b", str(source)], check=True
+                    )
+                    assert compiled.is_file()
+                    changes.append("add")
+                elif (
+                    path == "ledger/money.py"
+                    and changes == ["add"]
+                    and blob == git_blob_id(MONEY_NEW.encode())
+                ):
+                    compiled.unlink()
+                    changes.append("remove")
+                return blob
+
+            monkeypatch.setattr(adapter, "_current", build_during_read)
+            first = host.apply_delivery(mission_id, operation_key="build")
+            again = host.apply_delivery(mission_id, operation_key="build")
+            assert changes == ["add", "remove"]
+            assert not first["repeat"] and again["repeat"]
+            assert (
+                again["files"] == first["files"] == host.delivery(mission_id)["applies"][0]["files"]
+            )
+            expected = {"ledger/cli.py": CLI.encode(), "ledger/money.py": MONEY_NEW.encode()}
+            assert {r["path"] for r in first["files"]} == set(expected)
+            for row in first["files"]:
+                assert (row["status"], row["reason"]) == ("applied", None)
+                assert (user / row["path"]).read_bytes() == expected[row["path"]]
+                assert row["blob"] == git_blob_id(expected[row["path"]])
 
     asyncio.run(case())
 

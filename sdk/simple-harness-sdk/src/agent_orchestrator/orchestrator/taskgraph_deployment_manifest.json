@@ -1,6 +1,6 @@
 {
   "acceptance_evidence": null,
-  "deployment_id": "8a45c5f57677681bb067b694580d825ee4f53c622d519a181f2f5844792418d5",
+  "deployment_id": "19df625109d33ed4051d2dfddb039dabf7cdd22b796bd1e232d6015dcbbdbfbb",
   "schema": "taskgraph-htn-wiring-derivation-v1",
   "source_files": {
     "agent_orchestrator/__init__.py": "eb50152258b356bc7866e55823fc45c7209cb6150efe205dd03c40c33beedbc2",
@@ -28,7 +28,7 @@
     "agent_orchestrator/artifacts/taskgraph_inputs.py": "b567cfdbd065477bb5a8b2677116332a53c14c7855771e876e1492e49831583f",
     "agent_orchestrator/artifacts/versioning.py": "11961adb1f9756b68c69afe97496ef1a4f922c47bf1c49d368bc7e3eeefc188d",
     "agent_orchestrator/artifacts/workspace.py": "02ab9fb584365c05ef87b414b8c21d17518f96b363d1c3a3887cce22ce882835",
-    "agent_orchestrator/artifacts/workspace_base.py": "ec1263d2c2ea95075c4ffefd31cebe75f48acf97b1f28c958e3a8cecdcba7166",
+    "agent_orchestrator/artifacts/workspace_base.py": "11dd47430d2e5f7d82e2361dcdeca5cc4cdadd72d1fa9bd7856b128a1fd9d02b",
     "agent_orchestrator/assurance/__init__.py": "c4a392cea6590f6e36af3948f5813b3027bd365c2a3ba7df474c1853c1a57c17",
     "agent_orchestrator/assurance/certificates.py": "cd5b51b737108cbedde71d386995ff69a0f3cf667aaf1a97d586e7a99da807bf",
     "agent_orchestrator/assurance/check_bindings.py": "ac4cf0d1210d56c9224d3539f79aeca82c3e0a3e97d10859820a7b650666c096",

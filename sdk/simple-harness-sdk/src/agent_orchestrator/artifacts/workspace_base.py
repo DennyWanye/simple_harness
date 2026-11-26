@@ -40,7 +40,7 @@ from pathlib import Path, PurePosixPath
 from typing import Protocol, runtime_checkable
 
 from .paths import ambiguous_paths, spelling_key, under_prefix
-from .store import ArtifactStoreError, read_nofollow
+from .store import ArtifactStoreError, open_nofollow, read_nofollow
 
 GIT_MIN_VERSION = (2, 38)
 #: 工作区读写单文件的上限（与 :data:`workspace.MAX_FILE_BYTES` 同值）；更大的底文件只读不可改。
@@ -159,17 +159,25 @@ def git_blob_id(data: bytes) -> str:
     return hashlib.sha1(b"blob %d\0" % len(data) + data, usedforsecurity=False).hexdigest()
 
 
-def _revision(path: Path) -> tuple[int, ...] | None:
-    try:
-        info = path.stat()
-    except (FileNotFoundError, NotADirectoryError):
-        return None
+def _version(info: os.stat_result) -> tuple[int, ...]:
     return info.st_dev, info.st_ino, info.st_ctime_ns, info.st_mtime_ns, info.st_size
 
 
-def _unchanged(scanned: Mapping[Path, tuple[int, ...] | None]) -> bool:
-    # 读 blob 时目录项可能被移走又放回；最后按扫描顺序复核各级目录，末项是目标文件。
-    return all(_revision(path) == before for path, before in scanned.items())
+def _revision(path: Path) -> tuple[int, ...] | None:
+    try:
+        return _version(path.lstat())
+    except (FileNotFoundError, NotADirectoryError):
+        return None
+
+
+def _entry_problem(part: str, names: list[str], require_exact: bool) -> str | None:
+    key = spelling_key(part)
+    for name in names:
+        if name != part and spelling_key(name) == key:
+            return "case_conflict" if name.casefold() == part.casefold() else "spelling_alias"
+    if require_exact and part not in names:
+        return "missing"
+    return None
 
 
 def _spelling_problem(
@@ -190,12 +198,9 @@ def _spelling_problem(
             return "missing" if require_exact else None
         except NotADirectoryError:
             return "not_a_directory"
-        key = spelling_key(part)
-        for name in names:
-            if name != part and spelling_key(name) == key:
-                return "case_conflict" if name.casefold() == part.casefold() else "spelling_alias"
-        if require_exact and part not in names:
-            return "missing"
+        problem = _entry_problem(part, names, require_exact)
+        if problem is not None:
+            return problem
         current = current / part
     scanned[current] = _revision(current)
     return None
@@ -327,7 +332,7 @@ class DirectoryBase:
         finally:
             self._delivery_root.reset(token)
 
-    def _paths(self) -> Iterable[str]:
+    def _paths(self, scope: Sequence[str] = ()) -> Iterable[str]:
         for directory, names, filenames in os.walk(self.root):
             base = Path(directory)
             names[:] = [
@@ -336,7 +341,9 @@ class DirectoryBase:
             for name in (*names, *filenames):
                 target = base / name
                 if target.is_symlink() or target.is_file():
-                    yield target.relative_to(self.root).as_posix()
+                    relative = target.relative_to(self.root).as_posix()
+                    if _in_scope(relative, scope):
+                        yield relative
 
     def location(self) -> str:
         return os.path.realpath(self.root)
@@ -357,9 +364,7 @@ class DirectoryBase:
         files: list[BaseFile] = []
         withheld: dict[str, str] = {}
         source = self._source()
-        for relative in sorted(set(self._paths())):
-            if not _in_scope(relative, scope):
-                continue
+        for relative in sorted(set(self._paths(scope))):
             target = self.root / relative
             if _through_link(self.root, relative):
                 withheld[relative] = "symlink"
@@ -379,6 +384,62 @@ class DirectoryBase:
             return "!" + ("symlink" if target.is_symlink() else "not_a_file")
         return git_blob_id(read_nofollow(target))
 
+    def _confirm_read(
+        self, path: str, scanned: Mapping[Path, tuple[int, ...] | None], blob: str | None
+    ) -> FileWrite | None:
+        if all(_revision(entry) == before for entry, before in scanned.items()):
+            return None
+
+        # 目录时间变化也可能只是增删了兄弟文件。用实际打开的文件复读，
+        # 避免把读取期间短暂出现在原路径上的别名内容当作目标内容。
+        target = self.root / path
+        changed = FileWrite("refused", blob, "path_changed")
+        before = scanned.get(target)
+        if blob is not None:
+            if before is None or not target.is_file():
+                return changed
+            with open_nofollow(target) as handle:
+                opened = _version(os.fstat(handle.fileno()))
+                if opened[:2] != before[:2]:
+                    return changed
+                actual = git_blob_id(handle.read())
+        else:
+            if before is not None:
+                return changed
+            opened = None
+            actual = None
+
+        # 读后仍须逐级核对精确名字。目录只比设备号和 inode；文件版本
+        # 则从打开句柄核对到扫描结束，以捕获扫描期间的就地保存或替换。
+        checked = {}
+        problem = _spelling_problem(self.root, path, checked, require_exact=blob is not None)
+        if problem is not None:
+            return FileWrite("refused", None, problem)
+        # 复扫下级目录时，上级也可能刚换了名字。只重列这期间发生
+        # 变化的父目录，检查通向目标的那个条目；其他兄弟项可以继续变化。
+        parent = self.root
+        for part in PurePosixPath(path).parts:
+            child = parent / part
+            if _revision(parent) != checked.get(parent):
+                problem = _entry_problem(
+                    part, os.listdir(parent), child != target or blob is not None
+                )
+                if problem is not None:
+                    return FileWrite("refused", None, problem)
+            parent = child
+        for entry, previous in scanned.items():
+            if entry == target:
+                continue  # 文件在下面同时核对身份和内容。
+            current = _revision(entry)
+            if previous is None or current is None or current[:2] != previous[:2]:
+                return changed
+        if _revision(target) != opened:
+            now = self._current(path)
+            return FileWrite("conflict", now) if now != blob else changed
+        if actual != blob:
+            return FileWrite("conflict", actual)
+        return None
+
     def current_hashes(self, paths: Sequence[str]) -> dict[str, str | None]:
         # 写后换过名字时，别名的内容即使相同也不能作为原路径的回执。
         hashes = {}
@@ -387,9 +448,10 @@ class DirectoryBase:
             scanned = {}
             if _spelling_problem(self.root, path, scanned, require_exact=True) is None:
                 blob = self._current(path)
-                if _spelling_problem(
-                    self.root, path, {}, require_exact=True
-                ) is not None or not _unchanged(scanned):
+                if (
+                    _spelling_problem(self.root, path, {}, require_exact=True) is not None
+                    or self._confirm_read(path, scanned, blob) is not None
+                ):
                     blob = None
             hashes[path] = blob
         return hashes
@@ -421,7 +483,7 @@ class DirectoryBase:
             spelling = _spelling_problem(self.root, path, {}, require_exact=True)
             if spelling is not None:
                 return FileWrite("refused", None, spelling)
-            if not _unchanged(scanned):
+            if self._confirm_read(path, scanned, current) is not None:
                 return FileWrite("refused", None, "path_changed")
             if root_id is not None and self.root_id() != root_id:
                 return FileWrite("refused", None, "delivery_target_mismatch")
@@ -447,41 +509,57 @@ class DirectoryBase:
             )
             # 创建、改名和清理共用父目录句柄，父目录移走后也能删除暂存的交付内容。
             with _staging_parent(target.parent) as (directory, parent_fd):
-                name = directory / f".{target.name}.{uuid.uuid4().hex}.harness"
+                name = directory / f".{uuid.uuid4().hex}.harness"
                 handle = os.open(
                     name, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600, dir_fd=parent_fd
                 )
-                staged = True
-                try:
-                    with os.fdopen(handle, "wb") as out:
+                with os.fdopen(handle, "wb") as out:
+                    # POSIX 持有句柄直到清理完成，期间 inode 不会被回收复用。
+                    created = os.fstat(out.fileno())
+                    staged = True
+                    try:
                         out.write(data)
                         out.flush()
                         os.chmod(name if parent_fd is None else out.fileno(), mode)
-                    scanned: dict[Path, tuple[int, ...] | None] = {}
-                    spelling = _spelling_problem(self.root, path, scanned)
-                    if spelling is not None:
-                        return FileWrite("refused", current, spelling)
-                    if _through_link(self.root, path):
-                        return FileWrite("refused", current, "symlink")
-                    if root_id is not None and self.root_id() != root_id:
-                        return FileWrite("refused", current, "delivery_target_mismatch")
-                    parent_info = directory.stat() if parent_fd is None else os.fstat(parent_fd)
-                    if not os.path.samestat(parent_info, target.parent.stat()):
-                        return FileWrite("refused", current, "parent_changed")
-                    # 拼写扫描可能耗时，最后才读现状，然后立即以原子改名提交。
-                    now = self._current(path)
-                    if now != current:
-                        return FileWrite("conflict", now)
-                    if not _unchanged(scanned):
-                        return FileWrite("refused", current, "path_changed")
-                    os.replace(
-                        name, directory / target.name, src_dir_fd=parent_fd, dst_dir_fd=parent_fd
-                    )
-                    staged = False
-                finally:
-                    if staged:
-                        with suppress(FileNotFoundError):
-                            os.unlink(name, dir_fd=parent_fd)
+                        if parent_fd is None:
+                            out.close()  # Windows 改名之前需要释放文件句柄。
+                        scanned: dict[Path, tuple[int, ...] | None] = {}
+                        spelling = _spelling_problem(self.root, path, scanned)
+                        if spelling is not None:
+                            return FileWrite("refused", current, spelling)
+                        if _through_link(self.root, path):
+                            return FileWrite("refused", current, "symlink")
+                        if root_id is not None and self.root_id() != root_id:
+                            return FileWrite("refused", current, "delivery_target_mismatch")
+                        parent_info = directory.stat() if parent_fd is None else os.fstat(parent_fd)
+                        if not os.path.samestat(parent_info, target.parent.stat()):
+                            return FileWrite("refused", current, "parent_changed")
+                        # 拼写扫描可能耗时，最后才读现状，然后立即以原子改名提交。
+                        now = self._current(path)
+                        if now != current:
+                            return FileWrite("conflict", now)
+                        if change := self._confirm_read(path, scanned, now):
+                            return change
+                        if not os.path.samestat(
+                            created, os.stat(name, dir_fd=parent_fd, follow_symlinks=False)
+                        ):
+                            return FileWrite("refused", current, "path_changed")
+                        os.replace(
+                            name,
+                            directory / target.name,
+                            src_dir_fd=parent_fd,
+                            dst_dir_fd=parent_fd,
+                        )
+                        staged = False
+                    finally:
+                        if staged:
+                            if parent_fd is None:
+                                out.close()
+                            with suppress(FileNotFoundError):
+                                if os.path.samestat(
+                                    created, os.stat(name, dir_fd=parent_fd, follow_symlinks=False)
+                                ):
+                                    os.unlink(name, dir_fd=parent_fd)
         except (OSError, ArtifactStoreError) as error:
             return FileWrite("failed", current, f"write_failed: {type(error).__name__}")
         return FileWrite("applied", current)
@@ -513,24 +591,33 @@ class GitRepoBase(DirectoryBase):
             timeout=120,
         )
 
-    def _paths(self) -> Iterable[str]:
+    def _paths(self, scope: Sequence[str] = ()) -> Iterable[str]:
         done = self._run("ls-files", "-z", "--cached", "--others", "--exclude-standard")
         if done.returncode != 0:
             raise BaseUnavailable(
                 f"列不出 {self.root} 的文件：{done.stderr.decode(errors='replace')[:200]}"
             )
-        listings: dict[Path, set[str]] = {}
+        listings: dict[Path, dict[str, set[str]]] = {}
+        folded_scope = tuple(spelling_key(item) for item in scope)
         for raw in done.stdout.split(b"\0"):
             if not raw:
                 continue
             relative = raw.decode("utf-8", errors="surrogateescape")
-            relative = self._worktree_spelling(relative, listings)
+            # Git 可能给出预组合名或索引旧名。先用折叠范围排除无关路径，
+            # 再用工作树的实际前缀决定是否继续深入，精确范围以磁盘为准。
+            if scope and not _in_scope(spelling_key(relative), folded_scope):
+                continue
+            relative = self._worktree_spelling(relative, listings, scope)
+            if relative is None or not _in_scope(relative, scope):
+                continue
             target = self.root / relative
             # 已跟踪但工作目录里删掉了的不算底；经软链的照样列出，由 capture 扣留
             if _through_link(self.root, relative) or target.is_file():
                 yield relative
 
-    def _worktree_spelling(self, relative: str, listings: dict[Path, set[str]]) -> str:
+    def _worktree_spelling(
+        self, relative: str, listings: dict[Path, dict[str, set[str]]], scope: Sequence[str]
+    ) -> str | None:
         """Git 负责选文件；索引大小写或 Git 预组合的名字须还原成目录项的拼写。"""
         folder = self.root
         parts = list(PurePosixPath(relative).parts)
@@ -539,25 +626,30 @@ class GitRepoBase(DirectoryBase):
                 break  # 剩余路径由拍底入口整体扣留，不枚举链接另一端
             if folder not in listings:
                 try:
-                    listings[folder] = set(os.listdir(folder))
+                    by_key: dict[str, set[str]] = {}
+                    for name in os.listdir(folder):
+                        by_key.setdefault(spelling_key(name), set()).add(name)
+                    listings[folder] = by_key
                 except (FileNotFoundError, NotADirectoryError):
                     break
-            names = listings[folder]
+            names = listings[folder].get(spelling_key(part), ())
             if part not in names:
                 try:
                     selected = (folder / part).lstat()
                 except (FileNotFoundError, NotADirectoryError):
                     break  # 区分大小写的磁盘上，已删除的索引项不能认领被忽略的同名文件
-                key = spelling_key(part)
                 matches = [
-                    name
-                    for name in names
-                    if spelling_key(name) == key
-                    and os.path.samestat(selected, (folder / name).lstat())
+                    name for name in names if os.path.samestat(selected, (folder / name).lstat())
                 ]
                 if len(matches) != 1:
                     raise BaseUnavailable(f"无法核验 Git 所列路径的工作树拼写：{relative}")
                 parts[index] = matches[0]
+            if scope and index + 1 < len(parts):
+                prefix = "/".join(parts[: index + 1])
+                if not _in_scope(prefix, scope) and not any(
+                    under_prefix(item, [prefix]) for item in scope
+                ):
+                    return None
             folder = folder / parts[index]
         return "/".join(parts)
 
