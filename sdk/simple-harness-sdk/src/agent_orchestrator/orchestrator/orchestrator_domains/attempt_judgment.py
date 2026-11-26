@@ -15,10 +15,17 @@ from typing import TYPE_CHECKING, Any, cast
 from simple_harness.agents import AgentConfig, AgentLimits
 
 from ...artifacts.delivery import Produced, build_change_set
-from ...artifacts.store import ArtifactStoreError, read_verified
+from ...artifacts.judgment_merge import (
+    JudgmentFile,
+    MergeFacts,
+    Placement,
+    place_judgment_file,
+    refused_spellings,
+)
+from ...artifacts.paths import ambiguous_paths, spelling_key, under_prefix
+from ...artifacts.store import ArtifactStoreError
 from ...artifacts.versioning import ArtifactConflict, UpstreamInput
 from ...artifacts.workspace_base import (
-    HARNESS_ROOT,
     RESERVED_BASE_PREFIXES,
     BaseError,
     mission_base_commit,
@@ -88,6 +95,7 @@ logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from ...contracts.resolution import GoalResolution
+    from ...storage.store import Store
 
 
 def _turn_error_code(failure: Mapping[str, Any]) -> str | None:
@@ -167,24 +175,58 @@ def retry_feedback(
     return feedback, verifier_feedback
 
 
+def _starts_from_base(store: Store, artifact: Artifact, base: str | None) -> bool:
+    """派发时已冻结底提交、重试来源和所有挂载目标；任一来源不明就保留完整原版。"""
+    intent = store.get_intent_for_subject(artifact.attempt_id)
+    if intent is None or intent.mission_id != artifact.mission_id:
+        return False
+    execution = intent.config.get("attempt_execution")
+    if (
+        not isinstance(execution, Mapping)
+        or execution.get("task_id") != artifact.task_id
+        or execution.get("base_commit") != base
+        or execution.get("retry_of", "") is not None
+    ):
+        return False
+    files = execution.get("files")
+    roots = execution.get("source_roots")
+    if not isinstance(files, Mapping) or not isinstance(roots, list):
+        return False
+    path = artifact.path
+    return (
+        path not in files
+        and path not in ambiguous_paths((*files, path))
+        and not under_prefix(spelling_key(path), [spelling_key(root) for root in roots])
+    )
+
+
 class AttemptJudgmentMixin(OrchestratorCore):
     """Judgment inputs, next-attempt selection and criteria evaluation."""
 
     __slots__ = ()
 
     def _hierarchical_judgment_inputs(
-        self, mission: Mission, new_mode: HierarchicalDispatch, tasks: Sequence[Task]
-    ) -> list[UpstreamInput]:
-        """The judgment tree (:meth:`_judgment_tree`), with what it superseded recorded once
-        per Mission judgment tree."""
-
-        tree, superseded, contributions = self._judgment_tree(mission, new_mode, tasks)
+        self,
+        mission: Mission,
+        new_mode: HierarchicalDispatch,
+        tasks: Sequence[Task],
+        sources: Mapping[str, bytes],
+    ) -> tuple[list[JudgmentFile], set[str]]:
+        """记录本次判定的版本选择，并把需要扣留的拼写传给判定副本。"""
+        tree, superseded, contributions, spellings = self._judgment_tree(
+            mission, new_mode, tasks, sources
+        )
         self.commit.record_artifact_merge_not_applicable(
             mission.id,
             subject=f"{mission.id}:judge:artifact-merge",
             contributions=contributions,
             artifacts=len(tree),
             superseded=superseded,
+            base_merges=[
+                {"path": item.path, **item.facts.to_json()}
+                for item in tree
+                if item.facts.merged_steps or item.facts.merge_skipped is not None
+            ],
         )
         if superseded:
             self._note(
@@ -192,32 +234,17 @@ class AttemptJudgmentMixin(OrchestratorCore):
                 f"port / last writer of {[item['path'] for item in superseded]}; a linked loser "
                 "is kept under .harness/accepted-outputs/; the legacy merge is not applied"
             )
-        return tree
+        return tree, spellings
 
     def _judgment_tree(
-        self, mission: Mission, new_mode: HierarchicalDispatch, tasks: Sequence[Task]
-    ) -> tuple[list[UpstreamInput], list[dict[str, Any]], int]:
-        """The Mission Judge's tree for a hierarchical Mission (P2.3k / defect N3).
-
-        Read from what the root ``GoalResolution`` was formed out of and nothing else:
-        the CURRENT acceptances of the adopted plan (``root_contributions``), each
-        acceptance's accepted artifacts, and the outputs P2.3h indexed on declared
-        ports.  One path written by several contributions is not a conflict here —
-        ordering in this mode is the typed network's, not ``dependency_ids`` — so the
-        rule is override, weighted ``(criterion-linked, port-indexed, acceptance
-        order)``: the output of a step the plan made answerable for a root criterion
-        wins, then an output the reviewer read at a declared port, then the later
-        acceptance (the clock is the tie-break, never the rule).
-
-        P2.3k verification P1-1 (AER I05, "what the reviewer saw is what is
-        delivered"): an output a root criterion is linked to is **never dropped**.
-        When two criterion-linked port outputs land on one path — C1-r1's ``verify``
-        ``report`` and ``summarize`` ``summary`` were both ``REPORT.md`` — the loser
-        keeps its bytes in the tree under ``.harness/accepted-outputs/<task>/<port>/<path>``,
-        and the record names both artifacts.  Nothing raises; what was superseded
-        and where it was kept is written down once, in
-        ``ArtifactMergeNotApplicableUnderHierarchical``.
-        """
+        self,
+        mission: Mission,
+        new_mode: HierarchicalDispatch,
+        tasks: Sequence[Task],
+        sources: Mapping[str, bytes],
+    ) -> tuple[list[JudgmentFile], list[dict[str, Any]], int, set[str]]:
+        """只取根结论当前采用的产物。各版本直接从同一底文本起步时才合并；冲突或不能合并时，
+        仍按根要求、声明端口、验收次序选版本。根要求引用的原端口证据保留在 SDK 目录。"""
 
         semantics = new_mode.semantics()
         contributing = {
@@ -237,7 +264,7 @@ class AttemptJudgmentMixin(OrchestratorCore):
         }
         tasks_by_id = {task.id: task for task in tasks}
         # path → every placement offered for it, each (weight, task_id, artifact, port)
-        offered: dict[str, list[tuple[tuple[int, int, int], str, Artifact, str | None]]] = {}
+        offered: dict[str, list[Placement]] = {}
 
         def place(task_id: str, artifact: Artifact | None, rank: int, port: str | None) -> None:
             if artifact is None:
@@ -261,61 +288,46 @@ class AttemptJudgmentMixin(OrchestratorCore):
                 rank_of[acceptance_id],
                 str(row.get("output_port", "")) or None,
             )
-        tree: dict[str, UpstreamInput] = {}
+        tree: dict[str, JudgmentFile] = {}
         superseded: list[dict[str, Any]] = []
+        base = mission_base_commit(mission.final_report)
+        manifest = {}
+        spellings = set()
+        if base is not None:
+            manifest = self.assembled.workspaces.bases.materialisable_manifest(base)
+            withheld = (mission.final_report or {})["workspace_base"].get("withheld", {})
+            seed = (mission.final_report or {}).get("workspace_seed", {})
+            spellings = ambiguous_paths((*manifest, *offered, *withheld, *seed, *sources))
+
         for path in sorted(offered):
-            placements = sorted(offered[path], key=lambda item: item[0], reverse=True)
-            _weight, kept_task, kept_artifact, _port = placements[0]
-            tree[path] = UpstreamInput(
-                kept_task, path, kept_artifact.content_hash, kept_artifact.id
+            files, overridden = place_judgment_file(
+                path,
+                offered[path],
+                self.assembled.workspaces.bases if base else None,
+                manifest.get(path),
+                path in spellings,
+                lambda artifact: _starts_from_base(self.store, artifact, base),
             )
-            losers: list[dict[str, Any]] = []
-            seen_artifacts = {kept_artifact.id}
-            for weight, task_id, artifact, port in placements[1:]:
-                if (
-                    artifact.id in seen_artifacts
-                    or artifact.content_hash == kept_artifact.content_hash
-                ):
-                    continue  # the same bytes under another placement are not a loss
-                seen_artifacts.add(artifact.id)
-                kept_at = None
-                if weight[0] and port is not None:
-                    # 根要求据以判定的证据留在判定树里；放在 SDK 自己的根下，不进交付的改动集
-                    kept_at = f"{HARNESS_ROOT}accepted-outputs/{task_id}/{port}/{path}"
-                    tree[kept_at] = UpstreamInput(
-                        task_id, kept_at, artifact.content_hash, artifact.id
+            tree.update((file.path, file) for file in files)
+            if overridden:
+                superseded.append(overridden)
+        if base is not None:
+            # 根要求可能另外保留原端口证据，它们的目录也和种子、资料共享判定副本。
+            spellings.update(ambiguous_paths((*manifest, *tree, *withheld, *seed, *sources)))
+            for path in spellings.intersection(tree):
+                if tree[path].facts.merge_skipped == "path_spelling":
+                    continue
+                if path in offered:
+                    facts = refused_spellings(offered[path])
+                else:
+                    artifact = tree[path].sources[0]
+                    facts = MergeFacts(
+                        merge_skipped="path_spelling",
+                        refused_proposals=((artifact.task_id, artifact.id),),
                     )
-                losers.append(
-                    {
-                        "task_id": task_id,
-                        "artifact_id": artifact.id,
-                        "content_hash": artifact.content_hash,
-                        "linked": bool(weight[0]),
-                        "port": port,
-                        "kept_at": kept_at,
-                    }
-                )
-            if not losers:
-                continue
-            kept_by = "acceptance_order"
-            if kept_task in linked:
-                kept_by = (
-                    "acceptance_order_between_linked"
-                    if any(item["linked"] for item in losers)
-                    else "criterion_link"
-                )
-            superseded.append(
-                {
-                    "path": path,
-                    "kept_task_id": kept_task,
-                    "kept_artifact_id": kept_artifact.id,
-                    "kept_content_hash": kept_artifact.content_hash,
-                    "kept_by": kept_by,
-                    "superseded_task_ids": list(dict.fromkeys(item["task_id"] for item in losers)),
-                    "superseded": losers,
-                }
-            )
-        return [tree[path] for path in sorted(tree)], superseded, len(acceptances)
+                tree[path] = replace(tree[path], facts=facts)
+            superseded = [row for row in superseded if row["path"] not in spellings]
+        return [tree[path] for path in sorted(tree)], superseded, len(acceptances), spellings
 
     async def _next_attempt(
         self,
@@ -941,14 +953,20 @@ class AttemptJudgmentMixin(OrchestratorCore):
         if not isinstance(base, Mapping) or new_mode is None:
             return None
         try:
-            tree, superseded, _contributions = self._judgment_tree(mission, new_mode, tasks)
+            tree, superseded, _, _ = self._judgment_tree(
+                mission, new_mode, tasks, self._current_source_files(mission)
+            )
             produced = []
             for item in tree:
-                artifact = self.store.get_artifact(item.artifact_id)
-                if artifact is None:
-                    raise ArtifactStoreError(f"产物 {item.artifact_id} 不在了")
+                artifact = item.artifact
                 produced.append(
-                    Produced(item.path, read_verified(artifact), artifact.id, item.task_id)
+                    Produced(
+                        item.path,
+                        item.read(),
+                        artifact.id if artifact else None,
+                        artifact.task_id if artifact else None,
+                        item.facts,
+                    )
                 )
             return build_change_set(
                 self.assembled.workspaces.bases,
@@ -984,8 +1002,11 @@ class AttemptJudgmentMixin(OrchestratorCore):
         if new_mode is None:
             raise ContractError("hierarchical_assembly_missing: no judgment without the assembly")
         try:
-            merged = self._hierarchical_judgment_inputs(mission, new_mode, tasks)
-        except ArtifactConflict as error:
+            sources = self._current_source_files(mission)
+            merged, spellings = self._hierarchical_judgment_inputs(
+                mission, new_mode, tasks, sources
+            )
+        except (ArtifactConflict, ArtifactStoreError, BaseError) as error:
             self._commit_fail_mission(
                 mission.id,
                 stop_reason=MissionStopReason.ARTIFACT_CONFLICT,
@@ -993,21 +1014,25 @@ class AttemptJudgmentMixin(OrchestratorCore):
             )
             self._note(f"mission {mission.id} failed at judgment: {error}")
             return None
-        seed = dict((mission.final_report or {}).get("workspace_seed", {}))
+        seed = {
+            path: value
+            for path, value in (mission.final_report or {}).get("workspace_seed", {}).items()
+            if path not in spellings
+        }
         files: dict[str, Path | bytes] = {}
         artifacts: list[Artifact] = []
         try:
             for item in merged:
-                artifact = self.store.get_artifact(item.artifact_id)
-                if artifact is None:
+                if item.path in spellings:
                     continue
-                files[item.path] = read_verified(artifact)  # P3.2 D3: hash re-checked
-                artifacts.append(artifact)
+                files[item.path] = item.read()
+                artifacts.extend(item.sources)
             # 2026-10-06 真实模型验收（编程题）：每次尝试的工作区都带着任务的资料，模型写的测试读它们；
             # 任务级判定树却只有产物，pytest 在这里找不到 sources/ 就全红，任务被判"要求未满足"。
             # 判定树同样带现行版本的资料（产物从不写在资料根下，不会覆盖）。
-            for path, data in self._current_source_files(mission).items():
-                files.setdefault(path, data)
+            for path, data in sources.items():
+                if path not in spellings:
+                    files.setdefault(path, data)
         except ArtifactStoreError as error:
             self._commit_fail_mission(
                 mission.id,
@@ -1037,8 +1062,23 @@ class AttemptJudgmentMixin(OrchestratorCore):
             if stored is not None and stored.envelope.summary:
                 summaries.append(stored.envelope.summary)
         summary = "\n".join(summaries)
+        statements = current_statements(self.store, mission)
+        guarded = (
+            ambiguous_paths(
+                spellings,
+                queries=(c.removeprefix("file:") for c in statements if c.startswith("file:")),
+            )
+            if spellings
+            else set()
+        )
+        base_commit = mission_base_commit(mission.final_report)
+        exact_base_paths = (
+            self.assembled.workspaces.bases.manifest(base_commit).keys()
+            if guarded and base_commit
+            else ()
+        )
         test_runs: dict[str, dict[str, Any]] = {}
-        for criterion in current_statements(self.store, mission):
+        for criterion in statements:
             if not criterion.startswith("pytest:"):
                 continue
             target = criterion.removeprefix("pytest:").strip() or None
@@ -1069,7 +1109,7 @@ class AttemptJudgmentMixin(OrchestratorCore):
         # the certified grades (Host real model run 20, 2026-09-23).
         assured_grades = self._assured_root_grades(mission, new_mode)
         judgments: list[dict[str, Any]] = []
-        for ordinal, criterion in enumerate(current_statements(self.store, mission)):
+        for criterion in statements:
             if criterion.startswith("pytest:"):
                 outcome = test_runs.get(criterion, {})
                 judgments.append(
@@ -1084,6 +1124,9 @@ class AttemptJudgmentMixin(OrchestratorCore):
                 relative = criterion.removeprefix("file:")
                 try:
                     met = copy.resolve(relative).is_file()
+                    if met and relative in guarded:
+                        # 歧义组只物化底中的精确条目，即使条件采用了从未出现过的第三种拼写。
+                        met = relative in exact_base_paths
                 except Exception:  # noqa: BLE001
                     logger.debug("evaluate_criteria_is_file_failed", exc_info=True)
                     met = False

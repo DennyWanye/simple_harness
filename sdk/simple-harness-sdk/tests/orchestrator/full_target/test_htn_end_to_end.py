@@ -1497,7 +1497,7 @@ def test_the_root_and_the_judgment_gates_on_the_product_deployment(tmp_path, mon
     judged: list[str] = []
     real_judge = CommitService.judge_mission
 
-    def damaged_first(self, mission_id, *, judgments, summary):  # type: ignore[no-untyped-def]
+    def damaged_first(self, mission_id, *, judgments, summary, change_set=None):  # type: ignore[no-untyped-def]
         if not judged:
             connection = self.store.connection
             revision = int(HtnStore(self.store).active_plan_revision(mission_id).revision)
@@ -1518,7 +1518,13 @@ def test_the_root_and_the_judgment_gates_on_the_product_deployment(tmp_path, mon
             connection.commit()
             try:
                 with pytest.raises(CommitRejected) as refused:
-                    real_judge(self, mission_id, judgments=judgments, summary=summary)
+                    real_judge(
+                        self,
+                        mission_id,
+                        judgments=judgments,
+                        summary=summary,
+                        change_set=change_set,
+                    )
                 judged.append(str(refused.value))
             finally:
                 lift_immutable_guards(connection, "task_semantics")
@@ -1528,7 +1534,9 @@ def test_the_root_and_the_judgment_gates_on_the_product_deployment(tmp_path, mon
                 )
                 connection.commit()
                 connection.execute("PRAGMA foreign_keys=ON")
-        return real_judge(self, mission_id, judgments=judgments, summary=summary)
+        return real_judge(
+            self, mission_id, judgments=judgments, summary=summary, change_set=change_set
+        )
 
     monkeypatch.setattr(CommitService, "judge_mission", damaged_first)
 

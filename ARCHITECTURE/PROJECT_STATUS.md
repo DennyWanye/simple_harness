@@ -1,3 +1,13 @@
+最后更新：2026-11-27（SDK 判定树保守合并，分支 `sdk/judgment-merge`，未发版）。
+
+仅直接从同一底文本起步的独立修改可合并。继承或起点不明沿用完整原版，拼写歧义逐项记录被拒产物，底本身歧义会阻止判定。指定五文件离线测试 204 项通过，脚本宿主整局待沙箱外复验。[编排架构与本机证据索引](AGENT_ORCHESTRATION.md)
+
+最后更新：2026-11-26（SDK 判定树按底合并，分支 `sdk/judgment-merge`，工作目录实现，未发版）。
+
+有底任务的并行步骤修改同一文本时，判定副本、改动集与交付提交使用合并字节；冲突、来源步骤及拼写歧义可查。真实 Git 和判定副本的接缝测试已通过，宿主整局在受限环境中停于恢复阶段，待沙箱外验证。实现状态与边界见 [编排架构](AGENT_ORCHESTRATION.md) 和 [判定合并测试](../sdk/simple-harness-sdk/tests/orchestrator/workspace_base/test_judgment_merge.py)。
+
+同一交付的 1,326 项相关旧用例按最终复跑计，1,213 通过、101 失败、8 项运行错误、4 项跳过。109 个失败或运行错误的节点在未改的 `main`（`3c8b3a917`）上均复现。新增宿主局在恢复阶段停住；本机复验清单在 `.local-test-evidence/2026-11-26/judgment-merge/沙箱外复验.txt`（SHA-256 `a992cafd8798c24eb9d8b9030cbfcb6fe676d761ad9c521c789521b5abce251b`）。
+
 最后更新：2026-11-26（SDK 自己的路径搬到 `.harness/`，P2b 第 1 项，分支 `sdk/harness-root`，未发版）。资料根 `sources/` → `.harness/sources/`、草稿 `.harness/scratch/` 不交付、判定树落选产出 `.harness/accepted-outputs/`；Swift 包仓库根目录的 `Sources/` 不再被当成 SDK 保留路径扣留。
 
 最后更新：2026-11-26（有底的任务交付：改动集与写回，issue #53，分支 `sdk/delivery`，未发版）。P1（#51，PR #52 已合并）让任务在「底提交」上干活；这一段把结果交回去：判定时给出相对底的改动集（`final_report.change_set`，测试改动单列、不能写回的标原因），宿主 `delivery()` 看 diff、`apply_delivery()` 逐文件三方比对写回（冲突不写、同一操作键不重放、写完复核），`GitRepoBase` 只写工作目录、不碰 `.git`。删除工具、步骤间同一底文件的合并、`.harness/` 保留根在 P2b。

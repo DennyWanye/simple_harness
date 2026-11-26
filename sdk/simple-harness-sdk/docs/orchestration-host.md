@@ -961,13 +961,20 @@ host.base  # {"enabled": True, "git": "2.54.0"}；没有 git 2.38+ 时 enabled=F
 | 错误码 | `base_unavailable`（宿主没接底却带了 `base_scope`，或 git 不可用）、`base_too_large`、`invalid_request`（范围写法不对、种子与底重名）、`base_repo_failed`（工作仓库的 git 命令失败，说明里带 git 的报错） |
 | 幂等 | 同一个 `idempotency_key` 重试沿用原任务的底，不重拍 |
 | SDK 自己的路径 | 都在 `.harness/` 下：任务资料 `.harness/sources/`（会话委派带的资料自动放到这里）、执行者草稿 `.harness/scratch/`（照常传给后续步骤，不交给使用方）、判定树里落选的产出 `.harness/accepted-outputs/`。使用方仓库里的 `Sources/`、`sources/` 照常进底。直接带资料建任务时路径写 `.harness/sources/...`（以前是 `sources/...`）；`file:` 条件不能指向 `.harness/`、`.assurance/`（回 `file_criterion_reserved_path`） |
-| 还没有的 | 删除文件的工具；两个互不依赖的步骤改同一个底文件时的三方合并（现在判定树取后验收的那一版，被覆盖的步骤记在改动集的 `overridden_steps`）——见设计稿 `plans/2026-11-26-workspace-base/` 的 P2b |
+| 同一路径有多个版本 | 根结论采用至少两种不同内容，且底中有该精确路径。底和候选都是不含 NUL、至多 512 KiB 的 UTF-8 文本。每次尝试的冻结起点能证明该路径直接来自同一底提交，文件及各级目录拼写唯一。此时按验收顺序，以底文件作共同祖先逐次运行 `git merge-file`。只有每次都干净才使用合并字节。 |
+| 沿用覆盖规则 | 缺少底、共同新增、不可读、起点无法证明或合并冲突时，按根要求关联优先、其次声明端口、再按验收次序保留一份完整原版。继承同一路径、同字节多绑定、交叉继承或从上次工作区重试都可能改变起点。其他路径的上游挂载不影响本文件。 |
+| 路径拼写歧义 | 文件名或任一级目录只差大小写或 Unicode 规范化时，整组提议拒交，保留底中精确条目。`file:` 对该组只接受精确拼写。如果底提交自身已含歧义条目，SDK 在铺底前报 `base_path_spelling` 并列出路径。任务级判定遇到此底以 `artifact_conflict` 终止，跳过全部 `file:` 和 `pytest:` 条件。清理来源中的冲突拼写后，重新拍底创建任务。 |
+| 还没有的 | 删除文件的工具。 |
 
 ### 交付：改动集与写回
 
-有底的任务判定时，SDK 用判定树同一份产物（底 + 验收通过的步骤产物）算出**改动集**，写进
-`final_report.change_set`（会话的 `tasks()` 快照里就能看到），同时在工作仓库里钉一个交付提交（父提交 = 底提交）。
-判定树就是底 + 这些改动（另有任务的种子与资料，它们不交付）：验的就是交的。
+有底的任务判定时，SDK 把判定树的文件字节与底提交比较，差异写进 `final_report.change_set`；工作仓库中的交付提交以底提交为父提交。任务种子与资料只用于判定。
+
+干净合并的文件条目以 `merged_steps` 列出来源步骤，`artifact_id` 和 `task_id` 均为 `null`。用条目的 `blob` 识别交付字节。根要求引用的原端口产物仍可在判定副本的 `.harness/accepted-outputs/` 下查验。
+
+拼写歧义按路径列一条 `refused: "path_spelling"`。判定事件、改动集和 `host.delivery()` 都在 `refused_proposals` 数组中逐项给出被拒提议的 `task_id` 和 `artifact_id`。底里已有的条目报告原 blob、SHA-256 和大小，新增拼写的这三个字段均为 `null`。宿主省略这些条目的 diff，每个点名或全量写回的路径各有一条拒写回执。其他文件照常交付。
+
+有多个不同内容时，`merge_skipped` 给出原因（没有底的任务不加这个字段，判定事件与以前相同）：底中无该路径为 `added`，不可读文本为 `binary`，继承、重试或缺少冻结起点证明为 `lineage`，Git 冲突为 `conflict`，拼写歧义为 `path_spelling`。冲突输出整体丢弃。`merge_conflict` 列出冲突涉及的步骤，`overridden_steps` 列出与胜出字节不同的落选步骤。选回底字节时，该路径的原因和覆盖名单进入改动集及宿主视图的 `unchanged_merge_facts`，不计入改动文件数。派发前发现写入目标与上游输入冲突时，仍可交给规划器处理。SDK 自己合并产生的冲突标记从不写进任何文件；但某个步骤自己写出、并已通过验收的文件里若本来就含 `<<<<<<<` 这类文本（例如讲 git 的文档），SDK 当作正常内容交付，不另行拦截。已知未修（另开一项）：写回检查只按大小写比对目录名，任务结束后使用方把目录换成只差 Unicode 规范化写法的同名目录时，文件会写进新目录；有底任务的 `file:` 条件用另一种大小写写法也会判满足。
 
 ```python
 view = host.delivery(mission_id)
@@ -982,8 +989,8 @@ receipt = host.apply_delivery(mission_id, operation_key="点击-123", paths=None
 
 | 事 | 说明 |
 |---|---|
-| 改动集里有什么 | 判定树里和底提交内容不同的文件：新增（`add`）或修改（`modify`）。没动的底文件、SDK 自己的路径（`.harness/` 下的资料、草稿、落选产出）不在里面。`test: true` = 改了底里**已有的**测试文件，或新增 / 修改测试配置（`conftest.py`、`pytest.ini`、`tox.ini`、`.coveragerc`、`pyproject.toml`、`setup.cfg`）；新写的测试文件不算。交付时单列给人看，自动写回的规则不要放过它们 |
-| 不能写回的 | `refused` 写着原因：底拍快照时扣留过的路径（`withheld:<原因>`）、凭据文件名（`secret_name`）、内容像密钥（`secret_content`；按通用模式判，解析 PEM 的代码、示例 `Bearer` 串也会被拦，这类文件请人手动处理）、与底里已有路径只差大小写（`case_conflict`）。它们照样在交付提交和 diff 里，只是不写回。路径本身不合法的（带换行、引号开头、git 不收的写法，`invalid_path`）只列出来，不进交付提交、没有 diff |
+| 改动集里有什么 | 判定树里和底提交内容不同的文件：新增（`add`）或修改（`modify`）。拼写歧义的提议也逐条列出并计入 `refused`。其余没动的底文件、SDK 自己的路径（`.harness/` 下的资料、草稿、落选产出）不在里面。`test: true` = 改了底里**已有的**测试文件，或新增 / 修改测试配置（`conftest.py`、`pytest.ini`、`tox.ini`、`.coveragerc`、`pyproject.toml`、`setup.cfg`）；新写的测试文件不算。交付时单列给人看，自动写回的规则不要放过它们 |
+| 不能写回的 | `refused` 写着原因：底拍快照时扣留过的路径（`withheld:<原因>`）、凭据文件名（`secret_name`）、内容像密钥（`secret_content`；按通用模式判，解析 PEM 的代码、示例 `Bearer` 串也会被拦，这类文件请人手动处理）。这些条目可在交付提交和 diff 里查看。拼写歧义按 `path_spelling` 扣留整组，见上文。路径本身不合法的（带换行、引号开头、git 不收的写法，`invalid_path`）只列出来，不进交付提交、没有 diff |
 | 看 diff | `delivery()` 给每个文本文件附相对底的 unified diff（工作仓库里两个提交之间算，不走用户的外部 diff 配置）；二进制或超过 512 KiB 的文件、超过 20 万字符的 diff 不附（`diff_omitted`） |
 | 谁能写回 | 只有宿主：人点了，或宿主自己的档位规则。模型没有这个工具。任务完成（`COMPLETED`）后才能写，否则 `delivery_not_ready` |
 | 怎么写 | 逐文件三方比对：现在的文件仍是底里那一版 → 写；已经是新内容 → `already`；其他（任务进行时使用方改过）→ `conflict`，不写，回执带三个 blob 号供界面显示三方差异。临时文件写好以后、改名之前再比一次现状，比对之后使用方刚存的盘不会被覆盖（只剩改名那一下的窗口：写回时别同时编辑这些文件）。写完按现状复核，核不上记 `failed`（`verify_mismatch`；读不回来记 `verify_failed`） |

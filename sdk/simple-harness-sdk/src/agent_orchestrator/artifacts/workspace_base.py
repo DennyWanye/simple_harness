@@ -36,7 +36,7 @@ from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 from typing import Protocol, runtime_checkable
 
-from .paths import under_prefix
+from .paths import ambiguous_paths, under_prefix
 from .store import ArtifactStoreError, read_nofollow
 
 GIT_MIN_VERSION = (2, 38)
@@ -493,7 +493,18 @@ class BaseRepo:
     def _git(
         self, *args: str, input: bytes | None = None, env: Mapping[str, str] | None = None
     ) -> bytes:
-        done = subprocess.run(  # noqa: S603
+        done = self._run_git(*args, input=input, env=env)
+        if done.returncode != 0:
+            raise BaseError(
+                "base_repo_failed",
+                f"git {args[0]} 失败：{done.stderr.decode(errors='replace')[:300]}",
+            )
+        return done.stdout
+
+    def _run_git(
+        self, *args: str, input: bytes | None = None, env: Mapping[str, str] | None = None
+    ) -> subprocess.CompletedProcess[bytes]:
+        return subprocess.run(  # noqa: S603
             [self._git_program, f"--git-dir={self.path}", *args],
             input=input,
             capture_output=True,
@@ -501,12 +512,21 @@ class BaseRepo:
             check=False,
             timeout=300,
         )
-        if done.returncode != 0:
-            raise BaseError(
-                "base_repo_failed",
-                f"git {args[0]} 失败：{done.stderr.decode(errors='replace')[:300]}",
-            )
-        return done.stdout
+
+    def merge_file(self, current: bytes, base: bytes, incoming: bytes) -> bytes | None:
+        """合并结果只从 stdout 取；有冲突时丢掉输出，临时文件始终只有输入字节。"""
+        with tempfile.TemporaryDirectory(dir=self.path.parent) as directory:
+            paths = [Path(directory) / name for name in ("current", "base", "incoming")]
+            for path, content in zip(paths, (current, base, incoming), strict=True):
+                path.write_bytes(content)
+            done = self._run_git("merge-file", "-p", "--", *(str(p) for p in paths))
+        if done.returncode == 0:
+            return done.stdout
+        if 1 <= done.returncode <= 127:
+            return None
+        raise BaseError(
+            "base_repo_failed", f"git merge-file 失败：{done.stderr.decode(errors='replace')[:300]}"
+        )
 
     def probe(self) -> dict[str, object]:
         """git 在不在、够不够新（要 ``merge-tree --write-tree``，2.38 起）。"""
@@ -757,10 +777,20 @@ class BaseRepo:
         data = self._blobs(sorted({entry.blob for entry in wanted.values()}))
         return {path: data[entry.blob] for path, entry in wanted.items()}
 
+    def materialisable_manifest(self, commit: str) -> dict[str, BaseEntry]:
+        """判定和铺底共用同一检查，避免旧底的两个条目覆盖同一物理文件。"""
+        manifest = self.manifest(commit)
+        if conflicts := ambiguous_paths(manifest):
+            raise BaseError(
+                "base_path_spelling",
+                f"base_path_spelling: 底 {commit} 拼写歧义，判定受阻：{sorted(conflicts)!r}",
+            )
+        return manifest
+
     def materialise(self, commit: str, target: Path, *, skip: Iterable[str] = ()) -> list[str]:
         """把底提交的文件逐字节写进 ``target``（不经任何 git 过滤），返回写了哪些路径。"""
 
-        manifest = self.manifest(commit)
+        manifest = self.materialisable_manifest(commit)
         skipped = frozenset(skip)
         data = self._blobs(sorted({e.blob for p, e in manifest.items() if p not in skipped}))
         written = []
@@ -885,22 +915,11 @@ def capture_base(
             withheld[item.path] = "secret_name"
         else:
             candidates[item.path] = item
-    # 只差大小写的路径（文件或任一级目录）在不区分大小写的文件系统上会落到同一处：都扣留
-    spellings: dict[str, set[str]] = {}
-    for path in candidates:
-        parts = PurePosixPath(path).parts
-        for depth in range(1, len(parts) + 1):
-            prefix = "/".join(parts[:depth])
-            spellings.setdefault(prefix.casefold(), set()).add(prefix)
-    clashing = {key for key, names in spellings.items() if len(names) > 1}
-    if clashing:
-        for path in list(candidates):
-            parts = PurePosixPath(path).parts
-            if any(
-                "/".join(parts[:depth]).casefold() in clashing for depth in range(1, len(parts) + 1)
-            ):
-                withheld[path] = "case_conflict"
-                candidates.pop(path)
+    # 底也会铺到折叠大小写或规范化 Unicode 的磁盘，须先扣留整组歧义路径。
+    for path in ambiguous_paths((*candidates, *withheld)):
+        if path in candidates:
+            withheld[path] = "case_conflict"
+            candidates.pop(path)
     total = sum(item.size for item in candidates.values())
     if len(candidates) > limits.max_files or total > limits.max_bytes:
         raise BaseTooLarge(len(candidates), total, limits)
