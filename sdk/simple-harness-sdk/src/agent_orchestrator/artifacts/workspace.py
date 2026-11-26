@@ -27,6 +27,7 @@ into host bytes in a later copy.
 
 from __future__ import annotations
 
+import errno
 import hashlib
 import os
 import shutil
@@ -39,7 +40,7 @@ from pathlib import Path
 from ..contracts import Artifact, ids
 from ..runtime.sandbox import pending_workspace_executions, recover_workspace_executions
 from .input_bindings import MaterialisationEntry
-from .paths import under_prefix
+from .paths import spelling_key, under_prefix
 from .store import ArtifactStore, ArtifactStoreError, read_nofollow, read_verified
 from .workspace_base import BaseError, BaseRepo
 
@@ -125,13 +126,27 @@ def _source_bytes(source: Path | bytes, label: str) -> bytes:
         raise WorkspaceError(f"{error.reason}: {label}") from error
 
 
+def _unlink(root: Path, target: Path) -> None:
+    target.unlink()
+    # 文件树只记录文件；清掉空上级，后续写入才能使用目录的新拼写。
+    for directory in target.parents:
+        if directory == root:
+            break
+        try:
+            directory.rmdir()
+        except OSError as error:
+            if error.errno not in (errno.ENOTEMPTY, errno.EEXIST):
+                raise
+            break
+
+
 def _remove(workspace: Workspace, deleted: Sequence[str]) -> None:
     """按记录删掉尝试删过的文件（已经不在的不算错）。"""
 
     for relative in deleted:
         target = workspace.resolve(relative)
         if target.is_file() and not target.is_symlink():
-            target.unlink()
+            _unlink(workspace.root.resolve(), target)
 
 
 @dataclass(frozen=True, slots=True)
@@ -208,7 +223,7 @@ class Workspace:
         if target.is_symlink() or not target.is_file():
             raise WorkspaceError(f"no such file: {relative}")
         try:
-            target.unlink()
+            _unlink(self.root.resolve(), target)
         except OSError as error:
             raise WorkspaceError(f"cannot delete file {relative}: {error}") from error
 
@@ -270,6 +285,19 @@ class Workspace:
                 if not path.is_symlink():
                     yield path
 
+    def initial_aliases(self, paths: Sequence[str]) -> dict[str, list[str]]:
+        """记录铺底时磁盘自动改变的拼写，收结果时才能区分自动规范化与真正改名。"""
+
+        physical = set(self.list_files())
+        by_key = {spelling_key(path): path for path in physical}
+        initial = set(paths)
+        aliases: dict[str, list[str]] = {}
+        for path in sorted(initial - physical):
+            disk = by_key.get(spelling_key(path))
+            if disk is not None and self.resolve(path).is_file():
+                aliases.setdefault(disk, [disk] if disk in initial else []).append(path)
+        return aliases
+
     def snapshot(
         self,
         *,
@@ -277,6 +305,7 @@ class Workspace:
         task_id: str,
         produced_by: str,
         versions: Mapping[str, int] | None = None,
+        aliases: Mapping[str, Sequence[str]] | None = None,
     ) -> list[Artifact]:
         """Every file as an Artifact record (content hash + per-path version); with a
         store, the bytes are written to it and ``storage_uri`` names the stored file.  A
@@ -286,10 +315,11 @@ class Workspace:
         if links:
             raise _symlink_refusal(links)
         artifacts = []
-        for relative in self.list_files():
-            data = _source_bytes(self.root / relative, relative)
+        for physical in self.list_files():
+            relative = (aliases or {}).get(physical, (physical,))[0]
+            data = _source_bytes(self.root / physical, relative)
             content_hash = hashlib.sha256(data).hexdigest()
-            storage_uri = str(self.root / relative)
+            storage_uri = str(self.root / physical)
             if self.store is not None:
                 self.store.put_bytes(data)
                 storage_uri = str(self.store.path_for(content_hash))

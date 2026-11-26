@@ -954,14 +954,14 @@ host.base  # {"enabled": True, "git": "2.54.0"}；没有 git 2.38+ 时 enabled=F
 | 存在哪 | 数据目录下 `bases/work.git`（SDK 自管的裸仓库）；提交由引用 `refs/harness/base/<提交号>` 保住，工作区目录清掉以后照样能重建验收副本 |
 | 范围 | 会话委派 `delegate_task` 的 `base_scope`（至多 20 个相对路径，目录或文件；不写 = 整个底），由模型判断；`create_mission` 请求里同名字段 |
 | 上限 | `HostSettings.base_max_files` / `base_max_bytes`；超了回 `base_too_large`（说明里带文件数和字节数），模型缩小范围重交 |
-| 扣留（不进底） | 按名字的凭据文件（`.env*`、`*.pem`、`*.key`、`*.p12`、`id_rsa` 等，即使被 git 跟踪）、内容像密钥的文件、软链（路径上任一级是软链都算）、读不了的文件、只有大小写不同的路径（文件或目录，都扣）、git 不收的路径、SDK 自己用的路径（`.harness/`、`.assurance/`）与部署禁止的前缀。任务行 `final_report.workspace_base.withheld` 记着路径和原因 |
+| 扣留（不进底） | 按名字的凭据文件（`.env*`、`*.pem`、`*.key`、`*.p12`、`id_rsa` 等，即使被 git 跟踪）、内容像密钥的文件、软链（路径上任一级是软链都算）、读不了的文件、任一级路径在大小写折叠、Unicode 规范化后相同的不同拼写（涉及的文件全部扣留，原因 `case_conflict`）、git 不收的路径、SDK 自己用的路径（`.harness/`、`.assurance/`）与部署禁止的前缀。任务行 `final_report.workspace_base.withheld` 记着路径和原因 |
 | 只读的底文件 | 二进制或超过 512 KiB 的：原样在工作区里（导入不会断），读工具不给内容，写被拒；`pytest:` 点名的底文件（验收的尺子）。其余底文件都可以改 |
 | 登记什么 | 只登记相对起步状态（底 → 种子 → 上游输入）新建或改过的文件；没动的底文件不是产物 |
 | 顺手跑的测试 | 一条 `pytest:` 都没写时，验收只跑这一步新写或改过的测试文件（`test_*.py` / `*_test.py`，每个文件各跑一次），不跑使用方仓库原有的测试；收集不到测试的文件（没有测试函数、被仓库配置反选，pytest 退出码 5）不算失败；仓库的 pytest 配置或根目录 `conftest.py` 在隔离区里加载不了（例如要装了才有的插件，退出码 4）照样判失败；一个有测试的都没有就在空目录里跑一次（不加载仓库的 pytest 配置与 `conftest.py`），算「不适用、视为满足」。写了 `pytest:`（含不带路径的 `pytest:`，那是要求跑整棵树）照条件跑 |
 | 错误码 | `base_unavailable`（宿主没接底却带了 `base_scope`，或 git 不可用）、`base_too_large`、`invalid_request`（范围写法不对、种子与底重名）、`base_repo_failed`（工作仓库的 git 命令失败，说明里带 git 的报错） |
 | 幂等 | 同一个 `idempotency_key` 重试沿用原任务的底，不重拍 |
 | SDK 自己的路径 | 都在 `.harness/` 下：任务资料 `.harness/sources/`（会话委派带的资料自动放到这里）、执行者草稿 `.harness/scratch/`（照常传给后续步骤，不交给使用方）、判定树里落选的产出 `.harness/accepted-outputs/`。使用方仓库里的 `Sources/`、`sources/` 照常进底。直接带资料建任务时路径写 `.harness/sources/...`（以前是 `sources/...`）；`file:` 条件不能指向 `.harness/`、`.assurance/`（回 `file_criterion_reserved_path`） |
-| 删除文件 | 接了底的宿主，有底任务里能写文件的执行者多一件 `workspace_delete_file(path)`（只删文件，受保护的输入、只读步骤起步时就有的文件删不了）；没有底的任务没有这件工具。删除跟着结果登记，验收副本与判定树里那个文件不在；后面别的步骤又写了它，以写的为准 |
+| 删除文件 | 任务有底、步骤可写、有效工具含 `workspace_write_file` 且部署允许删除时，执行者的工具清单只列一次 `workspace_delete_file(path)`。只读步骤没有该工具。只能删普通文件，受保护输入仍由网关拦截。收结果时按铺底和最终快照的目录项识别删除，验收副本和判定树先删旧文件再写产物 |
 | 还没有的 | 删除只在登记它的那一步与任务级判定树里生效，下游步骤起步时仍看得到底里的原文件；两个互不依赖的步骤改同一个底文件时的三方合并（现在判定树取后验收的那一版，被覆盖的步骤记在改动集的 `overridden_steps`）——见设计稿 `plans/2026-11-26-workspace-base/` 的 P2b |
 
 ### 交付：改动集与写回
@@ -972,11 +972,11 @@ host.base  # {"enabled": True, "git": "2.54.0"}；没有 git 2.38+ 时 enabled=F
 
 ```python
 view = host.delivery(mission_id)
-# {"base_commit", "commit", "counts": {"files", "added", "modified", "tests", "refused"},
-#  "files": [{"path", "op": "add"|"modify", "test", "refused", "diff", "base_blob", "blob",
+# {"base_commit", "commit", "counts": {"files", "added", "modified", "deleted", "tests", "refused"},
+#  "files": [{"path", "op": "add"|"modify"|"delete", "test", "refused", "diff", "base_blob", "blob",
 #             "overridden_steps", "artifact_id", "task_id", ...}], "applies": [以前的写回回执]}
 
-receipt = host.apply_delivery(mission_id, operation_key="点击-123", paths=None)  # 或只写几个文件
+receipt = host.apply_delivery(mission_id, operation_key="apply-123", paths=None)  # 或只写几个文件
 # {"files": [{"path", "status": "applied"|"already"|"conflict"|"refused"|"failed", "reason",
 #             "base_blob", "blob", "current_blob"}], "counts": {...}, "repeat": False, ...}
 ```
@@ -984,13 +984,15 @@ receipt = host.apply_delivery(mission_id, operation_key="点击-123", paths=None
 | 事 | 说明 |
 |---|---|
 | 改动集里有什么 | 判定树里和底提交内容不同的文件：新增（`add`）、修改（`modify`）或删除（`delete`，`blob` 为 None）。没动的底文件、SDK 自己的路径（`.harness/` 下的资料、草稿、落选产出）不在里面。`test: true` = 改了底里**已有的**测试文件，或新增 / 修改测试配置（`conftest.py`、`pytest.ini`、`tox.ini`、`.coveragerc`、`pyproject.toml`、`setup.cfg`），删掉已有的测试也算；新写的测试文件不算。交付时单列给人看，自动写回的规则不要放过它们 |
-| 不能写回的 | `refused` 写着原因：底拍快照时扣留过的路径（`withheld:<原因>`）、凭据文件名（`secret_name`）、内容像密钥（`secret_content`；按通用模式判，解析 PEM 的代码、示例 `Bearer` 串也会被拦，这类文件请人手动处理）、与底里已有路径只差大小写（`case_conflict`）。它们照样在交付提交和 diff 里，只是不写回。路径本身不合法的（带换行、引号开头、git 不收的写法，`invalid_path`）只列出来，不进交付提交、没有 diff |
-| 看 diff | `delivery()` 给每个文本文件附相对底的 unified diff（工作仓库里两个提交之间算，不走用户的外部 diff 配置）；二进制或超过 512 KiB 的文件、超过 20 万字符的 diff 不附（`diff_omitted`） |
+| 不能写回的 | `refused` 写着原因：底拍快照时扣留过的路径（`withheld:<原因>`）、凭据文件名（`secret_name`）、内容像密钥（`secret_content`；按通用模式判，解析 PEM 的代码、示例 `Bearer` 串也会被拦，这类文件请人手动处理）、与底里已有路径只差大小写或 Unicode 规范化写法（`case_conflict`）。它们照样在交付提交和 diff 里，只是不写回。路径本身不合法的（带换行、引号开头、git 不收的写法，`invalid_path`）只列出来，不进交付提交、没有 diff |
+| 手动改名 | 一删一增的路径若在文件名或任一级父目录上只差大小写或 Unicode 规范化写法，判定树和 Git 交付提交保留新拼写。写回时两侧均为 `refused`（通常为 `case_rename`），单选一侧也会拒绝。请按交付 diff 在用户目录手动改名并核对内容 |
+| 文件变目录 | 例如删 `config` 并新增 `config/settings.toml`。两条一起选时先删后写，再按目录和子文件的实际内容复核。若回执落账前中断，重试时选中的子文件都已是目标字节，则记 `already`。已有目录与这批子文件不符时，父项和依赖它的新增均记冲突，用户目录保留原状。单选删除按普通删除处理 |
+| 看 diff | `delivery()` 给每个文本文件附相对底的 unified diff（工作仓库里两个提交之间算，不走用户的外部 diff 配置）；删除行仅展示旧文件自身的补丁，同名新目录里的子文件各列一行。二进制或超过 512 KiB 的文件、超过 20 万字符的 diff 不附（`diff_omitted`） |
 | 谁能写回 | 只有宿主：人点了，或宿主自己的档位规则。模型没有这个工具。任务完成（`COMPLETED`）后才能写，否则 `delivery_not_ready` |
 | 怎么写 | 删除：现在的文件仍是底里那一版 → 删；已经没了 → `already`；改过 → `conflict` 不删。其他逐文件三方比对：现在的文件仍是底里那一版 → 写；已经是新内容 → `already`；其他（任务进行时使用方改过）→ `conflict`，不写，回执带三个 blob 号供界面显示三方差异。临时文件写好以后、改名之前再比一次现状，比对之后使用方刚存的盘不会被覆盖（只剩改名那一下的窗口：写回时别同时编辑这些文件）。写完按现状复核，核不上记 `failed`（`verify_mismatch`；读不回来记 `verify_failed`） |
-| 写到哪 | `GitRepoBase` / `DirectoryBase`：只写工作目录里的文件（同目录临时文件 + 原子改名，改过的文件保留原权限），不碰 `.git`、索引、分支——写回后是使用方仓库里**未提交的改动**。路径上任一级是软链（`symlink`）、与已有文件或目录只差大小写（`case_conflict`）、上级是个文件（`not_a_directory`）的，一律 `refused`；要写的地方是个目录记 `conflict`。只写进拍底的那个目录：底记录里有它的位置（`delivery()` 返回的 `location`；同一目录的不同写法认作同一个，那个位置被换成软链——哪怕指向的还是同一个项目——就拒写），宿主换了项目开回 `delivery_target_mismatch` |
+| 写到哪 | `GitRepoBase` / `DirectoryBase`：只写工作目录里的文件（同目录临时文件 + 原子改名，改过的文件保留原权限），不碰 `.git`、索引、分支——写回后是使用方仓库里**未提交的改动**。路径上任一级是软链（`symlink`）、与已有文件或目录只差大小写或规范化写法（`case_conflict`）、上级是个文件（`not_a_directory`）的，一律 `refused`；要写的地方是个目录记 `conflict`。只写进拍底的那个目录：底记录里有它的位置（`delivery()` 返回的 `location`；同一目录的不同写法认作同一个，那个位置被换成软链——哪怕指向的还是同一个项目——就拒写），宿主换了项目开回 `delivery_target_mismatch` |
 | 幂等 | 同一个 `operation_key` 再调返回原回执（`repeat: true`），不重放；同键不同参数（换了任务或文件）回 `idempotency_conflict`。写到一半进程没了，同键重调会重新执行：已经写过的文件三方比对认得出（`already`），不会写两遍。账本在数据目录 `bases/deliveries/` |
-| 自定义底 | 要能写回，底适配器另外实现 `WritableBase`：`location()`（底的身份，拍底时同一个值记进 `BaseCapture.source["location"]`）、`current_hashes(paths)`（git blob 号，没有为 None）、`write_file(path, data, *, expected, executable) -> FileWrite`（自己做「现状仍是 expected 才写」）与 `delete_file(path, *, expected) -> FileWrite`（现状已没有 → `already`，仍是 expected 才删）。没实现的回 `delivery_unsupported`，`delivery()` 照样能看 |
+| 自定义底 | 写回先核对 `location()` 与拍底时的 `BaseCapture.source["location"]`。有实际写盘操作时需提供 `current_hashes(paths)` 复核精确路径（文件为 Git blob 号、缺失为 None，目录适配器可用 `!directory` 表示原位是目录）。所选操作有新增或修改才要求 `write_file(path, data, *, expected, executable)`，有可执行的删除才要求 `delete_file(path, *, expected)`。两者都自行做三方比对并返回 `FileWrite`。缺方法时整批在动盘前回 `delivery_unsupported`。原有可写适配器可以继续单选普通新增或修改 |
 | 错误码 | `no_delivery`（没有接底、还没判定、或改动集没算出来）、`delivery_not_ready`、`delivery_unsupported`、`delivery_target_mismatch`、`invalid_request`（`paths` 里有改动集外的路径、`operation_key` 写法不对）、`idempotency_conflict`、`delivery_ledger_unreadable`（这个键的账本记录坏了，先查明再写）、`delivery_failed`（读交付内容或写账本出错；同一个键重调是安全的）、`not_found` |
 
 ## 5. 要求怎么写

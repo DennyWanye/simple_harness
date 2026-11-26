@@ -310,6 +310,7 @@ def effective_tools(
     """
 
     allowed = set(mission_tools) & set(task_tools) & set(deployment.allowed_tools)
+    allowed.discard("workspace_delete_file")
     names = tuple(name for name in role_tools if name in allowed)
     if read_only_leaf:
         names = tuple(

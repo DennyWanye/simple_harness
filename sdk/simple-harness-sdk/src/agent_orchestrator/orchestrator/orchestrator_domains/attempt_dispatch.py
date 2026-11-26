@@ -499,7 +499,27 @@ class AttemptDispatchMixin(OrchestratorCore):
             else [item for item in upstream if task is None or item.path not in task.outputs],
         )
         if building:
-            self.store.set_workspace_state(attempt.id, "ACTIVE")
+            if base_commit is not None:
+                if previous is not None and previous.is_dir():
+                    # 重试继承上一棵树；上一轮已改的名字不能重新认成铺底时的拼写。
+                    prior = self.store.get_workspace(attempt.retry_of)
+                    aliases = dict((prior or {}).get("detail", {}).get("initial_aliases", {}))
+                    for disk, names in workspace.initial_aliases(
+                        [item.path for item in upstream]
+                    ).items():
+                        aliases[disk] = list(dict.fromkeys([*aliases.get(disk, ()), *names]))
+                else:
+                    aliases = workspace.initial_aliases(list(self._read_only_initial(attempt)))
+                detail["initial_aliases"] = aliases
+            self.store.register_workspace(
+                attempt.id,
+                kind="attempt",
+                mission_id=attempt.mission_id,
+                attempt_id=attempt.id,
+                base_snapshot=base,
+                state="ACTIVE",
+                detail=detail,
+            )
 
     def _register_copy(
         self, kind: str, name: str, *, mission_id: str, attempt_id: str, detail: dict[str, Any]

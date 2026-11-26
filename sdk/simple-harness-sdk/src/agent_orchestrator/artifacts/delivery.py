@@ -31,9 +31,10 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Any
 
-from .paths import under_prefix
+from .paths import spelling_key, under_prefix
 from .workspace_base import (
     BaseRepo,
+    FileWrite,
     WritableBase,
     _path_problem,
     _readable,
@@ -87,15 +88,19 @@ def is_test_path(path: str) -> bool:
     )
 
 
+def _prefixes(path: str) -> Iterable[str]:
+    parts = PurePosixPath(path).parts
+    for depth in range(1, len(parts) + 1):
+        yield "/".join(parts[:depth])
+
+
 def _case_spellings(paths: Iterable[str]) -> dict[str, str]:
     """底里每一级路径（文件与目录）：忽略大小写的写法 → 底里的写法。"""
 
     spellings: dict[str, str] = {}
     for path in paths:
-        parts = PurePosixPath(path).parts
-        for depth in range(1, len(parts) + 1):
-            prefix = "/".join(parts[:depth])
-            spellings.setdefault(prefix.casefold(), prefix)
+        for prefix in _prefixes(path):
+            spellings.setdefault(spelling_key(prefix), prefix)
     return spellings
 
 
@@ -120,13 +125,31 @@ def _refusal(
     if is_secret is not None and _readable(data) and is_secret(data.decode("utf-8")):
         return "secret_content"
     if not exists:
-        parts = PurePosixPath(path).parts
-        for depth in range(1, len(parts) + 1):
-            prefix = "/".join(parts[:depth])
-            known = spellings.get(prefix.casefold())
+        for prefix in _prefixes(path):
+            known = spellings.get(spelling_key(prefix))
             if known is not None and known != prefix:
                 return "case_conflict"
     return None
+
+
+def _rename_paths(files: Sequence[Mapping[str, Any]]) -> set[str]:
+    """任一级前缀改了拼写，就把涉及的新增与删除一起留给人处理。"""
+
+    added: dict[str, set[str]] = {}
+    removed: dict[str, set[str]] = {}
+    for item in files:
+        if item["op"] not in {"add", "delete"}:
+            continue
+        index = added if item["op"] == "add" else removed
+        for prefix in _prefixes(item["path"]):
+            index.setdefault(spelling_key(prefix), set()).add(prefix)
+    conflicts = {key for key in added.keys() & removed.keys() if len(added[key] | removed[key]) > 1}
+    return {
+        item["path"]
+        for item in files
+        if item["op"] in {"add", "delete"}
+        and any(spelling_key(prefix) in conflicts for prefix in _prefixes(item["path"]))
+    }
 
 
 def build_change_set(
@@ -150,8 +173,7 @@ def build_change_set(
     base_commit = str(base["commit"])
     manifest = bases.manifest(base_commit)
     withheld = {str(k): str(v) for k, v in dict(base.get("withheld") or {}).items()}
-    # 被删掉的底文件不再占着它的写法：删 legacy.py、写 Legacy.py 是一次只改大小写的改名
-    spellings = _case_spellings(path for path in manifest if path not in dict(deleted or {}))
+    spellings = _case_spellings(manifest)
     folded_reserved = tuple(prefix.casefold() for prefix in reserved)
     overridden = {path: list(steps) for path, steps in dict(superseded or {}).items()}
     files: list[dict[str, Any]] = []
@@ -225,6 +247,10 @@ def build_change_set(
                 "refused": refused,
             }
         )
+    renames = _rename_paths(files)
+    for item in files:
+        if item["path"] in renames and item["refused"] in {None, "case_conflict"}:
+            item["refused"] = "case_rename"
     files.sort(key=lambda item: item["path"])
     commit = bases.commit_on(
         base_commit,
@@ -257,7 +283,12 @@ def delivery_diff(bases: BaseRepo, change_set: Mapping[str, Any], path: str) -> 
     entry = next((item for item in change_set.get("files", ()) if item["path"] == path), None)
     if entry is None or entry["refused"] in {"invalid_path", "ignored"}:
         raise KeyError(path)
-    return bases.diff(str(change_set["base_commit"]), str(change_set["commit"]), path)
+    return bases.diff(
+        str(change_set["base_commit"]),
+        str(change_set["commit"]),
+        path,
+        deleted=entry["op"] == "delete",
+    )
 
 
 def same_location(recorded: object, current: str) -> bool:
@@ -279,6 +310,70 @@ def same_location(recorded: object, current: str) -> bool:
         return not through_link and os.path.isdir(recorded) and os.path.samefile(recorded, current)
     except OSError:
         return False
+
+
+def _require_methods(target: WritableBase, *, writes: bool, deletes: bool) -> None:
+    # 整批先检查能力，避免旧适配器执行到中途才发现缺少删除方法。
+    required = {"current_hashes"} if writes or deletes else set()
+    if writes:
+        required.add("write_file")
+    if deletes:
+        required.add("delete_file")
+    missing = sorted(name for name in required if not callable(getattr(target, name, None)))
+    if missing:
+        raise DeliveryRefused("delivery_unsupported", f"这次写回需要底实现 {', '.join(missing)}")
+
+
+def _delete_for_delivery(
+    target: WritableBase,
+    path: str,
+    expected: str,
+    children: Sequence[str],
+    entries: Mapping[str, Mapping[str, Any]],
+) -> FileWrite:
+    outcome = target.delete_file(path, expected=expected)
+    if not children or outcome.status != "conflict" or outcome.current != "!directory":
+        return outcome
+    # 中断恢复或新键重调：只在动手前整组子文件已是目标字节时承认已落盘。
+    current = target.current_hashes(children)
+    if all(current.get(child) == entries[child]["blob"] for child in children):
+        return FileWrite("already", outcome.current)
+    return outcome
+
+
+def _verify_writes(
+    target: WritableBase,
+    receipt: list[dict[str, Any]],
+    children: Mapping[str, Sequence[str]],
+    entries: Mapping[str, Mapping[str, Any]],
+) -> None:
+    if not any(row["status"] == "applied" for row in receipt):
+        return
+    try:
+        successful = {row["path"] for row in receipt if row["status"] in {"applied", "already"}}
+        now = dict(target.current_hashes(sorted(successful)))
+    except Exception:  # noqa: BLE001 - 复核读不出来：不能说写成了
+        logger.debug("delivery_verify_failed", exc_info=True)
+        for row in receipt:
+            if row["status"] == "applied":
+                # 写是写了，但读不回来核对：如实说核对不了，不说写成了
+                row["status"] = "failed"
+                row["reason"] = "verify_failed"
+        return
+    for row in receipt:
+        path = row["path"]
+        if (
+            path in children
+            and now.get(path) == "!directory"
+            and any(
+                child in successful and now.get(child) == entries[child]["blob"]
+                for child in children[path]
+            )
+        ):
+            continue
+        if row["status"] == "applied" and (path not in now or now[path] != row["blob"]):
+            row["status"] = "failed"
+            row["reason"] = "verify_mismatch"
 
 
 def apply_change_set(
@@ -307,14 +402,32 @@ def apply_change_set(
         if unknown:
             raise DeliveryRefused("invalid_request", f"这些路径不在改动集里：{unknown[:5]}")
         chosen = sorted(set(paths))
+    # 也核对已经持久化的改动集；单选一侧时仍按完整改动集判定。
+    renames = _rename_paths(list(entries.values()))
     writable = [
         path
         for path in chosen
-        if entries[path]["refused"] is None and entries[path]["op"] != "delete"
+        if entries[path]["refused"] is None
+        and entries[path]["op"] != "delete"
+        and path not in renames
     ]
+    deletable = {
+        path
+        for path in chosen
+        if entries[path]["op"] == "delete" and not entries[path]["refused"] and path not in renames
+    }
+    _require_methods(target, writes=bool(writable), deletes=bool(deletable))
     blobs = bases.blobs(sorted({str(entries[path]["blob"]) for path in writable}))
     receipt: list[dict[str, Any]] = []
-    # 先删后写：只改大小写的改名在不区分大小写的磁盘上，先写会撞上还没删的旧名字
+    # 只有这批选中的子文件能把旧文件的位置变成目录。
+    children: dict[str, list[str]] = {}
+    for path in writable:
+        for parent in PurePosixPath(path).parents:
+            name = str(parent)
+            if name in deletable:
+                children.setdefault(name, []).append(path)
+    blocked: set[str] = set()
+    # 文件变目录时必须先删旧文件，才能写它下面的子文件。
     ordered = sorted(chosen, key=lambda path: (entries[path]["op"] != "delete", path))
     for path in ordered:
         entry = entries[path]
@@ -323,14 +436,19 @@ def apply_change_set(
             "base_blob": entry["base_blob"],
             "blob": entry["blob"],
         }
-        if entry["refused"] is not None:
-            receipt.append(
-                {**row, "status": "refused", "reason": entry["refused"], "current_blob": None}
-            )
+        refusal = entry["refused"] or ("case_rename" if path in renames else None)
+        if refusal is not None:
+            receipt.append({**row, "status": "refused", "reason": refusal, "current_blob": None})
             continue
         try:
-            if entry["op"] == "delete":
-                outcome = target.delete_file(path, expected=str(entry["base_blob"]))
+            if path in blocked:
+                outcome = FileWrite("conflict", None, "parent_conflict")
+            elif entry["op"] == "delete":
+                outcome = _delete_for_delivery(
+                    target, path, entry["base_blob"], children.get(path, ()), entries
+                )
+                if path in children and outcome.status not in {"applied", "already"}:
+                    blocked.update(children[path])
             else:
                 outcome = target.write_file(
                     path,
@@ -339,6 +457,7 @@ def apply_change_set(
                     executable=bool(entry["executable"]),
                 )
         except Exception as error:  # noqa: BLE001 - 宿主的适配器出什么错都记成这个文件写失败
+            blocked.update(children.get(path, ()))
             receipt.append(
                 {
                     **row,
@@ -357,22 +476,7 @@ def apply_change_set(
             }
         )
     receipt.sort(key=lambda row: row["path"])
-    applied = [row["path"] for row in receipt if row["status"] == "applied"]
-    if applied:
-        try:
-            now = dict(target.current_hashes(applied))
-        except Exception:  # noqa: BLE001 - 复核读不出来：不能说写成了
-            logger.debug("delivery_verify_failed", exc_info=True)
-            for row in receipt:
-                if row["status"] == "applied":
-                    # 写是写了，但读不回来核对：如实说核对不了，不说写成了
-                    row["status"] = "failed"
-                    row["reason"] = "verify_failed"
-            return receipt
-        for row in receipt:
-            if row["status"] == "applied" and now.get(row["path"]) != row["blob"]:
-                row["status"] = "failed"
-                row["reason"] = "verify_mismatch"
+    _verify_writes(target, receipt, children, entries)
     return receipt
 
 

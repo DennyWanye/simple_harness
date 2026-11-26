@@ -7,6 +7,7 @@ gateway's untrusted-source check and the claim evidence grading must agree on wh
 
 from __future__ import annotations
 
+import unicodedata
 from pathlib import PurePosixPath
 
 
@@ -17,6 +18,12 @@ def normalise_workspace_path(path: str) -> str:
     text = str(path).replace("\\", "/").strip()
     parts = [part for part in PurePosixPath(text).parts if part not in {".", "", "/"}]
     return "/".join(parts)
+
+
+def spelling_key(path: str) -> str:
+    """路径拼写碰撞键。保留原名用于展示、Git 提交和精确比对。"""
+
+    return unicodedata.normalize("NFD", unicodedata.normalize("NFD", path).casefold())
 
 
 def under_prefix(path: str, prefixes: tuple[str, ...] | list[str]) -> bool:

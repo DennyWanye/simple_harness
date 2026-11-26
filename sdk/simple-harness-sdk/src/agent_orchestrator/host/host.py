@@ -27,7 +27,7 @@ import time
 from collections.abc import Awaitable, Callable, Iterator, Mapping, Sequence
 from dataclasses import replace
 from pathlib import Path, PurePosixPath
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 import httpx
 
@@ -1897,16 +1897,6 @@ class OrchestrationHost:
         if str(mission.get("status")) != "COMPLETED":
             raise HostRequestError("delivery_not_ready", "任务完成以后才能写回")
         target = self._workspace_base
-        if not isinstance(target, WritableBase):
-            raise HostRequestError(
-                "delivery_unsupported", "这个宿主的底不能写回（没有实现 WritableBase）"
-            )
-        if not same_location(change.get("location"), target.location()):
-            raise HostRequestError(
-                "delivery_target_mismatch",
-                f"这个任务的底拍自 {change.get('location')!r}，"
-                f"宿主现在接的是 {target.location()!r}：不写",
-            )
         known = {str(item["path"]) for item in change["files"]}
         if paths is not None and (
             not isinstance(paths, list) or not all(isinstance(path, str) for path in paths)
@@ -1915,6 +1905,15 @@ class OrchestrationHost:
         unknown = sorted(set(paths or ()) - known)
         if unknown:
             raise HostRequestError("invalid_request", f"这些路径不在改动集里：{unknown[:5]}")
+        if not callable(getattr(target, "location", None)):
+            raise HostRequestError("delivery_unsupported", "写回需要底提供 location()")
+        target = cast(WritableBase, target)
+        if not same_location(change.get("location"), target.location()):
+            raise HostRequestError(
+                "delivery_target_mismatch",
+                f"这个任务的底拍自 {change.get('location')!r}，"
+                f"宿主现在接的是 {target.location()!r}：不写",
+            )
         try:
             receipt = self._deliveries().apply(
                 operation_key,

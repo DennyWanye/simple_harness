@@ -36,7 +36,7 @@ from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 from typing import Protocol, runtime_checkable
 
-from .paths import under_prefix
+from .paths import spelling_key, under_prefix
 from .store import ArtifactStoreError, read_nofollow
 
 GIT_MIN_VERSION = (2, 38)
@@ -172,7 +172,7 @@ def _spelling_problem(root: Path, relative: str) -> str | None:
             return None
         except NotADirectoryError:
             return "not_a_directory"
-        if part not in names and any(name.casefold() == part.casefold() for name in names):
+        if part not in names and any(spelling_key(name) == spelling_key(part) for name in names):
             return "case_conflict"
         current = current / part
     return None
@@ -296,18 +296,26 @@ class DirectoryBase:
     # ------------------------------------------------------------ 写回
     def _current(self, relative: str) -> str | None:
         target = self.root / relative
-        if not target.exists() and not target.is_symlink():
+        if _through_link(self.root, relative):
+            return "!symlink"
+        if not target.exists():
             return None
-        if _spelling_problem(self.root, relative) == "case_conflict":
-            # 不区分大小写的磁盘上，这个名字的精确写法已经不在（占着位置的是只差大小写的另一个文件）
-            return None
-        if _through_link(self.root, relative) or not target.is_file():
-            # 软链、目录：没有一个 blob 号能等于它，三方比对必然是冲突
-            return "!" + ("symlink" if target.is_symlink() else "not_a_file")
+        if target.is_dir():
+            return "!directory"
+        if not target.is_file():
+            return "!not_a_file"
         return git_blob_id(read_nofollow(target))
 
     def current_hashes(self, paths: Sequence[str]) -> dict[str, str | None]:
-        return {path: self._current(path) for path in paths}
+        # 回执核对交付里的精确目录项；写前的最终比对则读取实际占用目标位置的文件。
+        def exact(path: str) -> str | None:
+            if _through_link(self.root, path):
+                return "!symlink"
+            if _spelling_problem(self.root, path) == "case_conflict":
+                return None
+            return self._current(path)
+
+        return {path: exact(path) for path in paths}
 
     def write_file(
         self, path: str, data: bytes, *, expected: str | None, executable: bool
@@ -484,6 +492,7 @@ class InMemoryBase:
         if current != expected:
             return FileWrite("conflict", current)
         del self.files[path]
+        self.executable = self.executable - {path}
         return FileWrite("applied", current)
 
 
@@ -670,7 +679,7 @@ class BaseRepo:
         self._git("update-ref", f"refs/harness/delivery/{commit}", commit)
         return commit
 
-    def diff(self, old: str, new: str, path: str) -> str:
+    def diff(self, old: str, new: str, path: str, *, deleted: bool = False) -> str:
         """两个提交之间一个文件的 unified diff（不走用户配置的外部 diff、文本转换）。"""
 
         out = self._git(
@@ -680,6 +689,7 @@ class BaseRepo:
             "--no-ext-diff",
             "--no-textconv",
             "--no-renames",
+            *(["--diff-filter=D"] if deleted else []),
             old,
             new,
             "--",
@@ -930,19 +940,20 @@ def capture_base(
             withheld[item.path] = "secret_name"
         else:
             candidates[item.path] = item
-    # 只差大小写的路径（文件或任一级目录）在不区分大小写的文件系统上会落到同一处：都扣留
+    # 每一级目录项都可能在工作盘上折叠到同一位置，碰撞双方都须扣留。
     spellings: dict[str, set[str]] = {}
     for path in candidates:
         parts = PurePosixPath(path).parts
         for depth in range(1, len(parts) + 1):
             prefix = "/".join(parts[:depth])
-            spellings.setdefault(prefix.casefold(), set()).add(prefix)
+            spellings.setdefault(spelling_key(prefix), set()).add(prefix)
     clashing = {key for key, names in spellings.items() if len(names) > 1}
     if clashing:
         for path in list(candidates):
             parts = PurePosixPath(path).parts
             if any(
-                "/".join(parts[:depth]).casefold() in clashing for depth in range(1, len(parts) + 1)
+                spelling_key("/".join(parts[:depth])) in clashing
+                for depth in range(1, len(parts) + 1)
             ):
                 withheld[path] = "case_conflict"
                 candidates.pop(path)

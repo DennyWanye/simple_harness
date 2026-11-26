@@ -188,7 +188,11 @@ class VerificationMixin(OrchestratorCore):
             )
             return
         workspace = self.assembled.workspaces.get(attempt.id)
+        on_base = mission_base_commit(mission.final_report) is not None
+        record = self.store.get_workspace(attempt.id) if on_base else None
+        aliases = (record or {}).get("detail", {}).get("initial_aliases", {})
         artifacts = workspace.snapshot(
+            aliases=aliases,
             mission_id=attempt.mission_id,
             task_id=attempt.task_id,
             produced_by=intent.agent_id or attempt.id,
@@ -339,13 +343,11 @@ class VerificationMixin(OrchestratorCore):
                 )
                 return
 
-        # 有底的任务：起步时在、现在不在的文件（只有删除工具删得掉，跑代码在一次性副本里）。按磁盘问
-        # 「这个文件还在不在」，不按清单字面比——磁盘会折叠大小写与 Unicode 写法
-        deleted = (
-            sorted(path for path in initial if not workspace.resolve(path).is_file())
-            if mission_base_commit(mission.final_report) is not None
-            else []
+        # 快照只列普通文件，并已还原铺底时磁盘自动改变的拼写。旧名能解析到新名也算删除。
+        present = known.union(
+            path for names in aliases.values() if names[0] in known for path in names
         )
+        deleted = sorted(initial.keys() - present) if on_base else []
         try:
             self.commit.record_result(
                 attempt.id,

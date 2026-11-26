@@ -1,4 +1,6 @@
-最后更新：2026-11-26（删除文件，P2b 第 2 项，分支 `sdk/delete-file`，未发版）。有底任务里能写的执行者也能删文件；删除跟着结果登记，验收副本与判定树里那个文件不在；改动集多一种 `delete`，写回仍是底那一版才删。删除暂不传给下游步骤。
+最后更新：2026-11-26（SDK 删除文件，分支 `sdk/delete-file`，未发版）。有底可写步骤的删除随结果交付。文件变目录支持复核，涉及文件或父目录拼写的改名保留在验收与交付树中，写回成对拒绝。删除暂不传播给下游步骤。
+
+本轮四个指定套件共 242 项：原始环境 222 通过、15 个宿主用例受进程身份查询限制失败、5 个隔离区用例跳过。仅对当前测试进程提供身份替身后，工作区套件 116 通过、5 跳过。16 个独立变异均被检出。详见 [模块事实源](AGENT_ORCHESTRATION.md) 与本机 [核验报告](../.local-test-evidence/2026-11-26/fix-delete-b/verified/REPORT.md)。原始证据索引 `.local-test-evidence/2026-11-26/fix-delete-b/verified/SHA256SUMS` 的 SHA-256 为 `820372ba8ebe2e709c1fd01a0f3e5ddccf4308d424857234eeacbb07b5bb919a`。
 
 最后更新：2026-11-26（SDK 自己的路径搬到 `.harness/`，P2b 第 1 项，分支 `sdk/harness-root`，未发版）。资料根 `sources/` → `.harness/sources/`、草稿 `.harness/scratch/` 不交付、判定树落选产出 `.harness/accepted-outputs/`；Swift 包仓库根目录的 `Sources/` 不再被当成 SDK 保留路径扣留。
 
