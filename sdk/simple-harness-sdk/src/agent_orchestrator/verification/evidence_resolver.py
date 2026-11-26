@@ -55,7 +55,7 @@ def in_source_roots(path: str, source_roots: Sequence[str]) -> bool:
     """The one rule for "is this registered source readable as Mission source".
 
     Shared by the reader and by dispatch freezing (2026-09-25 UI 全量点击: the
-    Assurance review output is registered as a source outside ``sources/``; freezing
+    Assurance review output is registered as a source outside ``.harness/sources/``; freezing
     every active row made the next document dispatch fail on an unreadable path).
     """
     roots = tuple(root.rstrip("/") for root in source_roots)

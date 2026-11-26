@@ -125,3 +125,89 @@ def test_a_mission_on_a_swift_package_changes_sources_and_keeps_scratch_to_itsel
             ]
 
     asyncio.run(case())
+
+
+# ---------------------------------------------------------------- 核验第一轮
+
+
+def test_delegated_sources_land_under_the_domains_source_root():
+    from agent_orchestrator.verification.evidence_resolver import in_source_roots
+    from agent_orchestrator.host.delegation import normalize_spec
+
+    spec = normalize_spec(
+        {
+            "goal": "读纪要写总结",
+            "success_criteria": ["file:SUMMARY.md"],
+            "sources": [{"path": "notes.md", "content": "纪要"}],
+        }
+    )
+    [source] = spec["sources"]
+    assert source["path"] == ".harness/sources/notes.md"
+    assert in_source_roots(source["path"], CODE_PROFILE.source_roots)
+
+
+def test_the_harness_root_is_not_delivered_in_any_case(tmp_path):
+    repo = BaseRepo(tmp_path / "work.git")
+    base = capture_base(
+        InMemoryBase({"a.py": b"a\n"}),
+        repo,
+        scope=(),
+        limits=CaptureLimits(),
+        is_secret=lambda _t: False,
+        reserved=RESERVED_BASE_PREFIXES,
+    ).to_json()
+    change = build_change_set(
+        repo,
+        base,
+        [Produced(".HARNESS/Scratch/notes.md", b"n\n", "a1", "t1")],
+        reserved=RESERVED_BASE_PREFIXES,
+    )
+    assert change["files"] == []
+
+
+def test_a_worker_cannot_block_the_harness_root_with_a_file(tmp_path):
+    from simple_harness.contracts import CallId
+    from simple_harness.tools import ToolCall
+
+    from agent_orchestrator.artifacts.workspace import WorkspaceManager
+    from agent_orchestrator.runtime.tool_gateway import WorkspaceBinding, WorkspaceToolGateway
+
+    async def case():
+        manager = WorkspaceManager(tmp_path / "workspaces")
+        manager.create("attempt", seed={})
+        gateway = WorkspaceToolGateway(manager)
+        gateway.bind("w", WorkspaceBinding("attempt", "work", True, ("workspace_write_file",)))
+        for path in (".harness", "./.HARNESS"):
+            result = await gateway.execute(
+                ToolCall(CallId(path), "workspace_write_file", {"path": path, "content": "x"}),
+                {"run_id": "w"},
+            )
+            assert result.value is None and result.error_code, result
+        ok = await gateway.execute(
+            ToolCall(
+                CallId("s"),
+                "workspace_write_file",
+                {"path": ".harness/scratch/a.md", "content": "x"},
+            ),
+            {"run_id": "w"},
+        )
+        assert ok.value == {"path": ".harness/scratch/a.md", "bytes": 1}
+
+    asyncio.run(case())
+
+
+def test_a_file_criterion_cannot_point_into_the_harness_root(tmp_path):
+    import pytest
+
+    from agent_orchestrator.host import HostRequestError
+
+    async def case():
+        async with _host(tmp_path / "root", workspace_base=InMemoryBase(SWIFT)) as host:
+            for path in (".harness/scratch/plan.md", ".HARNESS/sources/a.md"):
+                with pytest.raises(HostRequestError) as refused:
+                    host.create_mission(
+                        {"goal": "g", "success_criteria": [f"file:{path}"], "idempotency_key": path}
+                    )
+                assert refused.value.code == "file_criterion_reserved_path"
+
+    asyncio.run(case())

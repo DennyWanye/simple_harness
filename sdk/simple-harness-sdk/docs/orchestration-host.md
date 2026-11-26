@@ -960,7 +960,7 @@ host.base  # {"enabled": True, "git": "2.54.0"}；没有 git 2.38+ 时 enabled=F
 | 顺手跑的测试 | 一条 `pytest:` 都没写时，验收只跑这一步新写或改过的测试文件（`test_*.py` / `*_test.py`，每个文件各跑一次），不跑使用方仓库原有的测试；收集不到测试的文件（没有测试函数、被仓库配置反选，pytest 退出码 5）不算失败；仓库的 pytest 配置或根目录 `conftest.py` 在隔离区里加载不了（例如要装了才有的插件，退出码 4）照样判失败；一个有测试的都没有就在空目录里跑一次（不加载仓库的 pytest 配置与 `conftest.py`），算「不适用、视为满足」。写了 `pytest:`（含不带路径的 `pytest:`，那是要求跑整棵树）照条件跑 |
 | 错误码 | `base_unavailable`（宿主没接底却带了 `base_scope`，或 git 不可用）、`base_too_large`、`invalid_request`（范围写法不对、种子与底重名）、`base_repo_failed`（工作仓库的 git 命令失败，说明里带 git 的报错） |
 | 幂等 | 同一个 `idempotency_key` 重试沿用原任务的底，不重拍 |
-| SDK 自己的路径 | 都在 `.harness/` 下：任务资料 `.harness/sources/`（会话委派带的资料自动放到这里）、执行者草稿 `.harness/scratch/`（照常传给后续步骤，不交给使用方）、判定树里落选的产出 `.harness/accepted-outputs/`。使用方仓库里的 `Sources/`、`sources/` 照常进底 |
+| SDK 自己的路径 | 都在 `.harness/` 下：任务资料 `.harness/sources/`（会话委派带的资料自动放到这里）、执行者草稿 `.harness/scratch/`（照常传给后续步骤，不交给使用方）、判定树里落选的产出 `.harness/accepted-outputs/`。使用方仓库里的 `Sources/`、`sources/` 照常进底。直接带资料建任务时路径写 `.harness/sources/...`（以前是 `sources/...`）；`file:` 条件不能指向 `.harness/`（回 `file_criterion_reserved_path`） |
 | 还没有的 | 删除文件的工具；两个互不依赖的步骤改同一个底文件时的三方合并（现在判定树取后验收的那一版，被覆盖的步骤记在改动集的 `overridden_steps`）——见设计稿 `plans/2026-11-26-workspace-base/` 的 P2b |
 
 ### 交付：改动集与写回

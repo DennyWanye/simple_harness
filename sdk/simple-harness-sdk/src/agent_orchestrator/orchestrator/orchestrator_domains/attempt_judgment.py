@@ -18,6 +18,7 @@ from ...artifacts.delivery import Produced, build_change_set
 from ...artifacts.store import ArtifactStoreError, read_verified
 from ...artifacts.versioning import ArtifactConflict, UpstreamInput
 from ...artifacts.workspace_base import (
+    HARNESS_ROOT,
     RESERVED_BASE_PREFIXES,
     BaseError,
     mission_base_commit,
@@ -279,8 +280,9 @@ class AttemptJudgmentMixin(OrchestratorCore):
                 seen_artifacts.add(artifact.id)
                 kept_at = None
                 if weight[0] and port is not None:
-                    # I05: evidence a root criterion was judged on stays deliverable.
-                    kept_at = f".harness/accepted-outputs/{task_id}/{port}/{path}"
+                    # I05: evidence a root criterion was judged on stays in the judgment tree
+                    # (under the SDK's own root: it is never part of the delivered change set).
+                    kept_at = f"{HARNESS_ROOT}accepted-outputs/{task_id}/{port}/{path}"
                     tree[kept_at] = UpstreamInput(
                         task_id, kept_at, artifact.content_hash, artifact.id
                     )

@@ -5,6 +5,10 @@
 - 执行者草稿写 `.harness/scratch/`（写文件工具的说明里写明）：照常登记、传给后续步骤，不进改动集、不写回。
 - 判定树里落选的产出放 `.harness/accepted-outputs/`。拍底的保留前缀改为 `.harness/`、`.assurance/`。
 - 测试里写死的 `sources/` 路径随之改成 `.harness/sources/`。
+- **宿主要跟着改（升到含这次改动的 SDK 时）**：直接调 `register_source` / 建任务时带资料的，路径前缀从 `sources/` 换成 `.harness/sources/`（会话委派 `delegate_task` 的资料 SDK 自动补前缀，不用改）。本仓库桌面端（`tauri-app` 的 `MissionsView`、`MissionSources`）与后端测试里写死的 `sources/` 要在后端换钉版的同一次提交里改；桌面端的改动已备好补丁（`.local-test-evidence/2026-11-26/release-notes/tauri-harness-root.patch`，视图测试 100 条通过），现在不合进来，因为后端还钉着 opt.230。
+- `file:` 成功条件指向 `.harness/` 回 `file_criterion_reserved_path`；执行者不能把 `.harness` 写成文件。
+
+独立核验第一轮（FAIL）查出并已修：保证通道接缝脚本 `scripts/assurance_seams/evidence-tools-seam.py` 还写着旧资料根，`test_a_assurance.py::test_extra_evidence_exposure` 因此失败 → 改成 `.harness/sources/`。同时采纳的建议：执行者不能把 `.harness` 写成文件（会堵死资料与草稿根）；`file:` 成功条件指向 `.harness/` 回 `file_criterion_reserved_path`（那里的东西不交付，任务完成了也交不出来）；判定树落选产出的路径改用同一个常量 `HARNESS_ROOT` 拼，不会和保留前缀分家；补了委派资料落在领域资料根、改动集不分大小写排除 `.HARNESS/` 的用例；几处注释跟上。
 
 ## 未发布 — 有底的任务交付：改动集与写回（issue #53，2026-11-26）
 
