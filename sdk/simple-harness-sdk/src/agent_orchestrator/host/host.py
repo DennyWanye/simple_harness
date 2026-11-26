@@ -37,12 +37,19 @@ if TYPE_CHECKING:
     from .session import Session, SessionPolicy
 
 from ..api import facade, policies
+from ..artifacts.delivery import (
+    DeliveryLedger,
+    DeliveryRefused,
+    apply_change_set,
+    delivery_diff,
+)
 from ..artifacts.workspace_base import (
     RESERVED_BASE_PREFIXES,
     BaseError,
     BaseRepo,
     CaptureLimits,
     WorkspaceBase,
+    WritableBase,
     capture_base,
 )
 from ..contracts import Budget
@@ -242,9 +249,7 @@ def is_bare_relative_path(text: str) -> bool:
     if not text or any(ch.isspace() for ch in text) or "\\" in text or "\x00" in text:
         return False
     path = PurePosixPath(text)
-    return (
-        str(path) == text and text != "." and not path.is_absolute() and ".." not in path.parts
-    )
+    return str(path) == text and text != "." and not path.is_absolute() and ".." not in path.parts
 
 
 def with_publish_sources(criteria: list[Any]) -> list[Any]:
@@ -1811,6 +1816,91 @@ class OrchestrationHost:
 
     def artifact_read(self, artifact_id: str) -> dict[str, Any]:
         return dict(self._call("artifact_read", artifact_id))
+
+    # ------------------------------------------------------------ 交付（有底的任务）
+    #: 一个文件的 diff 超过这么多字符就不随 :meth:`delivery` 返回
+    DELIVERY_DIFF_MAX_CHARS = 200_000
+
+    def _deliveries(self) -> DeliveryLedger:
+        ledger = getattr(self, "_delivery_ledger", None)
+        if ledger is None:
+            ledger = DeliveryLedger(self._bases().path.parent / "deliveries")
+            self._delivery_ledger = ledger
+        return ledger
+
+    def _change_set(self, mission_id: str) -> tuple[dict[str, Any], dict[str, Any]]:
+        mission = self.snapshot(mission_id)["snapshot"]["mission"]
+        change = (mission.get("final_report") or {}).get("change_set")
+        if not isinstance(change, Mapping):
+            raise HostRequestError("no_delivery", "这个任务没有交付：没有接底，或者还没判定")
+        if "error" in change:
+            raise HostRequestError("no_delivery", f"这个任务的改动集没算出来：{change['error']}")
+        return mission, dict(change)
+
+    def delivery(self, mission_id: str) -> dict[str, Any]:
+        """有底的任务交出来的改动：逐文件（路径、新增 / 修改、是否改了已有测试、不能写回的原因……），
+        文本文件附相对底的 unified diff；``applies`` 是已经做过的写回回执。"""
+
+        mission, change = self._change_set(mission_id)
+        files = []
+        for item in change["files"]:
+            row = dict(item)
+            row["diff"] = None
+            if not item.get("readable"):
+                row["diff_omitted"] = "binary_or_large"
+            else:
+                text = delivery_diff(self._bases(), change, str(item["path"]))
+                if len(text) > self.DELIVERY_DIFF_MAX_CHARS:
+                    row["diff_omitted"] = "too_large"
+                else:
+                    row["diff"] = text
+            files.append(row)
+        return {
+            "mission_id": mission_id,
+            "status": str(mission.get("status")),
+            "base_commit": change["base_commit"],
+            "commit": change["commit"],
+            "counts": change["counts"],
+            "files": files,
+            "applies": self._deliveries().receipts(mission_id),
+        }
+
+    def apply_delivery(
+        self, mission_id: str, *, operation_key: str, paths: list[str] | None = None
+    ) -> dict[str, Any]:
+        """把完成任务的改动写回底（全部，或 ``paths`` 点名的几个）。只由宿主发起（人点、或宿主
+        自己的档位规则）；模型没有这个工具。
+
+        逐文件三方比对：现状仍是底 → 写；现状已是新内容 → ``already``；其他 → ``conflict``，不写。
+        同一个 ``operation_key`` 再调返回原回执（``repeat: true``），不重放；同键不同参数回
+        ``idempotency_conflict``。"""
+
+        mission, change = self._change_set(mission_id)
+        if str(mission.get("status")) != "COMPLETED":
+            raise HostRequestError("delivery_not_ready", "任务完成以后才能写回")
+        target = self._workspace_base
+        if not isinstance(target, WritableBase):
+            raise HostRequestError(
+                "delivery_unsupported", "这个宿主的底不能写回（没有实现 WritableBase）"
+            )
+        known = {str(item["path"]) for item in change["files"]}
+        if paths is not None and (
+            not isinstance(paths, list) or not all(isinstance(path, str) for path in paths)
+        ):
+            raise HostRequestError("invalid_request", "paths 是改动集里的路径列表")
+        unknown = sorted(set(paths or ()) - known)
+        if unknown:
+            raise HostRequestError("invalid_request", f"这些路径不在改动集里：{unknown[:5]}")
+        try:
+            receipt = self._deliveries().apply(
+                operation_key,
+                mission_id=mission_id,
+                paths=paths,
+                run=lambda: apply_change_set(target, self._bases(), change, paths=paths),
+            )
+        except DeliveryRefused as error:
+            raise HostRequestError(error.code, str(error)) from error
+        return {**receipt, "commit": change["commit"]}
 
     def assurance_root_diagnostic(self) -> dict[str, Any]:
         """非披露诊断（隔离时也开）：状态、能否执行、匿名阻塞码，加宿主自己的状态。"""

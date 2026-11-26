@@ -1,3 +1,19 @@
+## 未发布 — 有底的任务交付：改动集与写回（issue #53，2026-11-26）
+
+P1（#51）让任务在「底提交」上干活；这一段把结果交回去。设计见 `plans/2026-11-26-workspace-base/`（本次是 P2a）。
+
+- **改动集**：有底的任务判定时，用判定树同一份产物（底 + 验收通过的步骤产物）对照底提交，得到新增 / 修改的文件，
+  写进 `final_report.change_set`；工作仓库里钉交付提交（父提交 = 底提交，引用 `refs/harness/delivery/<提交号>`）。
+  改了底里已有的测试单列（`test: true`）；扣留过的路径、凭据文件名、与底只差大小写的标 `refused`、不写回；SDK
+  自己的路径（`accepted-outputs/` 等）不算交付；判定树里被覆盖掉的步骤记在 `overridden_steps`。
+- **宿主方法**：`OrchestrationHost.delivery(mission_id)` 看改动（文本文件附相对底的 unified diff）与以前的写回回执；
+  `apply_delivery(mission_id, operation_key=, paths=None)` 写回全部或一部分文件。模型没有写回工具。
+- **写回**：逐文件三方比对（现状仍是底 → 写；已是新内容 → `already`；其他 → `conflict` 不写），写完按现状复核；
+  `GitRepoBase` / `DirectoryBase` 只写工作目录文件（临时文件 + 原子改名），不碰 `.git`、索引、分支；软链、大小写
+  撞名 `refused`。账本 `bases/deliveries/`：同一操作键不重放，同键不同参数 `idempotency_conflict`，写到一半重调
+  靠三方比对不写两遍。底适配器要写回另实现 `WritableBase`（三个自带适配器都实现了），否则 `delivery_unsupported`。
+- **还没有（P2b）**：删除工具、步骤之间同一底文件的三方合并、执行者草稿不交付（`.harness/`）、尝试改 git 工作树。
+
 ## 未发布 — 后台任务在「底提交」上干活（issue #51，2026-11-26）
 
 宿主真机局（R16）里任务工作区是空的：执行者能用只读工具看到用户仓库，验收副本里却没有仓库原有文件，新写的测试

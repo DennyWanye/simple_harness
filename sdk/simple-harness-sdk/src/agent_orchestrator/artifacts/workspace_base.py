@@ -15,7 +15,11 @@
   二进制 / 超大文件标成不可读。同样的内容拍出同一个提交号（作者、时间、说明都固定）。
 
 提交号是底的身份：任务行记它，尝试工作区、验收副本、判定树都从它铺底；提交与对象由引用
-``refs/harness/base/<提交号>`` 保住，工作区目录清掉以后照样能重建。
+``refs/harness/base/<提交号>`` 保住，工作区目录清掉以后照样能重建。任务交付时在底提交上叠一个
+交付提交（``refs/harness/delivery/<提交号>``），改动与 diff 都在这两个提交之间算。
+
+能写回的底另外实现 :class:`WritableBase`：按 git blob 号报现状，逐文件「现状仍是预期才写」。
+SDK 自带的三个适配器都实现了；写回只改工作目录里的文件，不碰 ``.git``。
 """
 
 from __future__ import annotations
@@ -111,6 +115,55 @@ class WorkspaceBase(Protocol):
     SDK 收到后还会再按它筛一遍。"""
 
     def capture(self, scope: Sequence[str]) -> BaseCapture: ...
+
+
+@dataclass(frozen=True, slots=True)
+class FileWrite:
+    """写回一个文件的结果。``status``：``applied`` 写了、``already`` 现状已是新内容、``conflict``
+    现状既不是底也不是新内容（没写）、``refused`` 这个路径不写（``reason`` 说为什么）、``failed``
+    写的时候出错。``current`` 是写之前现状的 blob 号（没有这个文件为 None）。"""
+
+    status: str
+    current: str | None
+    reason: str | None = None
+
+
+@runtime_checkable
+class WritableBase(Protocol):
+    """能把交付写回去的底。blob 号是 git 的（见 :func:`git_blob_id`），没有这个文件为 None。
+
+    ``write_file`` 自己做比对：现状 == 新内容 → ``already``；现状 == ``expected`` → 写；
+    其他 → ``conflict``，不写。路径经过软链、与已有文件只差大小写的，一律 ``refused``。"""
+
+    def current_hashes(self, paths: Sequence[str]) -> Mapping[str, str | None]: ...
+
+    def write_file(
+        self, path: str, data: bytes, *, expected: str | None, executable: bool
+    ) -> FileWrite: ...
+
+
+def git_blob_id(data: bytes) -> str:
+    """git 给这段字节的 blob 号（SHA-1 对象格式）。写回的三方比对只认这个号。"""
+
+    return hashlib.sha1(b"blob %d\0" % len(data) + data, usedforsecurity=False).hexdigest()
+
+
+def _exact_case(root: Path, relative: str) -> bool:
+    """路径上已经存在的每一级，名字的大小写与要写的一致（不区分大小写的文件系统上，
+    只差大小写的名字会落到别人的文件上）。"""
+
+    current = root
+    for part in PurePosixPath(relative).parts:
+        try:
+            names = os.listdir(current)
+        except FileNotFoundError:
+            return True
+        except NotADirectoryError:
+            return False
+        if part not in names and any(name.casefold() == part.casefold() for name in names):
+            return False
+        current = current / part
+    return True
 
 
 @dataclass(frozen=True, slots=True)
@@ -225,6 +278,63 @@ class DirectoryBase:
                 files.append(_file(self.root, relative))
         return BaseCapture(files, withheld, self._source())
 
+    # ------------------------------------------------------------ 写回
+    def _current(self, relative: str) -> str | None:
+        target = self.root / relative
+        if not target.exists() and not target.is_symlink():
+            return None
+        if _through_link(self.root, relative) or not target.is_file():
+            # 软链、目录：没有一个 blob 号能等于它，三方比对必然是冲突
+            return "!" + ("symlink" if target.is_symlink() else "not_a_file")
+        return git_blob_id(read_nofollow(target))
+
+    def current_hashes(self, paths: Sequence[str]) -> dict[str, str | None]:
+        return {path: self._current(path) for path in paths}
+
+    def write_file(
+        self, path: str, data: bytes, *, expected: str | None, executable: bool
+    ) -> FileWrite:
+        if _path_problem(path) is not None:
+            return FileWrite("refused", None, "invalid_path")
+        if _through_link(self.root, path):
+            return FileWrite("refused", None, "symlink")
+        if not _exact_case(self.root, path):
+            return FileWrite("refused", None, "case_conflict")
+        try:
+            current = self._current(path)
+        except (OSError, ArtifactStoreError) as error:
+            return FileWrite("failed", None, f"read_failed: {type(error).__name__}")
+        if current == git_blob_id(data):
+            return FileWrite("already", current)
+        if current != expected:
+            return FileWrite("conflict", current)
+        target = self.root / path
+        temporary: str | None = None
+        try:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            if _through_link(self.root, path):  # 建目录的同时被换成了软链
+                return FileWrite("refused", current, "symlink")
+            mode = (
+                target.stat().st_mode & 0o7777
+                if current is not None
+                else (0o755 if executable else 0o644)
+            )
+            # 同目录临时文件 + 原子改名：写到一半出错，原文件不变
+            handle, temporary = tempfile.mkstemp(
+                dir=target.parent, prefix=f".{target.name}.", suffix=".harness"
+            )
+            with os.fdopen(handle, "wb") as out:
+                out.write(data)
+            os.chmod(temporary, mode)
+            os.replace(temporary, target)
+            temporary = None
+        except OSError as error:
+            return FileWrite("failed", current, f"write_failed: {type(error).__name__}")
+        finally:
+            if temporary is not None:
+                Path(temporary).unlink(missing_ok=True)
+        return FileWrite("applied", current)
+
 
 class GitRepoBase(DirectoryBase):
     """用户的 git 仓库：工作目录里受版本管理的文件 + 未被忽略的新文件（没提交的改动算在内）。
@@ -297,6 +407,25 @@ class InMemoryBase:
             {},
             self.source,
         )
+
+    def current_hashes(self, paths: Sequence[str]) -> dict[str, str | None]:
+        return {
+            path: None if path not in self.files else git_blob_id(self.files[path])
+            for path in paths
+        }
+
+    def write_file(
+        self, path: str, data: bytes, *, expected: str | None, executable: bool
+    ) -> FileWrite:
+        current = self.current_hashes([path])[path]
+        if current == git_blob_id(data):
+            return FileWrite("already", current)
+        if current != expected:
+            return FileWrite("conflict", current)
+        self.files[path] = data
+        if executable and current is None:
+            self.executable = self.executable | {path}
+        return FileWrite("applied", current)
 
 
 # ---------------------------------------------------------------- 工作仓库
@@ -434,6 +563,54 @@ class BaseRepo:
         self._write_manifest(commit, self._with_blobs(commit, manifest))
         return commit
 
+    def commit_on(
+        self,
+        parent: str,
+        files: Mapping[str, bytes],
+        *,
+        executable: Iterable[str] = (),
+        message: str = "delivery\n",
+    ) -> str:
+        """在 ``parent`` 上叠一组文件（新增或整份替换），提交人、时间固定：同样的改动得到同一个
+        提交号。引用 ``refs/harness/delivery/<提交号>`` 保住它。"""
+
+        self.ensure()
+        executable = frozenset(executable)
+        temporary = f"refs/harness/import/{uuid.uuid4().hex}"
+        text = message.encode()
+        stream = bytearray(
+            f"commit {temporary}\ncommitter {_COMMITTER}\ndata {len(text)}\n".encode()
+            + text
+            + f"\nfrom {parent}\n".encode()
+        )
+        for path in sorted(files):
+            data = files[path]
+            mode = "100755" if path in executable else "100644"
+            stream += f"M {mode} inline {path}\ndata {len(data)}\n".encode() + data + b"\n"
+        stream += b"done\n"
+        self._git("fast-import", "--quiet", "--done", input=bytes(stream))
+        commit = self._git("rev-parse", "--verify", temporary).decode().strip()
+        self._git("update-ref", f"refs/harness/delivery/{commit}", commit)
+        self._git("update-ref", "-d", temporary)
+        return commit
+
+    def diff(self, old: str, new: str, path: str) -> str:
+        """两个提交之间一个文件的 unified diff（不走用户配置的外部 diff、文本转换）。"""
+
+        out = self._git(
+            "--literal-pathspecs",
+            "diff",
+            "--no-color",
+            "--no-ext-diff",
+            "--no-textconv",
+            "--no-renames",
+            old,
+            new,
+            "--",
+            path,
+        )
+        return out.decode("utf-8", errors="replace")
+
     def _with_blobs(self, commit: str, manifest: Mapping[str, BaseEntry]) -> dict[str, BaseEntry]:
         blobs = self._tree(commit)
         if set(blobs) != set(manifest):
@@ -497,6 +674,11 @@ class BaseRepo:
             found[blob] = out[start : start + int(size)]
             cursor = start + int(size) + 1
         return found
+
+    def blobs(self, ids: Sequence[str]) -> dict[str, bytes]:
+        """按 blob 号取字节（不读整棵树）。"""
+
+        return self._blobs(list(ids))
 
     def manifest(self, commit: str) -> dict[str, BaseEntry]:
         """底提交的文件清单（路径 → blob 号、sha256、大小、可执行、可读）。缓存是派生数据，
@@ -729,11 +911,14 @@ __all__ = (
     "BaseUnavailable",
     "CaptureLimits",
     "DirectoryBase",
+    "FileWrite",
     "GitRepoBase",
     "InMemoryBase",
     "RESERVED_BASE_PREFIXES",
     "WorkspaceBase",
+    "WritableBase",
     "capture_base",
+    "git_blob_id",
     "mission_base_commit",
     "workspace_listing",
 )

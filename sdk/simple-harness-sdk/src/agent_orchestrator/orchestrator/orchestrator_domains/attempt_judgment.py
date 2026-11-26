@@ -16,7 +16,13 @@ from simple_harness.agents import AgentConfig, AgentLimits
 
 from ...artifacts.store import ArtifactStoreError, read_verified
 from ...artifacts.versioning import ArtifactConflict, UpstreamInput
-from ...artifacts.workspace_base import BaseError, mission_base_commit, workspace_listing
+from ...artifacts.delivery import Produced, build_change_set
+from ...artifacts.workspace_base import (
+    RESERVED_BASE_PREFIXES,
+    BaseError,
+    mission_base_commit,
+    workspace_listing,
+)
 from ...context.context_builder import (
     CONTEXT_BUILDER_VERSION,
     ContextRejected,
@@ -167,6 +173,28 @@ class AttemptJudgmentMixin(OrchestratorCore):
     def _hierarchical_judgment_inputs(
         self, mission: Mission, new_mode: HierarchicalDispatch, tasks: Sequence[Task]
     ) -> list[UpstreamInput]:
+        """The judgment tree (:meth:`_judgment_tree`), with what it superseded recorded once
+        per Mission judgment tree."""
+
+        tree, superseded, contributions = self._judgment_tree(mission, new_mode, tasks)
+        self.commit.record_artifact_merge_not_applicable(
+            mission.id,
+            subject=f"{mission.id}:judge:artifact-merge",
+            contributions=contributions,
+            artifacts=len(tree),
+            superseded=superseded,
+        )
+        if superseded:
+            self._note(
+                f"hierarchical mission {mission.id}: judgment tree keeps the criterion-linked / "
+                f"port / last writer of {[item['path'] for item in superseded]}; a linked loser "
+                "is kept under accepted-outputs/; the legacy merge is not applied"
+            )
+        return tree
+
+    def _judgment_tree(
+        self, mission: Mission, new_mode: HierarchicalDispatch, tasks: Sequence[Task]
+    ) -> tuple[list[UpstreamInput], list[dict[str, Any]], int]:
         """The Mission Judge's tree for a hierarchical Mission (P2.3k / defect N3).
 
         Read from what the root ``GoalResolution`` was formed out of and nothing else:
@@ -285,20 +313,7 @@ class AttemptJudgmentMixin(OrchestratorCore):
                     "superseded": losers,
                 }
             )
-        self.commit.record_artifact_merge_not_applicable(
-            mission.id,
-            subject=f"{mission.id}:judge:artifact-merge",
-            contributions=len(acceptances),
-            artifacts=len(tree),
-            superseded=superseded,
-        )
-        if superseded:
-            self._note(
-                f"hierarchical mission {mission.id}: judgment tree keeps the criterion-linked / "
-                f"port / last writer of {[item['path'] for item in superseded]}; a linked loser "
-                "is kept under accepted-outputs/; the legacy merge is not applied"
-            )
-        return [tree[path] for path in sorted(tree)]
+        return [tree[path] for path in sorted(tree)], superseded, len(acceptances)
 
     async def _next_attempt(
         self,
@@ -898,9 +913,49 @@ class AttemptJudgmentMixin(OrchestratorCore):
             if cached is None:
                 self.commit.record_criteria_judgment(mission.id, key, judgments, summary=summary)
             return created or cached is None
-        judged = self.commit.judge_mission(mission.id, judgments=ruled, summary=summary)
+        judged = self.commit.judge_mission(
+            mission.id,
+            judgments=ruled,
+            summary=summary,
+            change_set=self._change_set(mission, tasks),
+        )
         self._note(f"mission {mission.id} judged: {judged.status} ({judged.stop_reason})")
         return True
+
+    def _change_set(self, mission: Mission, tasks: Sequence[Task]) -> dict[str, Any] | None:
+        """有底的任务交出去的东西：判定树里的产物相对底提交的改动（见
+        :func:`~...artifacts.delivery.build_change_set`）。判定树就是底 + 这些产物，验的就是交的。
+        算不出来时如实记下原因，任务的判定照旧。"""
+
+        base = (mission.final_report or {}).get("workspace_base")
+        new_mode = self._new_mode(mission)
+        if not isinstance(base, Mapping) or new_mode is None:
+            return None
+        try:
+            tree, superseded, _contributions = self._judgment_tree(mission, new_mode, tasks)
+            produced = []
+            for item in tree:
+                artifact = self.store.get_artifact(item.artifact_id)
+                if artifact is None:
+                    raise ArtifactStoreError(f"产物 {item.artifact_id} 不在了")
+                produced.append(
+                    Produced(item.path, read_verified(artifact), artifact.id, item.task_id)
+                )
+            return build_change_set(
+                self.assembled.workspaces.bases,
+                base,
+                produced,
+                reserved=(
+                    *RESERVED_BASE_PREFIXES,
+                    *self._config.deployment_policy.denied_path_prefixes,
+                ),
+                superseded={
+                    str(row["path"]): list(row["superseded_task_ids"]) for row in superseded
+                },
+            )
+        except (ArtifactConflict, ArtifactStoreError, BaseError) as error:
+            logger.debug("change_set_failed", exc_info=True)
+            return {"error": f"{type(error).__name__}: {error}"}
 
     async def _evaluate_criteria(
         self, mission: Mission, tasks: Sequence[Task]
@@ -1212,5 +1267,10 @@ class AttemptJudgmentMixin(OrchestratorCore):
                     "action_state": state,
                 }
             )
-        judged = self.commit.judge_mission(mission.id, judgments=judgments, summary=summary)
+        judged = self.commit.judge_mission(
+            mission.id,
+            judgments=judgments,
+            summary=summary,
+            change_set=self._change_set(mission, self.store.list_tasks(mission.id)),
+        )
         self._note(f"mission {mission.id} judged: {judged.status} ({judged.stop_reason})")
