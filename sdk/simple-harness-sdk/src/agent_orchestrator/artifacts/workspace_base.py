@@ -409,10 +409,11 @@ class InMemoryBase:
     ) -> None:
         self.files = dict(files)
         self.executable = frozenset(executable)
-        self.source = dict(source or {"kind": "memory", "location": "memory"})
+        self.source = {"kind": "memory", **dict(source or {})}
+        self.source.setdefault("location", "memory")
 
     def location(self) -> str:
-        return str(self.source.get("location", "memory"))
+        return str(self.source["location"])
 
     def capture(self, scope: Sequence[str]) -> BaseCapture:
         return BaseCapture(

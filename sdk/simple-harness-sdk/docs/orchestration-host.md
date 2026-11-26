@@ -981,12 +981,12 @@ receipt = host.apply_delivery(mission_id, operation_key="点击-123", paths=None
 
 | 事 | 说明 |
 |---|---|
-| 改动集里有什么 | 判定树里和底提交内容不同的文件：新增（`add`）或修改（`modify`）。没动的底文件、SDK 自己的路径（`accepted-outputs/` 等）不在里面。`test: true` = 改了底里**已有的**测试文件或测试配置（`conftest.py`、`pytest.ini`、`tox.ini`、`.coveragerc`；新写的测试不算），交付时单列给人看 |
-| 不能写回的 | `refused` 写着原因：底拍快照时扣留过的路径（`withheld:<原因>`）、凭据文件名（`secret_name`）、内容像密钥（`secret_content`）、与底里已有路径只差大小写（`case_conflict`）。它们照样在交付提交和 diff 里，只是不写回。路径本身不合法的（带换行、引号开头、git 不收的写法，`invalid_path`）只列出来，不进交付提交、没有 diff |
+| 改动集里有什么 | 判定树里和底提交内容不同的文件：新增（`add`）或修改（`modify`）。没动的底文件、SDK 自己的路径（`accepted-outputs/` 等）不在里面。`test: true` = 改了底里**已有的**测试文件，或新增 / 修改测试配置（`conftest.py`、`pytest.ini`、`tox.ini`、`.coveragerc`、`pyproject.toml`、`setup.cfg`）；新写的测试文件不算。交付时单列给人看，自动写回的规则不要放过它们 |
+| 不能写回的 | `refused` 写着原因：底拍快照时扣留过的路径（`withheld:<原因>`）、凭据文件名（`secret_name`）、内容像密钥（`secret_content`；按通用模式判，解析 PEM 的代码、示例 `Bearer` 串也会被拦，这类文件请人手动处理）、与底里已有路径只差大小写（`case_conflict`）。它们照样在交付提交和 diff 里，只是不写回。路径本身不合法的（带换行、引号开头、git 不收的写法，`invalid_path`）只列出来，不进交付提交、没有 diff |
 | 看 diff | `delivery()` 给每个文本文件附相对底的 unified diff（工作仓库里两个提交之间算，不走用户的外部 diff 配置）；二进制或超过 512 KiB 的文件、超过 20 万字符的 diff 不附（`diff_omitted`） |
 | 谁能写回 | 只有宿主：人点了，或宿主自己的档位规则。模型没有这个工具。任务完成（`COMPLETED`）后才能写，否则 `delivery_not_ready` |
-| 怎么写 | 逐文件三方比对：现在的文件仍是底里那一版 → 写；已经是新内容 → `already`；其他（任务进行时使用方改过）→ `conflict`，不写，回执带三个 blob 号供界面显示三方差异。临时文件写好以后、改名之前再比一次现状，比对之后使用方刚存的盘不会被覆盖（只剩改名那一下的窗口：写回时别同时编辑这些文件）。写完按现状复核，核不上记 `failed`（`verify_mismatch`） |
-| 写到哪 | `GitRepoBase` / `DirectoryBase`：只写工作目录里的文件（同目录临时文件 + 原子改名，改过的文件保留原权限），不碰 `.git`、索引、分支——写回后是使用方仓库里**未提交的改动**。路径上任一级是软链（`symlink`）、与已有文件或目录只差大小写（`case_conflict`）、上级是个文件（`not_a_directory`）的，一律 `refused`；要写的地方是个目录记 `conflict`。只写进拍底的那个目录：底记录里有它的位置，宿主换了项目开回 `delivery_target_mismatch` |
+| 怎么写 | 逐文件三方比对：现在的文件仍是底里那一版 → 写；已经是新内容 → `already`；其他（任务进行时使用方改过）→ `conflict`，不写，回执带三个 blob 号供界面显示三方差异。临时文件写好以后、改名之前再比一次现状，比对之后使用方刚存的盘不会被覆盖（只剩改名那一下的窗口：写回时别同时编辑这些文件）。写完按现状复核，核不上记 `failed`（`verify_mismatch`；读不回来记 `verify_failed`） |
+| 写到哪 | `GitRepoBase` / `DirectoryBase`：只写工作目录里的文件（同目录临时文件 + 原子改名，改过的文件保留原权限），不碰 `.git`、索引、分支——写回后是使用方仓库里**未提交的改动**。路径上任一级是软链（`symlink`）、与已有文件或目录只差大小写（`case_conflict`）、上级是个文件（`not_a_directory`）的，一律 `refused`；要写的地方是个目录记 `conflict`。只写进拍底的那个目录：底记录里有它的位置（`delivery()` 返回的 `location`；同一目录的不同写法认作同一个），宿主换了项目开回 `delivery_target_mismatch` |
 | 幂等 | 同一个 `operation_key` 再调返回原回执（`repeat: true`），不重放；同键不同参数（换了任务或文件）回 `idempotency_conflict`。写到一半进程没了，同键重调会重新执行：已经写过的文件三方比对认得出（`already`），不会写两遍。账本在数据目录 `bases/deliveries/` |
 | 自定义底 | 要能写回，底适配器另外实现 `WritableBase`：`location()`（底的身份，拍底时同一个值记进 `BaseCapture.source["location"]`）、`current_hashes(paths)`（git blob 号，没有为 None）与 `write_file(path, data, *, expected, executable) -> FileWrite`（自己做「现状仍是 expected 才写」）。没实现的回 `delivery_unsupported`，`delivery()` 照样能看 |
 | 错误码 | `no_delivery`（没有接底、还没判定、或改动集没算出来）、`delivery_not_ready`、`delivery_unsupported`、`delivery_target_mismatch`、`invalid_request`（`paths` 里有改动集外的路径、`operation_key` 写法不对）、`idempotency_conflict`、`delivery_ledger_unreadable`（这个键的账本记录坏了，先查明再写）、`delivery_failed`（读交付内容或写账本出错；同一个键重调是安全的）、`not_found` |

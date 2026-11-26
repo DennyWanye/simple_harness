@@ -48,7 +48,10 @@ _TEST_NAME = re.compile(
     r"^(test_.+\.py|.+_test\.(py|go)|.+\.(test|spec)\.[cm]?[jt]sx?|.+Tests?\.(swift|kt|java))$"
 )
 _TEST_DIRS = frozenset({"tests", "test", "__tests__", "spec"})
-_TEST_CONFIG = frozenset({"conftest.py", "pytest.ini", "tox.ini", ".coveragerc"})
+#: 能左右测试结果的配置：新增或修改都单列（新写的测试文件本身不单列）
+_TEST_CONFIG = frozenset(
+    {"conftest.py", "pytest.ini", "tox.ini", ".coveragerc", "pyproject.toml", "setup.cfg"}
+)
 _OPERATION_KEY = re.compile(r"^[\x21-\x7e]{1,200}$")
 
 
@@ -70,9 +73,13 @@ class Produced:
     task_id: str
 
 
+def is_test_config(path: str) -> bool:
+    return PurePosixPath(path).name in _TEST_CONFIG
+
+
 def is_test_path(path: str) -> bool:
     posix = PurePosixPath(path)
-    if posix.name in _TEST_CONFIG:
+    if is_test_config(path):
         return True
     return bool(_TEST_NAME.fullmatch(posix.name)) or any(
         part in _TEST_DIRS for part in posix.parts[:-1]
@@ -167,8 +174,9 @@ def build_change_set(
             {
                 "path": item.path,
                 "op": "add" if entry is None else "modify",
-                # 改了底里已有的测试：交付时单列，交给人判断
-                "test": entry is not None and is_test_path(item.path),
+                # 改了底里已有的测试，或新增 / 修改测试配置：交付时单列，交给人判断
+                "test": (entry is not None and is_test_path(item.path))
+                or is_test_config(item.path),
                 "base_blob": None if entry is None else entry.blob,
                 "blob": blob,
                 "sha256": hashlib.sha256(item.data).hexdigest(),
@@ -211,6 +219,19 @@ def delivery_diff(bases: BaseRepo, change_set: Mapping[str, Any], path: str) -> 
     return bases.diff(str(change_set["base_commit"]), str(change_set["commit"]), path)
 
 
+def same_location(recorded: object, current: str) -> bool:
+    """拍底时记下的位置与现在接的底是不是同一个（同一个目录的不同写法——大小写、firmlink——也算）。"""
+
+    if not isinstance(recorded, str) or not recorded:
+        return False
+    if recorded == current:
+        return True
+    try:
+        return os.path.isdir(recorded) and os.path.samefile(recorded, current)
+    except OSError:
+        return False
+
+
 def apply_change_set(
     target: WritableBase,
     bases: BaseRepo,
@@ -224,7 +245,7 @@ def apply_change_set(
     核不上记 ``failed``（``verify_mismatch``）——不把没落地的说成写了。"""
 
     location = change_set.get("location")
-    if location is None or location != target.location():
+    if not same_location(location, target.location()):
         raise DeliveryRefused(
             "delivery_target_mismatch",
             f"这个交付拍自 {location!r}，现在接的底是 {target.location()!r}：不写",
@@ -281,9 +302,14 @@ def apply_change_set(
     if applied:
         try:
             now = dict(target.current_hashes(applied))
-        except Exception as error:  # noqa: BLE001 - 复核读不出来：不能说写成了
+        except Exception:  # noqa: BLE001 - 复核读不出来：不能说写成了
             logger.debug("delivery_verify_failed", exc_info=True)
-            now = {path: f"!verify_failed: {type(error).__name__}" for path in applied}
+            for row in receipt:
+                if row["status"] == "applied":
+                    # 写是写了，但读不回来核对：如实说核对不了，不说写成了
+                    row["status"] = "failed"
+                    row["reason"] = "verify_failed"
+            return receipt
         for row in receipt:
             if row["status"] == "applied" and now.get(row["path"]) != row["blob"]:
                 row["status"] = "failed"
@@ -403,5 +429,7 @@ __all__ = (
     "build_change_set",
     "delivery_diff",
     "git_blob_id",
+    "is_test_config",
     "is_test_path",
+    "same_location",
 )

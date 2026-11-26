@@ -485,3 +485,82 @@ def test_the_delivery_commit_is_checked_against_what_was_asked(tmp_path):
     base = _base(repo, InMemoryBase({"notes": b"n\n"}))
     with pytest.raises(BaseError):
         repo.commit_on(base["commit"], {"notes/x.md": b"x\n"})
+
+
+# ---------------------------------------------------------------- 核验第二轮建议
+
+
+def test_new_or_changed_test_configuration_is_flagged(tmp_path):
+    repo = BaseRepo(tmp_path / "work.git")
+    base = _base(repo, InMemoryBase({"pyproject.toml": b"[project]\nname = 'x'\n"}))
+    change = _change_set(
+        repo,
+        base,
+        [
+            _produced("tests/conftest.py", b"collect_ignore_glob = ['*']\n"),  # 新增也单列
+            _produced("pyproject.toml", b"[tool.pytest.ini_options]\naddopts = '-k none'\n"),
+            _produced("tests/test_new.py", b"def test_x():\n    pass\n"),  # 新写的测试不单列
+        ],
+    )
+    flags = {item["path"]: item["test"] for item in change["files"]}
+    assert flags == {"pyproject.toml": True, "tests/conftest.py": True, "tests/test_new.py": False}
+
+
+def test_the_same_directory_opened_through_a_link_is_the_same_base(tmp_path):
+    user = tmp_path / "user"
+    user.mkdir()
+    (user / "a.py").write_bytes(b"a\n")
+    link = tmp_path / "link"
+    link.symlink_to(user, target_is_directory=True)
+    repo = BaseRepo(tmp_path / "work.git")
+    change = _change_set(repo, _base(repo, DirectoryBase(user)), [_produced("b.py", b"b\n")])
+    [item] = apply_change_set(DirectoryBase(link), repo, change)
+    assert item["status"] == "applied" and (user / "b.py").read_bytes() == b"b\n"
+
+
+def test_an_in_memory_base_with_its_own_source_can_be_written_back(tmp_path):
+    repo = BaseRepo(tmp_path / "work.git")
+    adapter = InMemoryBase({"a.py": b"a\n"}, source={"kind": "fixture"})
+    change = _change_set(repo, _base(repo, adapter), [_produced("a.py", b"b\n")])
+    [item] = apply_change_set(adapter, repo, change)
+    assert item["status"] == "applied"
+
+
+def test_a_write_that_cannot_be_read_back_is_not_called_written(tmp_path):
+    class Blind(InMemoryBase):
+        armed = False
+
+        def current_hashes(self, paths):
+            if self.armed:
+                raise OSError("读不回来")
+            return super().current_hashes(paths)
+
+        def write_file(self, path, data, *, expected, executable):
+            outcome = super().write_file(path, data, expected=expected, executable=executable)
+            self.armed = True
+            return outcome
+
+    repo = BaseRepo(tmp_path / "work.git")
+    adapter = Blind({"a.py": b"a\n"})
+    change = _change_set(repo, _base(repo, adapter), [_produced("a.py", b"b\n")])
+    [item] = apply_change_set(adapter, repo, change)
+    assert (item["status"], item["reason"]) == ("failed", "verify_failed")
+
+
+def test_a_broken_record_for_the_same_key_is_not_silently_redone(tmp_path):
+    user, repo, adapter, change = _delivery_on_a_repo(tmp_path)
+    ledger = DeliveryLedger(tmp_path / "deliveries")
+    ledger.apply("op-1", mission_id="m1", paths=None, run=lambda: [])
+    ledger._file("op-1").write_text("{")
+    with pytest.raises(DeliveryRefused) as refused:
+        ledger.apply("op-1", mission_id="m1", paths=None, run=lambda: [])
+    assert refused.value.code == "delivery_ledger_unreadable"
+
+
+def test_there_is_no_diff_for_a_path_that_is_not_in_the_commit(tmp_path):
+    repo = BaseRepo(tmp_path / "work.git")
+    change = _change_set(
+        repo, _base(repo, InMemoryBase({"a.py": b"a\n"})), [_produced('"q.py', b"q\n")]
+    )
+    with pytest.raises(KeyError):
+        delivery_diff(repo, change, '"q.py')

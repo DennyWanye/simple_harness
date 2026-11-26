@@ -914,14 +914,21 @@ class AttemptJudgmentMixin(OrchestratorCore):
             if cached is None:
                 self.commit.record_criteria_judgment(mission.id, key, judgments, summary=summary)
             return created or cached is None
+        self._judge_mission(mission, judgments=ruled, summary=summary)
+        return True
+
+    def _judge_mission(
+        self, mission: Mission, *, judgments: Sequence[Mapping[str, Any]], summary: str
+    ) -> None:
+        """判定任务的唯一入口：有底的任务同时写进改动集（带不带 ``action:`` 要求都一样）。"""
+
         judged = self.commit.judge_mission(
             mission.id,
-            judgments=ruled,
+            judgments=judgments,
             summary=summary,
-            change_set=self._change_set(mission, tasks),
+            change_set=self._change_set(mission, self.store.list_tasks(mission.id)),
         )
         self._note(f"mission {mission.id} judged: {judged.status} ({judged.stop_reason})")
-        return True
 
     def _change_set(self, mission: Mission, tasks: Sequence[Task]) -> dict[str, Any] | None:
         """有底的任务交出去的东西：判定树里的产物相对底提交的改动（见
@@ -1269,10 +1276,4 @@ class AttemptJudgmentMixin(OrchestratorCore):
                     "action_state": state,
                 }
             )
-        judged = self.commit.judge_mission(
-            mission.id,
-            judgments=judgments,
-            summary=summary,
-            change_set=self._change_set(mission, self.store.list_tasks(mission.id)),
-        )
-        self._note(f"mission {mission.id} judged: {judged.status} ({judged.stop_reason})")
+        self._judge_mission(mission, judgments=judgments, summary=summary)

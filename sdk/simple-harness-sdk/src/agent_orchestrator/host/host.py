@@ -42,6 +42,7 @@ from ..artifacts.delivery import (
     DeliveryRefused,
     apply_change_set,
     delivery_diff,
+    same_location,
 )
 from ..artifacts.workspace_base import (
     RESERVED_BASE_PREFIXES,
@@ -1862,6 +1863,7 @@ class OrchestrationHost:
             "status": str(mission.get("status")),
             "base_commit": change["base_commit"],
             "commit": change["commit"],
+            "location": change.get("location"),
             "counts": change["counts"],
             "files": files,
             "applies": self._deliveries().receipts(mission_id),
@@ -1885,7 +1887,7 @@ class OrchestrationHost:
             raise HostRequestError(
                 "delivery_unsupported", "这个宿主的底不能写回（没有实现 WritableBase）"
             )
-        if change.get("location") is None or change.get("location") != target.location():
+        if not same_location(change.get("location"), target.location()):
             raise HostRequestError(
                 "delivery_target_mismatch",
                 f"这个任务的底拍自 {change.get('location')!r}，"

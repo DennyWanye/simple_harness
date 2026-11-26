@@ -257,3 +257,58 @@ def test_only_a_completed_mission_is_written_back_and_only_to_its_own_base(tmp_p
             assert host._deliveries().get("k2") is None  # 没开始写，账本里不留「已占」
 
     asyncio.run(case())
+
+
+SECRET = "API_KEY = 'sk-" + "a1B2c3D4e5F6g7H8i9J0k1L2m3" + "'\n"
+
+
+def _secret_worker(request):
+    reply = worker_reply(request)
+    if isinstance(reply, tuple) and reply[0] == "workspace_write_file":
+        path = reply[1]["path"]
+        content = {"ledger/cli.py": SECRET, "ledger/money.py": MONEY_NEW}.get(
+            path, reply[1]["content"]
+        )
+        return ("workspace_write_file", {"path": path, "content": content})
+    return reply
+
+
+def test_secrets_are_not_written_back_and_failures_come_back_as_codes(tmp_path):
+    user = _user_repo(tmp_path / "user")
+
+    async def case():
+        provider = LayeredScriptedProvider(worker=_secret_worker)
+        async with _host(
+            tmp_path / "root", provider=provider, workspace_base=GitRepoBase(user)
+        ) as host:
+            created = host.create_mission(
+                {
+                    "goal": "加命令行",
+                    "success_criteria": ["file:ledger/cli.py", "file:ledger/money.py"],
+                    "idempotency_key": "secret",
+                }
+            )
+            await host.run_until_settled(created["mission_id"], timeout=120.0)
+            mission_id = created["mission_id"]
+            files = {
+                item["path"]: item
+                for item in _mission(host, mission_id)["final_report"]["change_set"]["files"]
+            }
+            assert files["ledger/cli.py"]["refused"] == "secret_content"
+            assert host.delivery(mission_id)["location"] == os.path.realpath(user)
+            assert str(_mission(host, mission_id)["status"]) == "COMPLETED"
+            bases = host._bases()
+
+            def broken(_ids):
+                from agent_orchestrator.artifacts.workspace_base import BaseError
+
+                raise BaseError("base_repo_failed", "读不了")
+
+            bases.blobs = broken
+            with pytest.raises(HostRequestError) as failed:
+                host.apply_delivery(mission_id, operation_key="k")
+            assert failed.value.code == "delivery_failed"
+            del bases.blobs
+            assert not (user / "ledger/cli.py").exists()
+
+    asyncio.run(case())
