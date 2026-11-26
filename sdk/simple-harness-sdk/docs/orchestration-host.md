@@ -961,13 +961,17 @@ host.base  # {"enabled": True, "git": "2.54.0"}；没有 git 2.38+ 时 enabled=F
 | 错误码 | `base_unavailable`（宿主没接底却带了 `base_scope`，或 git 不可用）、`base_too_large`、`invalid_request`（范围写法不对、种子与底重名）、`base_repo_failed`（工作仓库的 git 命令失败，说明里带 git 的报错） |
 | 幂等 | 同一个 `idempotency_key` 重试沿用原任务的底，不重拍 |
 | SDK 自己的路径 | 都在 `.harness/` 下：任务资料 `.harness/sources/`（会话委派带的资料自动放到这里）、执行者草稿 `.harness/scratch/`（照常传给后续步骤，不交给使用方）、判定树里落选的产出 `.harness/accepted-outputs/`。使用方仓库里的 `Sources/`、`sources/` 照常进底。直接带资料建任务时路径写 `.harness/sources/...`（以前是 `sources/...`）；`file:` 条件不能指向 `.harness/`、`.assurance/`（回 `file_criterion_reserved_path`） |
-| 还没有的 | 删除文件的工具；两个互不依赖的步骤改同一个底文件时的三方合并（现在判定树取后验收的那一版，被覆盖的步骤记在改动集的 `overridden_steps`）——见设计稿 `plans/2026-11-26-workspace-base/` 的 P2b |
+| 两步改同一个底文件 | 判定时，以底提交中的文本为共同祖先，按验收顺序合并。同一路径已冻结给下游的上游版本由后继承接。干净合并的字节同时用于任务判定和交付。 |
+| 合并边界 | 底或产物不可读、双方新增文件时沿用覆盖规则。路径任一级只差大小写或 Unicode 规范化拼写时，保留原拼写，并记 `merge_skipped: "path_spelling"`。 |
+| 还没有的 | 删除文件的工具。 |
 
 ### 交付：改动集与写回
 
-有底的任务判定时，SDK 用判定树同一份产物（底 + 验收通过的步骤产物）算出**改动集**，写进
-`final_report.change_set`（会话的 `tasks()` 快照里就能看到），同时在工作仓库里钉一个交付提交（父提交 = 底提交）。
-判定树就是底 + 这些改动（另有任务的种子与资料，它们不交付）：验的就是交的。
+有底的任务判定时，SDK 把判定树的文件字节与底提交比较，差异写进 `final_report.change_set`；工作仓库中的交付提交以底提交为父提交。任务种子与资料只用于判定。
+
+干净合并的文件条目以 `merged_steps` 列出来源步骤，`artifact_id` 和 `task_id` 均为 `null`。用条目的 `blob` 识别交付字节。根要求引用的原端口产物仍可在判定副本的 `.harness/accepted-outputs/` 下查验。
+
+合并冲突时按根要求、声明端口、验收先后选取原版本。条目的 `merge_conflict` 列出冲突步骤，`overridden_steps` 列出实际被覆盖的步骤，两份名单可能不同。若保留的字节等于底，事实列在 `change_set.unchanged_merge_facts`。判定事件也留有记录。派发前的写入目标与上游输入冲突检查照常生效，可能先把问题交给规划器。到达任务级判定时根结论已经形成，这里只记录新发现的冲突。
 
 ```python
 view = host.delivery(mission_id)

@@ -31,6 +31,7 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Any
 
+from .judgment_merge import MergeFacts
 from .paths import under_prefix
 from .workspace_base import (
     BaseRepo,
@@ -69,8 +70,9 @@ class Produced:
 
     path: str
     data: bytes
-    artifact_id: str
-    task_id: str
+    artifact_id: str | None
+    task_id: str | None
+    merge: MergeFacts = MergeFacts()
 
 
 def is_test_config(path: str) -> bool:
@@ -152,6 +154,7 @@ def build_change_set(
     folded_reserved = tuple(prefix.casefold() for prefix in reserved)
     overridden = {path: list(steps) for path, steps in dict(superseded or {}).items()}
     files: list[dict[str, Any]] = []
+    unchanged_facts: list[dict[str, Any]] = []
     changed: dict[str, bytes] = {}
     for item in sorted(produced, key=lambda produced_item: produced_item.path):
         if under_prefix(item.path.casefold(), folded_reserved):
@@ -159,6 +162,9 @@ def build_change_set(
         entry = manifest.get(item.path)
         blob = git_blob_id(item.data)
         if entry is not None and entry.blob == blob:
+            # 覆盖规则可能恰好选回底字节。事实写进报告，避免制造一个可写回的假改动。
+            if facts := item.merge.to_json():
+                unchanged_facts.append({"path": item.path, **facts})
             continue
         refused = _refusal(
             item.path,
@@ -187,6 +193,7 @@ def build_change_set(
                 "artifact_id": item.artifact_id,
                 "task_id": item.task_id,
                 "overridden_steps": overridden.get(item.path, []),
+                **item.merge.to_json(),
                 "refused": refused,
             }
         )
@@ -197,6 +204,7 @@ def build_change_set(
     )
     return {
         "base_commit": base_commit,
+        **({"unchanged_merge_facts": unchanged_facts} if unchanged_facts else {}),
         "commit": commit,
         # 这个底的身份：写回时核对，不写进别的项目
         "location": dict(base.get("source") or {}).get("location"),

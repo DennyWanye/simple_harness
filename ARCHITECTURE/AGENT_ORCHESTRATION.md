@@ -1,3 +1,11 @@
+最后更新：2026-11-26（任务判定树按底做三方合并，未发版）。
+
+`AttemptJudgmentMixin._judgment_tree` 从根结论的当前验收取版本。底清单与产物路径精确匹配时，以底 blob 为共同祖先，按验收次序用 Git 合并文本；冻结派发输入中的路径、产物和哈希可证明下游承接了前版。判定副本和交付提交使用相同的字节与来源规则。合并文件携带来源步骤，原端口证据仍由自己的产物 ID 标识。
+
+冲突按根要求、声明端口、验收先后保留一个原版本，在判定事件和改动集记录冲突与覆盖步骤。二进制和新增文件沿用覆盖规则；大小写或 Unicode 规范化别名在文件和父目录层级均跳过合并并记录原因。任务级判定位于根结论形成之后；派发侧的写入目标与上游输入冲突仍可能先触发规划修复，本次合并只处理已经到达任务级判定的贡献。字段及宿主读法见 [宿主文档 §4f](../sdk/simple-harness-sdk/docs/orchestration-host.md#交付改动集与写回)。
+
+验证场景 `2026-11-26/judgment-merge` 的 13 项接缝测试通过，逐项核对判定副本、改动集哈希与交付提交。13 组变异均被捕获。原始结果在 `.local-test-evidence/2026-11-26/judgment-merge/`，`mutations.log` 的 SHA-256 为 `6207c2520f5a39c2f67cca48f4a397fd69c4da082f8ec10413d4538bdb09fb7a`。
+
 最后更新：2026-11-26（SDK 自己的路径搬到 `.harness/`；工作区以底为基础 P2b 第 1 项，未发版）。
 **来由**：P1 拍底按不分大小写扣留 SDK 的资料根 `sources/`，Swift 包仓库根目录的 `Sources/` 整个被扣（执行者看不到、交付不含），Mac 工作台接 Swift 项目就会坏；P2a 留下的执行者草稿（如 `REPORT.md`）会进改动集，档位自动写回时会写进使用方仓库。**改法**：① 通用任务领域（`governance/domains.CODE_PROFILE`，版本 6 → 7）资料根 `source_roots` 改为 `.harness/sources/`；会话委派带的资料自动放到这里（`host/delegation.SOURCE_ROOT` 取领域的资料根）。② `artifacts/workspace_base`：`HARNESS_ROOT = ".harness/"`，拍底保留前缀 `RESERVED_BASE_PREFIXES = (".harness/", ".assurance/")`（`sources/`、`accepted-outputs/` 不再保留，使用方的同名目录照常进底）；改动集按同一组前缀不交付。③ 判定树落选产出改放 `.harness/accepted-outputs/<task>/<port>/<path>`。④ 写文件工具的路径说明写明草稿放 `.harness/scratch/`：照常登记、传给后续步骤，不交付。`.assurance/` 暂不动（保证通道的冻结材料用它，使用方仓库里出现的可能很小）。**验证**：`tests/orchestrator/workspace_base/test_harness_root.py`（Swift 包的 `Sources/` 进底、`.harness/` 扣留；草稿与落选产出不进改动集；宿主整局改 `Sources/App/main.swift`、草稿登记但不交付）；测试里写死的 `sources/` 路径随之改成 `.harness/sources/`（20 个文件），资料相关旧测试全过。独立核验第一轮（FAIL）查出并已修：保证通道接缝脚本 `scripts/assurance_seams/evidence-tools-seam.py` 还写着旧资料根，`test_a_assurance.py::test_extra_evidence_exposure` 因此失败 → 改成 `.harness/sources/`。同时采纳的建议：执行者不能把 `.harness` 写成文件（会堵死资料与草稿根）；`file:` 成功条件指向 `.harness/` 回 `file_criterion_reserved_path`（那里的东西不交付，任务完成了也交不出来）；判定树落选产出的路径改用同一个常量 `HARNESS_ROOT` 拼，不会和保留前缀分家；补了委派资料落在领域资料根、改动集不分大小写排除 `.HARNESS/` 的用例；几处注释跟上。宿主不兼容：直接带资料建任务的路径前缀要换成 `.harness/sources/`（会话委派自动补）；本仓库桌面端与后端测试在后端换钉版时同步改，桌面端改动在分支 `release/tauri-harness-root`。独立核验第二轮 PASS；跟进：`file:` 条件拦全部保留前缀（含 `.assurance/`）、`Workspace.write_text/write_bytes` 把系统错误收成 `WorkspaceError`、拍底不分大小写扣留 `.HARNESS/` 的用例、资料登记反例改用新根。
 

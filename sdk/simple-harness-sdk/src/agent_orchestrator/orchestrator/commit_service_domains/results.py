@@ -395,6 +395,7 @@ class ResultCommitsMixin(CommitServiceCore):
         contributions: int,
         artifacts: int,
         superseded: Sequence[Mapping[str, Any]],
+        base_merges: Sequence[Mapping[str, Any]] = (),
     ) -> Event:
         """P2.3k / defect N3: the legacy artifact merge a hierarchical Mission does not run.
 
@@ -417,8 +418,11 @@ class ResultCommitsMixin(CommitServiceCore):
                 "contributions": int(contributions),
                 "artifacts": int(artifacts),
                 "superseded": [dict(item) for item in superseded],
+                **({"base_merges": list(base_merges)} if base_merges else {}),
                 "detail": (
-                    "this Mission runs under the hierarchical semantics; an all-ancestors "
+                    "判定树以任务底合并已验收的文本版本；合并来源、拼写歧义和覆盖事实见本事件。"
+                    if base_merges or any("merge_conflict" in row for row in superseded)
+                    else "this Mission runs under the hierarchical semantics; an all-ancestors "
                     "merge would read 'independent branches' off Task.dependency_ids, "
                     "which the materialised occurrences leave empty by design, so two leaves "
                     "writing one path would be an artifact_conflict overturning a root "

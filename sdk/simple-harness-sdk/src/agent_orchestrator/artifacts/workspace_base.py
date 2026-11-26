@@ -493,7 +493,18 @@ class BaseRepo:
     def _git(
         self, *args: str, input: bytes | None = None, env: Mapping[str, str] | None = None
     ) -> bytes:
-        done = subprocess.run(  # noqa: S603
+        done = self._run_git(*args, input=input, env=env)
+        if done.returncode != 0:
+            raise BaseError(
+                "base_repo_failed",
+                f"git {args[0]} 失败：{done.stderr.decode(errors='replace')[:300]}",
+            )
+        return done.stdout
+
+    def _run_git(
+        self, *args: str, input: bytes | None = None, env: Mapping[str, str] | None = None
+    ) -> subprocess.CompletedProcess[bytes]:
+        return subprocess.run(  # noqa: S603
             [self._git_program, f"--git-dir={self.path}", *args],
             input=input,
             capture_output=True,
@@ -501,12 +512,21 @@ class BaseRepo:
             check=False,
             timeout=300,
         )
-        if done.returncode != 0:
-            raise BaseError(
-                "base_repo_failed",
-                f"git {args[0]} 失败：{done.stderr.decode(errors='replace')[:300]}",
-            )
-        return done.stdout
+
+    def merge_file(self, current: bytes, base: bytes, incoming: bytes) -> bytes | None:
+        """合并结果只从 stdout 取；有冲突时丢掉输出，临时文件始终只有输入字节。"""
+        with tempfile.TemporaryDirectory(dir=self.path.parent) as directory:
+            paths = [Path(directory) / name for name in ("current", "base", "incoming")]
+            for path, content in zip(paths, (current, base, incoming), strict=True):
+                path.write_bytes(content)
+            done = self._run_git("merge-file", "-p", "--", *(str(p) for p in paths))
+        if done.returncode == 0:
+            return done.stdout
+        if 1 <= done.returncode <= 127:
+            return None
+        raise BaseError(
+            "base_repo_failed", f"git merge-file 失败：{done.stderr.decode(errors='replace')[:300]}"
+        )
 
     def probe(self) -> dict[str, object]:
         """git 在不在、够不够新（要 ``merge-tree --write-tree``，2.38 起）。"""
