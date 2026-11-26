@@ -339,8 +339,13 @@ class VerificationMixin(OrchestratorCore):
                 )
                 return
 
-        # 起步时在、现在不在的文件：只有删除工具删得掉（跑代码在一次性副本里）
-        deleted = sorted(path for path in initial if path not in known)
+        # 有底的任务：起步时在、现在不在的文件（只有删除工具删得掉，跑代码在一次性副本里）。按磁盘问
+        # 「这个文件还在不在」，不按清单字面比——磁盘会折叠大小写与 Unicode 写法
+        deleted = (
+            sorted(path for path in initial if not workspace.resolve(path).is_file())
+            if mission_base_commit(mission.final_report) is not None
+            else []
+        )
         try:
             self.commit.record_result(
                 attempt.id,

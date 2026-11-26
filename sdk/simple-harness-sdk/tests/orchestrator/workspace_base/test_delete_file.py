@@ -254,3 +254,164 @@ def test_deleting_a_protected_or_missing_file_is_refused(tmp_path):
         assert (manager.get("attempt").root / "tests/test_a.py").exists()
 
     asyncio.run(case())
+
+
+# ---------------------------------------------------------------- 核验第一轮
+
+
+def test_a_file_replaced_by_a_directory_of_the_same_name(tmp_path):
+    # 删掉 config，再写 config/settings.toml：交付提交先删后写，树里是新目录
+    repo = BaseRepo(tmp_path / "work.git")
+    base = _base(repo, InMemoryBase({"config": b"old\n", "a.py": b"a\n"}))
+    change = build_change_set(
+        repo,
+        base,
+        [Produced("config/settings.toml", b"x = 1\n", "a1", "t1")],
+        reserved=RESERVED_BASE_PREFIXES,
+        deleted={"config": "t1"},
+    )
+    listed = _git(tmp_path / "work.git", "ls-tree", "-r", "--name-only", change["commit"])
+    assert listed.splitlines() == ["a.py", "config/settings.toml"]
+    # 副本也先删后写
+    from agent_orchestrator.artifacts.workspace import WorkspaceManager
+
+    manager = WorkspaceManager(tmp_path / "ws", bases=repo)
+    copy = manager.integrated_copy(
+        "m",
+        seed={},
+        files={"config/settings.toml": b"x = 1\n"},
+        base=base["commit"],
+        deleted=["config"],
+    )
+    assert (copy.root / "config" / "settings.toml").read_bytes() == b"x = 1\n"
+
+
+def test_a_rename_that_only_changes_case_keeps_the_file(tmp_path):
+    user = tmp_path / "user"
+    (user / "ledger").mkdir(parents=True)
+    (user / "ledger/legacy.py").write_bytes(OLD)
+    repo = BaseRepo(tmp_path / "work.git")
+    adapter = DirectoryBase(user)
+    change = build_change_set(
+        repo,
+        _base(repo, adapter),
+        [Produced("ledger/Legacy.py", OLD, "a1", "t1")],
+        reserved=RESERVED_BASE_PREFIXES,
+        deleted={"ledger/legacy.py": "t1"},
+    )
+    refused = {item["path"]: item["refused"] for item in change["files"]}
+    assert refused == {"ledger/Legacy.py": None, "ledger/legacy.py": None}
+    receipt = {row["path"]: row["status"] for row in apply_change_set(adapter, repo, change)}
+    assert receipt == {"ledger/Legacy.py": "applied", "ledger/legacy.py": "applied"}
+    assert os.listdir(user / "ledger") == ["Legacy.py"]
+    assert (user / "ledger/Legacy.py").read_bytes() == OLD
+    # 副本：先删后写，新文件在
+    from agent_orchestrator.artifacts.workspace import WorkspaceManager
+
+    copy = WorkspaceManager(tmp_path / "ws", bases=repo).integrated_copy(
+        "m",
+        seed={},
+        files={"ledger/Legacy.py": OLD},
+        base=change["base_commit"],
+        deleted=["ledger/legacy.py"],
+    )
+    assert os.listdir(copy.root / "ledger") == ["Legacy.py"]
+
+
+def test_copies_follow_the_recorded_deletions(tmp_path):
+    from agent_orchestrator.artifacts.workspace import WorkspaceManager
+
+    repo = BaseRepo(tmp_path / "work.git")
+    base = _base(repo, InMemoryBase({"a.py": b"a\n", "b.py": b"b\n"}))
+    manager = WorkspaceManager(tmp_path / "ws", bases=repo)
+    verify = manager.verification_copy(
+        "att", seed={}, inputs={}, artifacts=[], base=base["commit"], deleted=["a.py"]
+    )
+    assert sorted(verify.list_files()) == ["b.py"]
+    judged = manager.integrated_copy("m", seed={}, files={}, base=base["commit"], deleted=["b.py"])
+    assert sorted(judged.list_files()) == ["a.py"]
+
+
+def test_a_file_that_is_deleted_and_written_again_is_not_a_deletion(tmp_path):
+    repo = BaseRepo(tmp_path / "work.git")
+    base = _base(repo, InMemoryBase({"a.py": b"a\n"}))
+    change = build_change_set(
+        repo,
+        base,
+        [Produced("a.py", b"rewritten\n", "a2", "t2")],
+        reserved=RESERVED_BASE_PREFIXES,
+        deleted={"a.py": "t1"},
+    )
+    assert [(item["path"], item["op"]) for item in change["files"]] == [("a.py", "modify")]
+
+
+def test_no_deletion_is_inferred_from_how_the_disk_spells_names(tmp_path):
+    # 核验第一轮：种子里 Docs/ 与 docs/ 在不区分大小写的磁盘上是同一个目录，列出来的写法和起步时不同；
+    # 那不是删除。没有底的任务也根本不算删除
+    async def case():
+        async with _host(tmp_path / "root") as host:
+            created = host.create_mission(
+                {
+                    "goal": "写说明",
+                    "success_criteria": ["file:a.md"],
+                    "idempotency_key": "seed",
+                    "workspace_seed": {"Docs/guide.md": "g\n", "docs/notes.md": "n\n"},
+                }
+            )
+            await host.run_until_settled(created["mission_id"], timeout=120.0)
+            store = host.orchestrator.store
+            events = store.list_events(created["mission_id"], types=["ResultSubmitted"])
+            assert events and all("deleted" not in event.payload for event in events)
+
+    asyncio.run(case())
+
+
+GONE_TEST = (
+    "from pathlib import Path\n\n"
+    "def test_legacy_is_gone():\n"
+    "    assert not (Path(__file__).parents[1] / 'ledger' / 'legacy.py').exists()\n"
+)
+
+
+def _deleting_test_worker(request):
+    outputs = list(package_of(request).get("task_contract", {}).get("outputs") or [])
+    written = sum(1 for message in request.messages if "tool" in str(message.role).lower())
+    if written == len(outputs):
+        return ("workspace_delete_file", {"path": "ledger/legacy.py"})
+    reply = worker_reply(request)
+    if isinstance(reply, tuple) and reply[0] == "workspace_write_file":
+        path = reply[1]["path"]
+        content = GONE_TEST if path.endswith(".py") and "test" in path else "n = 1\n"
+        return ("workspace_write_file", {"path": path, "content": content})
+    return reply
+
+
+def test_verification_and_the_judgment_tree_see_the_deletion(tmp_path):
+    # 验收副本与任务级判定树里都没有被删的文件：断言它不在的测试在两处都通过，任务才 COMPLETED
+    async def case():
+        provider = LayeredScriptedProvider(worker=_deleting_test_worker)
+        async with _host(
+            tmp_path / "root",
+            provider=provider,
+            workspace_base=InMemoryBase({"ledger/legacy.py": OLD, "ledger/keep.py": KEEP}),
+        ) as host:
+            if host.policy.code_execution != "sandboxed":
+                pytest.skip("这台机器没有可用的隔离区，pytest: 要求不受理")
+            created = host.create_mission(
+                {
+                    "goal": "删掉 legacy.py，并写测试确认它不在了",
+                    "success_criteria": [
+                        "file:tests/test_removed.py",
+                        "pytest:tests/test_removed.py",
+                    ],
+                    "idempotency_key": "gone",
+                }
+            )
+            final = await host.run_until_settled(created["mission_id"], timeout=120.0)
+            assert str(final["snapshot"]["mission"]["status"]) == "COMPLETED", final["snapshot"]
+            change = _mission(host, created["mission_id"])["final_report"]["change_set"]
+            assert {"ledger/legacy.py": "delete"}.items() <= {
+                item["path"]: item["op"] for item in change["files"]
+            }.items()
+
+    asyncio.run(case())

@@ -150,7 +150,8 @@ def build_change_set(
     base_commit = str(base["commit"])
     manifest = bases.manifest(base_commit)
     withheld = {str(k): str(v) for k, v in dict(base.get("withheld") or {}).items()}
-    spellings = _case_spellings(manifest)
+    # 被删掉的底文件不再占着它的写法：删 legacy.py、写 Legacy.py 是一次只改大小写的改名
+    spellings = _case_spellings(path for path in manifest if path not in dict(deleted or {}))
     folded_reserved = tuple(prefix.casefold() for prefix in reserved)
     overridden = {path: list(steps) for path, steps in dict(superseded or {}).items()}
     files: list[dict[str, Any]] = []
@@ -313,7 +314,9 @@ def apply_change_set(
     ]
     blobs = bases.blobs(sorted({str(entries[path]["blob"]) for path in writable}))
     receipt: list[dict[str, Any]] = []
-    for path in chosen:
+    # 先删后写：只改大小写的改名在不区分大小写的磁盘上，先写会撞上还没删的旧名字
+    ordered = sorted(chosen, key=lambda path: (entries[path]["op"] != "delete", path))
+    for path in ordered:
         entry = entries[path]
         row: dict[str, Any] = {
             "path": path,
@@ -353,6 +356,7 @@ def apply_change_set(
                 "current_blob": outcome.current,
             }
         )
+    receipt.sort(key=lambda row: row["path"])
     applied = [row["path"] for row in receipt if row["status"] == "applied"]
     if applied:
         try:

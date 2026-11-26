@@ -298,6 +298,9 @@ class DirectoryBase:
         target = self.root / relative
         if not target.exists() and not target.is_symlink():
             return None
+        if _spelling_problem(self.root, relative) == "case_conflict":
+            # 不区分大小写的磁盘上，这个名字的精确写法已经不在（占着位置的是只差大小写的另一个文件）
+            return None
         if _through_link(self.root, relative) or not target.is_file():
             # 软链、目录：没有一个 blob 号能等于它，三方比对必然是冲突
             return "!" + ("symlink" if target.is_symlink() else "not_a_file")
@@ -645,21 +648,22 @@ class BaseRepo:
             + text
             + f"\nfrom {parent}\n".encode()
         )
+        # 先删后写：删掉的文件与新写的目录可以同名（删 config、写 config/x）
+        for path in deleted:
+            stream += f"D {path}\n".encode()
         for path in sorted(files):
             data = files[path]
             mode = "100755" if path in executable else "100644"
             stream += f"M {mode} inline {path}\ndata {len(data)}\n".encode() + data + b"\n"
-        for path in deleted:
-            stream += f"D {path}\n".encode()
         stream += b"done\n"
         self._git("fast-import", "--quiet", "--done", input=bytes(stream))
         commit = self._git("rev-parse", "--verify", temporary).decode().strip()
         self._git("update-ref", "-d", temporary)
         # 写完核对：交付提交 = 父提交的树叠上这些文件，一个不多、一个不少、字节一致
         expected = {path: blob for path, (blob, _mode) in self._tree(parent).items()}
-        expected.update({path: git_blob_id(data) for path, data in files.items()})
         for path in deleted:
             expected.pop(path, None)
+        expected.update({path: git_blob_id(data) for path, data in files.items()})
         got = {path: blob for path, (blob, _mode) in self._tree(commit).items()}
         if got != expected:
             raise BaseError("base_repo_failed", "交付提交与要写的文件对不上")

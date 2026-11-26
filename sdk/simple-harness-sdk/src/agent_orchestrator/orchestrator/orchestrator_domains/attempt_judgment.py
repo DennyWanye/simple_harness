@@ -489,7 +489,10 @@ class AttemptJudgmentMixin(OrchestratorCore):
         if "workspace_delete_file" in allowed:
             # 有底的任务多一件删除工具（见 effective_tools）：任务包的工具清单照实写上，并说明用法
             granted = dict(package.package.get("tools_and_permissions") or {})
-            granted["allowed_tools"] = [*granted.get("allowed_tools", ()), "workspace_delete_file"]
+            listed = list(granted.get("allowed_tools", ()))
+            granted["allowed_tools"] = (
+                listed if "workspace_delete_file" in listed else [*listed, "workspace_delete_file"]
+            )
             granted["delete_file"] = (
                 "workspace_delete_file(path) 删掉工作区里的一个文件（仓库原有的也可以）；"
                 "删除和修改一样会逐个交给使用方审核"

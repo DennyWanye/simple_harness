@@ -429,10 +429,11 @@ class WorkspaceManager:
             self._lay_base(base, target)
             for relative, content in seed.items():
                 copy.write_text(relative, content)
+            # 先删后写：删掉的文件与之后写的文件可以只差大小写、或与新目录同名
+            _remove(copy, deleted)
             for relative, source in files.items():
                 data = source if isinstance(source, bytes) else _source_bytes(source, relative)
                 copy.write_bytes(relative, data)
-            _remove(copy, deleted)
         except WorkspaceError:
             shutil.rmtree(target, ignore_errors=True)
             raise
@@ -484,13 +485,13 @@ class WorkspaceManager:
                 for relative, item in (inputs or {}).items():
                     data = item if isinstance(item, bytes) else _source_bytes(item, relative)
                     rebuilt.write_bytes(relative, data)
+                _remove(rebuilt, deleted)  # 先删后写产物
                 for artifact in artifacts:
                     try:
                         data = read_verified(artifact)
                     except ArtifactStoreError as error:
                         raise WorkspaceError(f"artifact_unreadable: {error}") from error
                     rebuilt.write_bytes(artifact.path, data)
-                _remove(rebuilt, deleted)
             except WorkspaceError:
                 shutil.rmtree(target, ignore_errors=True)
                 raise
