@@ -16,6 +16,7 @@ from simple_harness.agents import AgentTurnState
 from ...artifacts.bound_workspace import UnifiedDiffApplyError, bound_artifacts_named_in_envelope
 from ...artifacts.store import ArtifactStoreError, read_verified
 from ...artifacts.versioning import ArtifactConflict, next_versions
+from ...artifacts.workspace_base import BaseError, mission_base_commit
 from ...assurance.codec import AssuranceError
 from ...contracts import (
     TERMINAL_ATTEMPT,
@@ -788,6 +789,7 @@ class VerificationMixin(OrchestratorCore):
             seed=dict((mission.final_report or {}).get("workspace_seed", {})),
             inputs=self._input_files(attempt),
             artifacts=artifacts,
+            base=mission_base_commit(mission.final_report),
         )
         self._register_copy(
             "verify",
@@ -1050,6 +1052,7 @@ class VerificationMixin(OrchestratorCore):
             seed=dict((mission.final_report or {}).get("workspace_seed", {})),
             inputs=self._input_files(attempt),
             artifacts=artifacts,
+            base=mission_base_commit(mission.final_report),
         )
 
         async def recorder(layer: LayerResult) -> None:
@@ -1453,10 +1456,40 @@ class VerificationMixin(OrchestratorCore):
                 protected[item.path] = raw.decode("utf-8")
             except UnicodeDecodeError as error:
                 raise ArtifactConflict(f"upstream artifact {item.path} is not text") from error
+        base_commit = mission_base_commit(mission.final_report)
+        if base_commit is not None:
+            upstream_paths = {item.path for item in self._upstream_inputs(attempt)}
+            for path, data in self._protected_base(mission, task, base_commit).items():
+                if path not in upstream_paths:
+                    protected.setdefault(path, data)
         # Source registration never grants a Worker permission to change source bytes,
         # even when it declares that path as an output.
         protected.update(self._source_files(attempt))
         return protected
+
+    def _protected_base(self, mission: Mission, task: Task, commit: str) -> dict[str, bytes]:
+        """底里不许改的文件：``pytest:`` 点名的（验收的尺子，与种子同一条规矩），以及二进制 /
+        超大的（工具读不了也写不了，原样留着）。其余底文件都可以改——改动按相对底的差别登记。"""
+
+        targets = [
+            c.removeprefix("pytest:").strip()
+            for c in (*task.success_criteria, *current_statements(self.store, mission))
+            if c.startswith("pytest:")
+        ]
+        try:
+            manifest = self.assembled.workspaces.bases.manifest(commit)
+            paths = [
+                path
+                for path, entry in manifest.items()
+                if not entry.readable
+                or any(
+                    path == target or (target and path.startswith(target.rstrip("/") + "/"))
+                    for target in targets
+                )
+            ]
+            return self.assembled.workspaces.bases.files(commit, paths)
+        except BaseError as error:
+            raise ArtifactConflict(f"base_unreadable: {error}") from error
 
     async def _run_critic(
         self,

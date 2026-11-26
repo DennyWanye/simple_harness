@@ -11,6 +11,7 @@ budget and a tool set the deployment actually offers; it is idempotent on
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping, Sequence
 from typing import Any
 
@@ -23,6 +24,24 @@ from ..runtime.tool_gateway import TOOL_NAMES
 
 class MissionRequestError(ValueError):
     pass
+
+
+def _valid_base(base: Any) -> bool:
+    """底记录的形状：提交号是 40 位小写十六进制；其余字段是拍快照时的说明。"""
+
+    if not isinstance(base, Mapping):
+        return False
+    commit = base.get("commit")
+    if not isinstance(commit, str) or not re.fullmatch(r"[0-9a-f]{40}", commit):
+        return False
+    scope = base.get("scope", [])
+    withheld = base.get("withheld", {})
+    return (
+        isinstance(scope, (list, tuple))
+        and all(isinstance(item, str) for item in scope)
+        and isinstance(withheld, Mapping)
+        and isinstance(base.get("source", {}), Mapping)
+    )
 
 
 def validate_spec(spec: MissionSpec, *, available_tools: Sequence[str] = TOOL_NAMES) -> None:
@@ -109,6 +128,11 @@ def spec_from_request(
         isinstance(k, str) and isinstance(v, str) for k, v in seed.items()
     ):
         raise MissionRequestError("workspace_seed must map paths to text")
+    base = request.get("workspace_base")
+    if base is not None and not _valid_base(base):
+        raise MissionRequestError(
+            "workspace_base must be a base record with a 40-hex commit (see workspace_base.py)"
+        )
     # 第 4 步章程字段也要映射：不映射的话，请求里写了它们也会被静默丢掉
     untrusted = request.get("untrusted_sources", ())
     if isinstance(untrusted, str) or not all(isinstance(s, str) for s in untrusted):
@@ -149,6 +173,7 @@ def spec_from_request(
             budget=Budget.from_json(request.get("budget", {})),
             task_kind=str(request.get("task_kind", "code")),
             workspace_seed=dict(request.get("workspace_seed", {})),
+            workspace_base=None if base is None else dict(base),
             untrusted_sources=tuple(untrusted),
             domain=str(request.get("domain", CODE_DOMAIN)),
             runtime_profile_id=runtime_profile,

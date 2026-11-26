@@ -23,6 +23,8 @@ import re
 from collections.abc import Mapping
 from typing import Any
 
+from ....artifacts.workspace_base import mission_base_commit
+from ....contracts import ContractError
 from ....contracts.semantic_base import VersionedRef, content_hash_of
 from ....knowledge.predicates import (
     ArgumentType,
@@ -73,13 +75,19 @@ def workspace_predicates() -> tuple[PredicateSignature, ...]:
     )
 
 
-def mission_file_view(store: Any, mission_id: str) -> dict[str, str]:
-    """``path → content hash`` of the Mission's files as they stand: its seed, overlaid by
+def mission_file_view(store: Any, mission_id: str, bases: Any = None) -> dict[str, str]:
+    """``path → content hash`` of the Mission's files as they stand: its base commit (when
+    the Mission has one; ``bases`` is the repository it lives in), its seed, overlaid by
     the accepted artifacts, each path at its version in force (the same notion of "in
     force" the knowledge standing uses: the highest accepted version)."""
 
     view: dict[str, str] = {}
     mission = store.get_mission(mission_id)
+    base_commit = mission_base_commit(mission.final_report) if mission is not None else None
+    if base_commit is not None:
+        if bases is None:
+            raise ContractError("the Mission has a base but no base repository was given")
+        view.update({path: entry.sha256 for path, entry in bases.manifest(base_commit).items()})
     seed = (mission.final_report or {}).get("workspace_seed") if mission is not None else None
     for path, body in dict(seed or {}).items():
         text = str(body)
@@ -99,8 +107,8 @@ def mission_file_view(store: Any, mission_id: str) -> dict[str, str]:
 class WorkspaceObserver:
     """Reads the Mission's file view and its registered reference material."""
 
-    def __init__(self, store: Any, mission_id: str) -> None:
-        self._store, self._mission_id = store, mission_id
+    def __init__(self, store: Any, mission_id: str, bases: Any = None) -> None:
+        self._store, self._mission_id, self._bases = store, mission_id, bases
 
     @property
     def observer_id(self) -> str:
@@ -128,7 +136,7 @@ class WorkspaceObserver:
                 holds = bool(row) and str(row[0][0]) == str(arguments.get("version_hash"))
                 scope = f"sources:{self._mission_id}"
             else:
-                view = mission_file_view(self._store, self._mission_id)
+                view = mission_file_view(self._store, self._mission_id, self._bases)
                 holds = path in view and (
                     predicate == FILE_PRESENT or view[path] == str(arguments.get("sha256"))
                 )
@@ -156,8 +164,10 @@ class WorkspaceObserver:
         )
 
 
-def workspace_observers(store: Any, mission_id: str) -> tuple[PredicateObserver, ...]:
-    return (WorkspaceObserver(store, mission_id),)
+def workspace_observers(
+    store: Any, mission_id: str, *, bases: Any = None
+) -> tuple[PredicateObserver, ...]:
+    return (WorkspaceObserver(store, mission_id, bases),)
 
 
 __all__ = (

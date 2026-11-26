@@ -49,7 +49,9 @@ def goal_world(domain: str) -> Callable[[Any, Any], Any]:
             domains=(),
             semantics=htn_store.HtnStore(loop.store),
             predicates=workspace_predicates(),
-            observers=workspace_observers(loop.store, mission.id),
+            observers=workspace_observers(
+                loop.store, mission.id, bases=loop.assembled.workspaces.bases
+            ),
         )
         params_body = {"fields": [{"name": "goal", "type": "string", "required": True}]}
         params = VersionedRef(f"{domain}.goal-parameters", 1, content_hash_of(params_body))

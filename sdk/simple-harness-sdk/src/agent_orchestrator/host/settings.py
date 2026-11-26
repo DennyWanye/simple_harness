@@ -120,6 +120,10 @@ class HostSettings:
     continuation_voice_max_wait_seconds: float = 60.0
     tool_search: bool = True
     main_session_sandbox_run: bool = False
+    #: 任务的底（开宿主时给了 ``workspace_base``）一次最多拍多少文件、多少字节；超了建任务时回
+    #: ``base_too_large``，模型缩小 ``base_scope`` 重交。
+    base_max_files: int = 5000
+    base_max_bytes: int = 64 * 1024 * 1024
 
     def __post_init__(self) -> None:
         if (

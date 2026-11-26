@@ -22,6 +22,7 @@ from ...artifacts.versioning import (
     materialise_v2,
 )
 from ...artifacts.workspace import WorkspaceError
+from ...artifacts.workspace_base import BaseError, mission_base_commit
 from ...assurance.codec import AssuranceError
 from ...contracts import (
     TERMINAL_ATTEMPT,
@@ -309,6 +310,7 @@ class AttemptDispatchMixin(OrchestratorCore):
         mission = self.store.get_mission(attempt.mission_id)
         assert mission is not None
         seed = dict((mission.final_report or {}).get("workspace_seed", {}))
+        base_commit = mission_base_commit(mission.final_report)
         previous = None
         if attempt.retry_of is not None:
             previous = self.assembled.workspaces.root / attempt.retry_of
@@ -369,11 +371,14 @@ class AttemptDispatchMixin(OrchestratorCore):
                 "inputs": {item.path: item.content_hash for item in self._upstream_inputs(attempt)},
                 "previous": attempt.retry_of,
                 **self._frozen_source_binding(attempt),
+                # 没有底的任务身份照旧（不加这个键），已在途的工作区升级后仍对得上
+                **({"base": base_commit} if base_commit is not None else {}),
             }
         )
         detail = {
             "path": attempt.id,
             "seed": sorted(seed),
+            "base": base_commit,
             "read_only_inputs": sorted(self._read_only_inputs(attempt.id)),
             "bound_workspace_files": sorted(item.path for item in self._upstream_inputs(attempt)),
             "writable_outputs": [] if task is None else list(task.outputs),
@@ -414,6 +419,7 @@ class AttemptDispatchMixin(OrchestratorCore):
                 previous=previous,
                 inputs=inputs,
                 replace_input_roots=source_roots,
+                base=base_commit,
             )
         except WorkspaceError as error:  # P3.2 D3: e.g. a symlink in the previous tree
             raise ArtifactConflict(str(error)) from error
@@ -569,8 +575,16 @@ class AttemptDispatchMixin(OrchestratorCore):
             raise WorkspaceError("read-only snapshot: mission missing")
         seed = dict((mission.final_report or {}).get("workspace_seed", {}))
         upstream = self._upstream_inputs(attempt)
-        allowed = set(read_only_existing_paths(seed, (item.path for item in upstream)))
-        initial: dict[str, str] = {}
+        base_commit = mission_base_commit(mission.final_report)
+        try:
+            base = (
+                {} if base_commit is None else self.assembled.workspaces.bases.manifest(base_commit)
+            )
+        except BaseError as error:
+            raise WorkspaceError(f"base_unreadable: {error}") from error
+        allowed = set(read_only_existing_paths(seed, (item.path for item in upstream), base))
+        # 叠层顺序：底 → 种子 → 上游；后一层的哈希覆盖前一层
+        initial: dict[str, str] = {path: entry.sha256 for path, entry in base.items()}
         for path, content in seed.items():
             if path in allowed:
                 initial[path] = sha256_hex_text(content)

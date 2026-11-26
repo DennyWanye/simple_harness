@@ -5,13 +5,18 @@
 
 Layout under ``<evidence_root>/workspaces/``::
 
-    <attempt_id>/            the Attempt's own writable tree (seeded from the Mission);
+    <attempt_id>/            the Attempt's own writable tree (the Mission's base commit,
+                             then its seed);
                              only the Tool Gateway's file tools write it
     <attempt_id>-verify/     the Verifier's copy, rebuilt from the Mission seed, the
                              upstream inputs and the Attempt's recorded Artifacts (P3.2
                              review round 2 P1-3: what is verified is what was recorded)
     <attempt_id>-exec-<id>/  a throw-away copy model-written code runs in (``run_tests``),
                              removed when the run ends (P3.2 review round 2 P1-1)
+
+任务带底（``final_report["workspace_base"]``）时，底提交的文件铺在每棵树的最下层：尝试工作区
+（重试从上一棵树起步，不再重铺）、验收副本、判定树都是「底 → 种子 → 输入 → 产物 → 受保护」，
+见 :mod:`.workspace_base`。
 
 Paths handed to tools are resolved against the workspace root and must stay inside it
 (no ``..``, no absolute paths, no symlink escape).  No copy the system makes ever follows
@@ -36,6 +41,7 @@ from ..runtime.sandbox import pending_workspace_executions, recover_workspace_ex
 from .input_bindings import MaterialisationEntry
 from .paths import under_prefix
 from .store import ArtifactStore, ArtifactStoreError, read_nofollow, read_verified
+from .workspace_base import BaseError, BaseRepo
 
 
 class WorkspaceError(ValueError):
@@ -280,13 +286,23 @@ class Workspace:
 
 
 class WorkspaceManager:
-    def __init__(self, root: Path, *, artifact_store: ArtifactStore | None = None) -> None:
+    def __init__(
+        self,
+        root: Path,
+        *,
+        artifact_store: ArtifactStore | None = None,
+        bases: BaseRepo | None = None,
+    ) -> None:
         self.last_sandbox_cleanup: tuple[dict, ...] = ()
         self._root = Path(root)
         self._store = (
             artifact_store
             if artifact_store is not None
             else ArtifactStore(self._root.parent / "artifacts")
+        )
+        #: 任务的底提交住的工作仓库（与工作区、产物存储同一个数据根）
+        self.bases = (
+            bases if bases is not None else BaseRepo(self._root.parent / "bases" / "work.git")
         )
 
     @property
@@ -300,6 +316,14 @@ class WorkspaceManager:
     def _workspace(self, root: Path, attempt_id: str, writable: bool) -> Workspace:
         return Workspace(root, attempt_id, writable, self._store)
 
+    def _lay_base(self, base: str | None, target: Path) -> None:
+        if base is None:
+            return
+        try:
+            self.bases.materialise(base, target)
+        except BaseError as error:
+            raise WorkspaceError(f"base_unreadable: {error}") from error
+
     def create(
         self,
         attempt_id: str,
@@ -308,6 +332,7 @@ class WorkspaceManager:
         previous: Path | None = None,
         inputs: Mapping[str, Path | bytes] | None = None,
         replace_input_roots: Sequence[str] = (),
+        base: str | None = None,
     ) -> Workspace:
         """Fresh writable workspace; seeded from the Mission files, the upstream
         inputs (path → accepted artifact file, D3-7') and the previous Attempt's tree
@@ -321,6 +346,8 @@ class WorkspaceManager:
         try:
             if previous is not None and previous.is_dir():
                 _copy_tree(previous, root)
+            else:
+                self._lay_base(base, root)
             workspace = self._workspace(root, attempt_id, True)
             folded_roots = tuple(p.casefold() for p in replace_input_roots)
             if folded_roots:
@@ -353,7 +380,12 @@ class WorkspaceManager:
         return workspace
 
     def integrated_copy(
-        self, view_id: str, *, seed: Mapping[str, str], files: Mapping[str, Path | bytes]
+        self,
+        view_id: str,
+        *,
+        seed: Mapping[str, str],
+        files: Mapping[str, Path | bytes],
+        base: str | None = None,
     ) -> Workspace:
         """The Mission-level judgment tree (D3-9'): the seed plus every accepted
         artifact of every Task applied in topological order; rebuilt each time and
@@ -365,6 +397,7 @@ class WorkspaceManager:
         target.mkdir(parents=True)
         copy = self._workspace(target, view_id, True)
         try:
+            self._lay_base(base, target)
             for relative, content in seed.items():
                 copy.write_text(relative, content)
             for relative, source in files.items():
@@ -389,6 +422,7 @@ class WorkspaceManager:
         seed: Mapping[str, str] | None = None,
         inputs: Mapping[str, Path | bytes] | None = None,
         artifacts: Sequence[Artifact] | None = None,
+        base: str | None = None,
     ) -> Workspace:
         """An independent copy for the Verifier (D12').
 
@@ -413,6 +447,7 @@ class WorkspaceManager:
             target.mkdir(parents=True)
             rebuilt = self._workspace(target, attempt_id, True)
             try:
+                self._lay_base(base, target)
                 for relative, content in (seed or {}).items():
                     rebuilt.write_text(relative, content)
                 for relative, item in (inputs or {}).items():

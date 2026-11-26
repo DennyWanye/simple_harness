@@ -87,6 +87,19 @@ COMMAND_SCHEMAS = {
                 ),
             },
             "reason": {"type": "string"},
+            "base_scope": {
+                "type": "array",
+                "maxItems": 20,
+                "items": {"type": "string"},
+                "description": (
+                    "应用接了底（例如用户当前的仓库）时，后台任务开工时拍一份底的快照，执行与验收都在"
+                    "「底 + 本任务改动」上，可以改已有文件；"
+                    "没接底的应用写这一项会被拒绝（base_unavailable）。"
+                    "不写就是整个底；底很大时只列这次要用的"
+                    '目录或文件（相对路径，例如 ["ledger/", "tests/"]）。范围太大会被拒绝'
+                    "（base_too_large，带文件数和字节数），缩小后重交。"
+                ),
+            },
             "sources": {
                 "type": "array",
                 "maxItems": 8,

@@ -87,6 +87,7 @@ OPEN_FIELDS = frozenset(
         "orchestration_semantics_version",
         "planning_protocol_version",
         "workspace_seed",
+        "workspace_base",  # 宿主拍好的底提交（模型给不了：会话委派只收 base_scope）
         "domain",  # P3.3 (D1): which domain profile this Mission freezes
         "allowed_actions",  # 执行中可提议的动作名单（连接器.操作）；名单外的一律要人批
     }

@@ -929,7 +929,41 @@ host.taskgraph.reads.why_not_ready(mission_id, occurrence_id)   # 没就绪的�
 | 工具集更新 | 任务建立时冻结工具名单：换工具集重开宿主，旧任务仍按旧名单（名单外的调用被拒成事件），新任务用新名单；在途的待批审批卡与未结清动作都在，批准后照常执行 |
 | 超过 32 KB 的工具结果 | 完整记录进执行库；模型拿到预览 + `journal_read_back.seq`，用 `session_history_read(seq_from=seq, seq_to=seq, max_bytes=65536)` 回读：一页压到单条工具结果预算内（页不会再被截成预览），`has_more=true` 带 `next_cursor` 读下一页，拼起来就是原文。工作区大文件 `workspace_read_file` 自动分页（`next_offset` + `expected_sha256`） |
 
+## 4f. 任务的底（在使用方已有的文件上干活）
+
+后台任务默认从一个空工作区开始。给宿主一个**底**，每个新任务建任务时就把它拍成一个 git 提交（底提交），
+执行者、验收（`file:` / `pytest:` / 审阅）、任务级判定树、规划器都在「底 + 本任务改动」上工作：新写的测试能
+导入使用方原有的代码，也能改已有文件。
+
+```python
+from agent_orchestrator.host import GitRepoBase, HostSettings, OrchestrationHost
+
+host = await OrchestrationHost.open(
+    root,  # 数据目录，放在仓库外面
+    principal=...,
+    model=...,
+    workspace_base=GitRepoBase("/path/to/repo"),
+    settings=HostSettings(base_max_files=5000, base_max_bytes=64 * 1024 * 1024),
+)
+host.base  # {"enabled": True, "git": "2.54.0"}；没有 git 2.38+ 时 enabled=False，宿主照常开
+```
+
+| 事 | 说明 |
+|---|---|
+| 底从哪来 | `GitRepoBase(仓库)`：受版本管理 + 未被 `.gitignore` 忽略的新文件，**含没提交的改动**；只读用户仓库，不写它的 `.git`。`DirectoryBase(目录)`：没有 git 的普通目录。也可以自己实现 `WorkspaceBase.capture(scope) -> BaseCapture`（文件给大小和按需读字节的函数） |
+| 存在哪 | 数据目录下 `bases/work.git`（SDK 自管的裸仓库）；提交由引用 `refs/harness/base/<提交号>` 保住，工作区目录清掉以后照样能重建验收副本 |
+| 范围 | 会话委派 `delegate_task` 的 `base_scope`（至多 20 个相对路径，目录或文件；不写 = 整个底），由模型判断；`create_mission` 请求里同名字段 |
+| 上限 | `HostSettings.base_max_files` / `base_max_bytes`；超了回 `base_too_large`（说明里带文件数和字节数），模型缩小范围重交 |
+| 扣留（不进底） | 按名字的凭据文件（`.env*`、`*.pem`、`*.key`、`*.p12`、`id_rsa` 等，即使被 git 跟踪）、内容像密钥的文件、软链（路径上任一级是软链都算）、读不了的文件、只有大小写不同的路径（文件或目录，都扣）、git 不收的路径、SDK 自己用的路径（`sources/`、`.assurance/`、`accepted-outputs/`）与部署禁止的前缀。任务行 `final_report.workspace_base.withheld` 记着路径和原因 |
+| 只读的底文件 | 二进制或超过 512 KiB 的：原样在工作区里（导入不会断），读工具不给内容，写被拒；`pytest:` 点名的底文件（验收的尺子）。其余底文件都可以改 |
+| 登记什么 | 只登记相对起步状态（底 → 种子 → 上游输入）新建或改过的文件；没动的底文件不是产物 |
+| 顺手跑的测试 | 一条 `pytest:` 都没写时，验收只跑这一步新写或改过的测试文件（`test_*.py` / `*_test.py`，每个文件各跑一次），不跑使用方仓库原有的测试；收集不到测试的文件（没有测试函数、被仓库配置反选，pytest 退出码 5）不算失败；仓库的 pytest 配置或根目录 `conftest.py` 在隔离区里加载不了（例如要装了才有的插件，退出码 4）照样判失败；一个有测试的都没有就在空目录里跑一次（不加载仓库的 pytest 配置与 `conftest.py`），算「不适用、视为满足」。写了 `pytest:`（含不带路径的 `pytest:`，那是要求跑整棵树）照条件跑 |
+| 错误码 | `base_unavailable`（宿主没接底却带了 `base_scope`，或 git 不可用）、`base_too_large`、`invalid_request`（范围写法不对、种子与底重名）、`base_repo_failed`（工作仓库的 git 命令失败，说明里带 git 的报错） |
+| 幂等 | 同一个 `idempotency_key` 重试沿用原任务的底，不重拍 |
+| 还没有的 | 交付改动集与写回（三方比对）、尝试即提交与步骤合并、删除文件的工具——见设计稿 `plans/2026-11-26-workspace-base/` 的 P2 |
+
 ## 5. 要求怎么写
+
 
 - 每行一条，普通文字就行；规划器按它拆步骤，审阅员按它审。
 - `file:路径`：工作区里要有这个文件。冒号后只写一个工作区相对路径，规范写法（不带空白、首尾也不带，不是绝对路径，不含 `..`，没有 `./`、`//`、结尾的 `/`），对文件内容的要求另起一条；写成 `file:report.md 按月列出合计` 的条件在入口（建任务、委派、改要求）就被拒（会话委派先去掉每条首尾空白再受理（`host/delegation.normalize_spec`），所以那条路上首尾空白不会被拒；建任务与改要求按原文检查），码 `file_criterion_not_a_path`——验收把冒号后整串当路径，这样的条件永远判「文件不存在」，任务只会反复重做。
@@ -952,8 +986,8 @@ SDK 没有推送。定时调 `events(mission_id, after_seq=上次的 through_seq
 
 ## 8. 数据目录
 
-`root` 下有编排库 `orchestrator.db`、执行账本、每次尝试的隔离工作区、产物内容、沙箱探测报告与
-转发线路学到的计数边际。目录不要放在符号链接下，也不要和发布目录重叠。
+`root` 下有编排库 `orchestrator.db`、执行账本、每次尝试的隔离工作区、产物内容、任务的底（`bases/`，见 §4f）、
+沙箱探测报告与转发线路学到的计数边际。目录不要放在符号链接下，也不要和发布目录重叠。
 
 ## 9. 常见问题
 
