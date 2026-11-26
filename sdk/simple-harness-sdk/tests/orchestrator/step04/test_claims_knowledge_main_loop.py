@@ -436,7 +436,7 @@ def test_a_passing_check_supports_but_never_verifies_a_workers_claim(world):
     }
     assert world["immutable"].startswith("CommitRejected") and "immutable" in world["immutable"]
     domain = world["domain"]
-    assert domain.version == "6" and "claim_grading" not in domain.completion_rules
+    assert domain.version == "7" and "claim_grading" not in domain.completion_rules
     assert domain.completion_rules["result_envelope_contract"] == "candidate-json-v1"
 
 
