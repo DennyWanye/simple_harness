@@ -94,7 +94,13 @@ TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
     "workspace_write_file": {
         "type": "object",
         "properties": {
-            "path": {"type": "string", "description": "工作区内相对路径"},
+            "path": {
+                "type": "string",
+                "description": (
+                    "工作区内相对路径。只给自己或后续步骤看的草稿（笔记、中间结果）写在 "
+                    ".harness/scratch/ 下：照常传给后续步骤，但不交给使用方"
+                ),
+            },
             "content": {"type": "string", "description": "完整文件内容（覆盖写入）"},
         },
         "required": ["path", "content"],

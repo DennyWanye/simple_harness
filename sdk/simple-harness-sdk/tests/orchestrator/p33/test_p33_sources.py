@@ -48,7 +48,7 @@ from agent_orchestrator.runtime.connectors_publish import FilePublishConnector
 from agent_orchestrator.storage.store import Store
 from p33_world import opened, request
 
-PATH = "sources/report.md"
+PATH = ".harness/sources/report.md"
 TEXT = "来源原文：我们不建议删除前提。\n"
 DEPLOYMENT = DeploymentPolicy(approval_ttl_seconds=10)
 
@@ -184,8 +184,8 @@ def test_source_commands_refuse_caller_supplied_authority(env, field):
     [
         "../sources/a.md",
         "/sources/a.md",
-        "sources/../a.md",
-        "sources//a.md",
+        ".harness/sources/../a.md",
+        ".harness/sources//a.md",
         "./sources/a.md",
         "sources\\a.md",
         "notes/a.md",
@@ -339,17 +339,17 @@ def test_invalidated_source_approval_can_be_rejected_without_touching_sources(
 @pytest.mark.parametrize(
     "existing,candidate",
     [
-        (PATH, "sources/REPORT.md"),
-        ("sources/straße.md", "sources/STRASSE.md"),
+        (PATH, ".harness/sources/REPORT.md"),
+        (".harness/sources/straße.md", ".harness/sources/STRASSE.md"),
         (PATH, PATH + "/child.md"),
         (PATH + "/child.md", PATH),
-        (PATH, "sources/REPORT.md/child.md"),
-        ("sources/REPORT.md/child.md", PATH),
-        ("sources/caf\u00e9.md", "sources/cafe\u0301.md"),
-        ("sources/cafe\u0301.md", "sources/caf\u00e9.md"),
-        ("sources/Dir/a.md", "sources/dir/b.md"),
-        ("sources/caf\u00e9/a.md", "sources/cafe\u0301/b.md"),
-        ("sources/cafe\u0301/a.md", "sources/caf\u00e9/b.md"),
+        (PATH, ".harness/sources/REPORT.md/child.md"),
+        (".harness/sources/REPORT.md/child.md", PATH),
+        (".harness/sources/caf\u00e9.md", ".harness/sources/cafe\u0301.md"),
+        (".harness/sources/cafe\u0301.md", ".harness/sources/caf\u00e9.md"),
+        (".harness/sources/Dir/a.md", ".harness/sources/dir/b.md"),
+        (".harness/sources/caf\u00e9/a.md", ".harness/sources/cafe\u0301/b.md"),
+        (".harness/sources/cafe\u0301/a.md", ".harness/sources/caf\u00e9/b.md"),
     ],
 )
 def test_register_refuses_active_aliases_and_file_ancestor_collisions(env, existing, candidate):
@@ -361,12 +361,14 @@ def test_register_refuses_active_aliases_and_file_ancestor_collisions(env, exist
     assert error.value.code == "conflict"
     assert e.store.snapshot(e.mission.id) == before
     # Same-prefix siblings are distinct files; a refused key wrote no receipt.
-    _register(e, path="sources/report.md-extra", idempotency_key="collision")
+    _register(e, path=".harness/sources/report.md-extra", idempotency_key="collision")
     assert len(e.store.list_sources(e.mission.id, active_only=True)) == 2
     _assert_replay(e)
 
 
-@pytest.mark.parametrize("parent", ["sources/Dir", "sources/caf\u00e9", "sources/cafe\u0301"])
+@pytest.mark.parametrize(
+    "parent", [".harness/sources/Dir", ".harness/sources/caf\u00e9", ".harness/sources/cafe\u0301"]
+)
 def test_source_siblings_preserve_the_same_original_parent_spelling(env, parent):
     e = env
     first = _register(e, path=parent + "/a.md")
@@ -386,12 +388,12 @@ def test_source_siblings_preserve_the_same_original_parent_spelling(env, parent)
 @pytest.mark.parametrize(
     "original,conflicting",
     [
-        (PATH, "sources/REPORT.md"),
-        (PATH, "sources/REPORT.md/child.md"),
-        (PATH + "/child.md", "sources/REPORT.md"),
-        ("sources/caf\u00e9.md", "sources/cafe\u0301.md"),
-        ("sources/Dir/a.md", "sources/dir/b.md"),
-        ("sources/cafe\u0301/a.md", "sources/caf\u00e9/b.md"),
+        (PATH, ".harness/sources/REPORT.md"),
+        (PATH, ".harness/sources/REPORT.md/child.md"),
+        (PATH + "/child.md", ".harness/sources/REPORT.md"),
+        (".harness/sources/caf\u00e9.md", ".harness/sources/cafe\u0301.md"),
+        (".harness/sources/Dir/a.md", ".harness/sources/dir/b.md"),
+        (".harness/sources/cafe\u0301/a.md", ".harness/sources/caf\u00e9/b.md"),
     ],
 )
 def test_historical_reactivation_rechecks_active_path_collisions(
@@ -461,7 +463,7 @@ def test_tampered_source_approval_cannot_record_grant_or_reject(env, decision, d
     pending = _supersede(e)
     request = e.store.get_approval(pending["request_id"])
     if damage == "binding":
-        request["binding"]["path"] = "sources/forged.md"
+        request["binding"]["path"] = ".harness/sources/forged.md"
     else:
         other = _revoke(e)
         request["subject_key"] = other["command_id"]
@@ -527,7 +529,7 @@ def test_second_general_mission_refuses_paths_outside_sources(env):
     e = env
     mission_id = e.api.create(request("code", goal="code"))["mission_id"]
     before = e.store.snapshot(mission_id)
-    # 2026-09-26 用户决定：通用（code）任务也可附资料，但只限 ``sources/`` 目录；
+    # 2026-09-26 用户决定：通用（code）任务也可附资料，但只限 ``.harness/sources/`` 目录；
     # 目录外的路径照旧按"找不到"拒绝，一个字节都不写。
     with pytest.raises(FacadeError) as outside:
         _register(e, mission_id=mission_id, path="notes/report.md")
@@ -564,7 +566,7 @@ def test_facade_rechecks_physical_storage_on_new_commands_and_pending_approval(e
         connectors={"file_publish": unsafe},
     )
     with pytest.raises(FacadeError, match="source_publish_root_overlap"):
-        _register(e, path="sources/another.md", idempotency_key="another")
+        _register(e, path=".harness/sources/another.md", idempotency_key="another")
     with pytest.raises(FacadeError, match="source_publish_root_overlap"):
         _approve(e, pending)
     assert e.store.snapshot(e.mission.id) == before

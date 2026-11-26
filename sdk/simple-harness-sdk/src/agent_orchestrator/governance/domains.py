@@ -119,12 +119,13 @@ class DomainProfileV1:
 
 
 #: The general task (code domain).  User decision 2026-09-26: it may carry reference
-#: material under ``sources/``, frozen per Attempt, mounted read-only and citable as
+#: material under ``.harness/sources/``（2026-11-26 起；以前是 ``sources/``，和使用方仓库根目录的
+#: ``Sources/`` 撞名）, frozen per Attempt, mounted read-only and citable as
 #: ``source`` evidence.  Strict citation (the removed document domain) became a
 #: requirement the reviewer judges (user decision 2026-10-02, option A).
 CODE_PROFILE = DomainProfileV1(
     id=CODE_DOMAIN,
-    version="6",
+    version="7",
     allowed_input_kinds=("text/*", "application/octet-stream"),
     allowed_artifact_kinds=("text/*",),
     allowed_evidence_kinds=("pytest", "file", "artifact", "tool-run", "knowledge", "source"),
@@ -132,7 +133,7 @@ CODE_PROFILE = DomainProfileV1(
     runs_layers=VERIFICATION_LAYERS,
     default_policy=SYSTEM_DEFAULT_POLICY,
     external_check="code_test",
-    source_roots=("sources/",),
+    source_roots=(".harness/sources/",),
     completion_rules={"result_envelope_contract": "candidate-json-v1"},
 )
 

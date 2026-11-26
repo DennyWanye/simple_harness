@@ -51,8 +51,11 @@ SECRET_NAME_PATTERNS = (
     re.compile(r"^id_(rsa|dsa|ecdsa|ed25519)(\.pub)?$"),
     re.compile(r"^\.(netrc|npmrc|pypirc)$"),
 )
-#: SDK 自己在工作区里用的路径（资料根、保证通道材料、判定树里落选的产出）；底里撞上的扣留。
-RESERVED_BASE_PREFIXES = ("sources/", ".assurance/", "accepted-outputs/")
+#: SDK 自己在工作区里用的根：资料（``.harness/sources/``）、执行者草稿（``.harness/scratch/``）、
+#: 判定树里落选的产出（``.harness/accepted-outputs/``），以及保证通道材料（``.assurance/``）。
+#: 底里撞上的扣留；改动集里这些路径不交付。
+HARNESS_ROOT = ".harness/"
+RESERVED_BASE_PREFIXES = (HARNESS_ROOT, ".assurance/")
 _COMMITTER = "SimpleHarness <harness@localhost> 0 +0000"
 _CONTROL = re.compile(r"[\x00-\x1f\x7f]")
 

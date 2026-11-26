@@ -39,8 +39,8 @@ def command():
             "budget": {"max_tokens": 30000, "max_attempts": 4},
         },
         "sources": [
-            {"path": "sources/a.md", "content": "甲材料。\r\n", "kind": "markdown"},
-            {"path": "sources/b.md", "content": "乙材料。\n", "kind": "markdown"},
+            {"path": ".harness/sources/a.md", "content": "甲材料。\r\n", "kind": "markdown"},
+            {"path": ".harness/sources/b.md", "content": "乙材料。\n", "kind": "markdown"},
         ],
     }
 
@@ -187,20 +187,20 @@ def test_batch_fault_rolls_back_mission_budget_binding_sources_receipts_and_even
 @pytest.mark.parametrize(
     "other",
     [
-        "sources/A.md",
-        "sources/a.md/child",
-        "sources/a.md",
-        "sources/Dir/b.md",
-        "sources/é/b.md",
+        ".harness/sources/A.md",
+        ".harness/sources/a.md/child",
+        ".harness/sources/a.md",
+        ".harness/sources/Dir/b.md",
+        ".harness/sources/é/b.md",
     ],
 )
 def test_batch_active_aliases_and_file_ancestors_refuse_atomically(tmp_path, other):
     with world_at(tmp_path) as world:
         value = command()
         if "Dir" in other:
-            value["sources"][0]["path"] = "sources/dir/a.md"
+            value["sources"][0]["path"] = ".harness/sources/dir/a.md"
         if "é" in other:
-            value["sources"][0]["path"] = "sources/é/a.md"
+            value["sources"][0]["path"] = ".harness/sources/é/a.md"
         value["sources"][1]["path"] = other
         before = database_state(world.store)
         with pytest.raises(FacadeError):

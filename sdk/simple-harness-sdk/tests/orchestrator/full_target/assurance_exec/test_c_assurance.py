@@ -460,7 +460,7 @@ def test_a_budget_blocked_review_does_not_hold_back_later_events(tmp_path, monke
     from agent_orchestrator.orchestrator.assurance_tick import AssuranceTick
 
     script = _UnknownChargeReviewer()
-    path = "sources/spec.md"
+    path = ".harness/sources/spec.md"
     state: dict = {"armed": None, "fired": None, "ticks": 0, "settled": [], "kinds": set()}
     settle, tick = AssuranceTick._settle_failure, AssuranceTick.tick
     # 2026-10-11：账户链上没有活着的预留时，等不到的额度不再等（这一步按额度用完结束）。本用例

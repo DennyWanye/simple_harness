@@ -18,8 +18,8 @@ def test_read_only_workspace_cannot_write_bytes(tmp_path):
     manager.create("attempt", seed={})
     readonly = manager.get("attempt", writable=False)
     with pytest.raises(WorkspaceError, match="read-only"):
-        readonly.write_bytes("sources/blocked.md", b"must not be written")
-    assert not (readonly.root / "sources/blocked.md").exists()
+        readonly.write_bytes(".harness/sources/blocked.md", b"must not be written")
+    assert not (readonly.root / ".harness/sources/blocked.md").exists()
 
 
 @pytest.mark.parametrize("material", ["bytes", "path"])
@@ -29,16 +29,16 @@ def test_protected_source_bytes_override_worker_artifact_and_detect_tampering(tm
     assert len(original) > MAX_FILE_BYTES
     source = tmp_path / "registered.md"
     source.write_bytes(original)
-    protected = {"sources/report.md": original if material == "bytes" else source}
+    protected = {".harness/sources/report.md": original if material == "bytes" else source}
     workspace = manager.create("attempt", seed={}, inputs=protected)
-    assert (workspace.root / "sources/report.md").read_bytes() == original
+    assert (workspace.root / ".harness/sources/report.md").read_bytes() == original
     assert manager.tampered_protected("attempt", protected) == []
-    workspace.write_bytes("sources/report.md", b"forged worker report")
-    assert manager.tampered_protected("attempt", protected) == ["sources/report.md"]
+    workspace.write_bytes(".harness/sources/report.md", b"forged worker report")
+    assert manager.tampered_protected("attempt", protected) == [".harness/sources/report.md"]
     artifacts = workspace.snapshot(mission_id="mission", task_id="task", produced_by="worker")
     rebuilt = manager.verification_copy("attempt", artifacts=artifacts, protected=protected)
-    assert (rebuilt.root / "sources/report.md").read_bytes() == original
-    assert (workspace.root / "sources/report.md").read_bytes() == b"forged worker report"
+    assert (rebuilt.root / ".harness/sources/report.md").read_bytes() == original
+    assert (workspace.root / ".harness/sources/report.md").read_bytes() == b"forged worker report"
 
 
 def test_source_path_symlink_is_refused_before_reading(tmp_path):
@@ -49,7 +49,9 @@ def test_source_path_symlink_is_refused_before_reading(tmp_path):
     link = tmp_path / "link.md"
     link.symlink_to(original)
     with pytest.raises(WorkspaceError, match="workspace_symlink"):
-        manager.verification_copy("attempt", artifacts=[], protected={"sources/report.md": link})
+        manager.verification_copy(
+            "attempt", artifacts=[], protected={".harness/sources/report.md": link}
+        )
 
 
 def test_legacy_string_seed_materialization_is_unchanged(tmp_path):

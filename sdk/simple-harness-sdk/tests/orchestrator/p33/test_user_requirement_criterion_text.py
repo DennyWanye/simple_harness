@@ -20,6 +20,6 @@ def test_user_requirement_ids_resolve_to_the_original_statement():
         "c-user-0",
         "c-user-1-summary-written",
         "file:a.md",
-        "cite:sources/a.md",
+        "cite:.harness/sources/a.md",
     ):
         assert task_criterion_text(kept, texts) == kept

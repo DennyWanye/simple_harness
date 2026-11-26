@@ -12,7 +12,11 @@ from pathlib import PurePosixPath
 from typing import Any
 
 from ..artifacts.source_paths import source_paths_conflict
+from ..governance.domains import CODE_PROFILE
 from .session_ledger import SessionError, digest
+
+#: 会话委派带的资料放在通用任务的资料根下
+SOURCE_ROOT = CODE_PROFILE.source_roots[0]
 
 _UNSET = object()
 
@@ -50,8 +54,8 @@ def normalize_spec(body: Mapping[str, Any]) -> dict[str, Any]:
         path = str(PurePosixPath(path))
         if path == ".":
             raise SessionError("invalid_arguments", "invalid source path")
-        if not path.startswith("sources/"):
-            path = "sources/" + path
+        if not path.startswith(SOURCE_ROOT):
+            path = SOURCE_ROOT + path
         if not isinstance(content, str) or not content or len(content) > 100000:
             raise SessionError("invalid_arguments", "source content must be bounded nonempty text")
         attached.append(

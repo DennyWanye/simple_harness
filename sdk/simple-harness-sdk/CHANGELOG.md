@@ -1,3 +1,11 @@
+## 未发布 — SDK 自己的路径搬到 `.harness/`（工作区以底为基础 P2b，2026-11-26）
+
+- 通用任务（代码领域，版本 7）的资料根从 `sources/` 改为 `.harness/sources/`，会话委派带的资料自动放到这里。以前拍底
+  按不分大小写扣留 SDK 的 `sources/`，Swift 包仓库根目录的 `Sources/` 整个被扣（执行者看不到、交付不含）；现在照常进底。
+- 执行者草稿写 `.harness/scratch/`（写文件工具的说明里写明）：照常登记、传给后续步骤，不进改动集、不写回。
+- 判定树里落选的产出放 `.harness/accepted-outputs/`。拍底的保留前缀改为 `.harness/`、`.assurance/`。
+- 测试里写死的 `sources/` 路径随之改成 `.harness/sources/`。
+
 ## 未发布 — 有底的任务交付：改动集与写回（issue #53，2026-11-26）
 
 P1（#51）让任务在「底提交」上干活；这一段把结果交回去。设计见 `plans/2026-11-26-workspace-base/`（本次是 P2a）。

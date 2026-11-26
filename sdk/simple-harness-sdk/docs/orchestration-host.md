@@ -954,13 +954,14 @@ host.base  # {"enabled": True, "git": "2.54.0"}；没有 git 2.38+ 时 enabled=F
 | 存在哪 | 数据目录下 `bases/work.git`（SDK 自管的裸仓库）；提交由引用 `refs/harness/base/<提交号>` 保住，工作区目录清掉以后照样能重建验收副本 |
 | 范围 | 会话委派 `delegate_task` 的 `base_scope`（至多 20 个相对路径，目录或文件；不写 = 整个底），由模型判断；`create_mission` 请求里同名字段 |
 | 上限 | `HostSettings.base_max_files` / `base_max_bytes`；超了回 `base_too_large`（说明里带文件数和字节数），模型缩小范围重交 |
-| 扣留（不进底） | 按名字的凭据文件（`.env*`、`*.pem`、`*.key`、`*.p12`、`id_rsa` 等，即使被 git 跟踪）、内容像密钥的文件、软链（路径上任一级是软链都算）、读不了的文件、只有大小写不同的路径（文件或目录，都扣）、git 不收的路径、SDK 自己用的路径（`sources/`、`.assurance/`、`accepted-outputs/`）与部署禁止的前缀。任务行 `final_report.workspace_base.withheld` 记着路径和原因 |
+| 扣留（不进底） | 按名字的凭据文件（`.env*`、`*.pem`、`*.key`、`*.p12`、`id_rsa` 等，即使被 git 跟踪）、内容像密钥的文件、软链（路径上任一级是软链都算）、读不了的文件、只有大小写不同的路径（文件或目录，都扣）、git 不收的路径、SDK 自己用的路径（`.harness/`、`.assurance/`）与部署禁止的前缀。任务行 `final_report.workspace_base.withheld` 记着路径和原因 |
 | 只读的底文件 | 二进制或超过 512 KiB 的：原样在工作区里（导入不会断），读工具不给内容，写被拒；`pytest:` 点名的底文件（验收的尺子）。其余底文件都可以改 |
 | 登记什么 | 只登记相对起步状态（底 → 种子 → 上游输入）新建或改过的文件；没动的底文件不是产物 |
 | 顺手跑的测试 | 一条 `pytest:` 都没写时，验收只跑这一步新写或改过的测试文件（`test_*.py` / `*_test.py`，每个文件各跑一次），不跑使用方仓库原有的测试；收集不到测试的文件（没有测试函数、被仓库配置反选，pytest 退出码 5）不算失败；仓库的 pytest 配置或根目录 `conftest.py` 在隔离区里加载不了（例如要装了才有的插件，退出码 4）照样判失败；一个有测试的都没有就在空目录里跑一次（不加载仓库的 pytest 配置与 `conftest.py`），算「不适用、视为满足」。写了 `pytest:`（含不带路径的 `pytest:`，那是要求跑整棵树）照条件跑 |
 | 错误码 | `base_unavailable`（宿主没接底却带了 `base_scope`，或 git 不可用）、`base_too_large`、`invalid_request`（范围写法不对、种子与底重名）、`base_repo_failed`（工作仓库的 git 命令失败，说明里带 git 的报错） |
 | 幂等 | 同一个 `idempotency_key` 重试沿用原任务的底，不重拍 |
-| 还没有的 | 删除文件的工具；两个互不依赖的步骤改同一个底文件时的三方合并（现在判定树取后验收的那一版，被覆盖的步骤记在改动集的 `overridden_steps`）；执行者草稿不交付（`.harness/` 保留根）——见设计稿 `plans/2026-11-26-workspace-base/` 的 P2b |
+| SDK 自己的路径 | 都在 `.harness/` 下：任务资料 `.harness/sources/`（会话委派带的资料自动放到这里）、执行者草稿 `.harness/scratch/`（照常传给后续步骤，不交给使用方）、判定树里落选的产出 `.harness/accepted-outputs/`。使用方仓库里的 `Sources/`、`sources/` 照常进底 |
+| 还没有的 | 删除文件的工具；两个互不依赖的步骤改同一个底文件时的三方合并（现在判定树取后验收的那一版，被覆盖的步骤记在改动集的 `overridden_steps`）——见设计稿 `plans/2026-11-26-workspace-base/` 的 P2b |
 
 ### 交付：改动集与写回
 
@@ -981,7 +982,7 @@ receipt = host.apply_delivery(mission_id, operation_key="点击-123", paths=None
 
 | 事 | 说明 |
 |---|---|
-| 改动集里有什么 | 判定树里和底提交内容不同的文件：新增（`add`）或修改（`modify`）。没动的底文件、SDK 自己的路径（`accepted-outputs/` 等）不在里面。`test: true` = 改了底里**已有的**测试文件，或新增 / 修改测试配置（`conftest.py`、`pytest.ini`、`tox.ini`、`.coveragerc`、`pyproject.toml`、`setup.cfg`）；新写的测试文件不算。交付时单列给人看，自动写回的规则不要放过它们 |
+| 改动集里有什么 | 判定树里和底提交内容不同的文件：新增（`add`）或修改（`modify`）。没动的底文件、SDK 自己的路径（`.harness/` 下的资料、草稿、落选产出）不在里面。`test: true` = 改了底里**已有的**测试文件，或新增 / 修改测试配置（`conftest.py`、`pytest.ini`、`tox.ini`、`.coveragerc`、`pyproject.toml`、`setup.cfg`）；新写的测试文件不算。交付时单列给人看，自动写回的规则不要放过它们 |
 | 不能写回的 | `refused` 写着原因：底拍快照时扣留过的路径（`withheld:<原因>`）、凭据文件名（`secret_name`）、内容像密钥（`secret_content`；按通用模式判，解析 PEM 的代码、示例 `Bearer` 串也会被拦，这类文件请人手动处理）、与底里已有路径只差大小写（`case_conflict`）。它们照样在交付提交和 diff 里，只是不写回。路径本身不合法的（带换行、引号开头、git 不收的写法，`invalid_path`）只列出来，不进交付提交、没有 diff |
 | 看 diff | `delivery()` 给每个文本文件附相对底的 unified diff（工作仓库里两个提交之间算，不走用户的外部 diff 配置）；二进制或超过 512 KiB 的文件、超过 20 万字符的 diff 不附（`diff_omitted`） |
 | 谁能写回 | 只有宿主：人点了，或宿主自己的档位规则。模型没有这个工具。任务完成（`COMPLETED`）后才能写，否则 `delivery_not_ready` |

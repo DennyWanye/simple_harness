@@ -348,7 +348,7 @@ def test_all_writers_barrier_and_expiry(tmp_path):
             world.control.register_source(
                 {
                     "mission_id": mission_id,
-                    "path": "sources/spec.md",
+                    "path": ".harness/sources/spec.md",
                     "content": "# 规格\n",
                     "kind": "markdown",
                     "idempotency_key": "findings-f08-source",
@@ -1043,7 +1043,7 @@ def test_each_product_writer_class_moves_the_barrier_in_its_own_transaction(tmp_
                     world.control.register_source(
                         {
                             "mission_id": mission_id,
-                            "path": "sources/spec.md",
+                            "path": ".harness/sources/spec.md",
                             "content": "# 规格 v1\n",
                             "kind": "markdown",
                             "idempotency_key": "f08-src-1",
@@ -1055,7 +1055,7 @@ def test_each_product_writer_class_moves_the_barrier_in_its_own_transaction(tmp_
                 proposal = world.control.supersede_source(
                     {
                         "mission_id": mission_id,
-                        "path": "sources/spec.md",
+                        "path": ".harness/sources/spec.md",
                         "content": "# 规格 v2\n",
                         "kind": "markdown",
                         "idempotency_key": "f08-src-2",

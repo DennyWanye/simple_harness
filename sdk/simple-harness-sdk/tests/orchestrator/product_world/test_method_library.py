@@ -772,7 +772,7 @@ def test_a_mission_with_registered_sources_promotes_nothing(tmp_path):
             world.control.register_source(
                 {
                     "mission_id": created["mission_id"],
-                    "path": "sources/ref.md",
+                    "path": ".harness/sources/ref.md",
                     "idempotency_key": "ref-1",
                     "content": "参考：三条要点。",
                     "kind": "markdown",

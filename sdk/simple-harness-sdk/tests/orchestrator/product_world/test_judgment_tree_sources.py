@@ -37,7 +37,7 @@ def test_the_judgment_tree_carries_the_current_sources(tmp_path):
             world.control.register_source(
                 {
                     "mission_id": mission_id,
-                    "path": "sources/spec.md",
+                    "path": ".harness/sources/spec.md",
                     "content": SPEC,
                     "kind": "markdown",
                     "idempotency_key": "reg-spec",
@@ -47,15 +47,15 @@ def test_the_judgment_tree_carries_the_current_sources(tmp_path):
             assert str(mission.status.value) == "COMPLETED", mission.final_report
             # 判定时系统在 CAS 里读回现行资料，和产物一起放进判定树
             assert world.loop._current_source_files(mission) == {
-                "sources/spec.md": SPEC.encode("utf-8")
+                ".harness/sources/spec.md": SPEC.encode("utf-8")
             }
             [tree] = [
                 p for p in (tmp_path / "root").rglob(f"{mission_id}-judge-*-verify") if p.is_dir()
             ]
             assert (tree / "notes/a.md").is_file()
-            assert (tree / "sources/spec.md").is_file(), sorted(
+            assert (tree / ".harness/sources/spec.md").is_file(), sorted(
                 str(p.relative_to(tree)) for p in tree.rglob("*")
             )
-            assert (tree / "sources/spec.md").read_text(encoding="utf-8") == SPEC
+            assert (tree / ".harness/sources/spec.md").read_text(encoding="utf-8") == SPEC
 
     asyncio.run(case())

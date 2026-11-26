@@ -59,7 +59,7 @@ def test_source_mission_accepts_disjoint_publish_directory(tmp_path):
         world.control.register_source(
             {
                 "mission_id": created["mission_id"],
-                "path": "sources/a.md",
+                "path": ".harness/sources/a.md",
                 "content": "原文。",
                 "kind": "markdown",
                 "idempotency_key": "a",
@@ -80,7 +80,7 @@ def test_source_storage_validation_uses_current_deployment_after_reopen(tmp_path
             second.control.register_source(
                 {
                     "mission_id": mission_id,
-                    "path": "sources/a.md",
+                    "path": ".harness/sources/a.md",
                     "content": "原文。",
                     "kind": "markdown",
                     "idempotency_key": "a",
@@ -99,7 +99,7 @@ def test_source_case_alias_reads_keep_the_untrusted_marker(tmp_path, view):
 
     async def case():
         manager = WorkspaceManager(tmp_path / "workspaces")
-        manager.create("attempt", seed={"SOURCES/NOTES.MD": "外部原文。"})
+        manager.create("attempt", seed={".HARNESS/SOURCES/NOTES.MD": "外部原文。"})
         manager.verification_copy("attempt")
         gateway = WorkspaceToolGateway(manager)
         gateway.bind(
@@ -109,12 +109,14 @@ def test_source_case_alias_reads_keep_the_untrusted_marker(tmp_path, view):
                 view,
                 view == "work",
                 ("workspace_read_file",),
-                untrusted_sources=("sources/notes.md",),
-                protected_prefixes=("sources/",),
+                untrusted_sources=(".harness/sources/notes.md",),
+                protected_prefixes=(".harness/sources/",),
             ),
         )
         result = await gateway.execute(
-            ToolCall(CallId("read"), "workspace_read_file", {"path": "./SOURCES/NOTES.MD"}),
+            ToolCall(
+                CallId("read"), "workspace_read_file", {"path": "./.HARNESS/SOURCES/NOTES.MD"}
+            ),
             {"run_id": "reader"},
         )
         assert result.value["content"] == "外部原文。"

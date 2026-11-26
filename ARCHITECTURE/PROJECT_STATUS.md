@@ -1,3 +1,5 @@
+最后更新：2026-11-26（SDK 自己的路径搬到 `.harness/`，P2b 第 1 项，分支 `sdk/harness-root`，未发版）。资料根 `sources/` → `.harness/sources/`、草稿 `.harness/scratch/` 不交付、判定树落选产出 `.harness/accepted-outputs/`；Swift 包仓库根目录的 `Sources/` 不再被当成 SDK 保留路径扣留。
+
 最后更新：2026-11-26（有底的任务交付：改动集与写回，issue #53，分支 `sdk/delivery`，未发版）。P1（#51，PR #52 已合并）让任务在「底提交」上干活；这一段把结果交回去：判定时给出相对底的改动集（`final_report.change_set`，测试改动单列、不能写回的标原因），宿主 `delivery()` 看 diff、`apply_delivery()` 逐文件三方比对写回（冲突不写、同一操作键不重放、写完复核），`GitRepoBase` 只写工作目录、不碰 `.git`。删除工具、步骤间同一底文件的合并、`.harness/` 保留根在 P2b。
 
 最后更新：2026-11-26（后台任务在「底提交」上干活，issue #51，分支 `sdk/workspace-base`，未发版）。宿主 OneOneTalk 真机局里任务工作区是空的、验收副本没有用户仓库原有文件；宿主现在可以给 SDK 一个底，建任务时拍成 SDK 自管 git 仓库里的提交，执行、验收、判定树、规划器都在「底 + 本任务改动」上，只登记真改动。设计 `plans/2026-11-26-workspace-base/`（P1；交付改动集与写回在 P2）。细节见 `AGENT_ORCHESTRATION.md` 同日条目。
