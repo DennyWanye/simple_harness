@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
 import re
 import tempfile
@@ -40,11 +41,14 @@ from .workspace_base import (
     git_blob_id,
 )
 
-#: 测试文件：按文件名，或放在测试目录里
+logger = logging.getLogger(__name__)
+
+#: 测试文件：按文件名，或放在测试目录里；改了能左右测试结果的配置也算
 _TEST_NAME = re.compile(
     r"^(test_.+\.py|.+_test\.(py|go)|.+\.(test|spec)\.[cm]?[jt]sx?|.+Tests?\.(swift|kt|java))$"
 )
 _TEST_DIRS = frozenset({"tests", "test", "__tests__", "spec"})
+_TEST_CONFIG = frozenset({"conftest.py", "pytest.ini", "tox.ini", ".coveragerc"})
 _OPERATION_KEY = re.compile(r"^[\x21-\x7e]{1,200}$")
 
 
@@ -68,6 +72,8 @@ class Produced:
 
 def is_test_path(path: str) -> bool:
     posix = PurePosixPath(path)
+    if posix.name in _TEST_CONFIG:
+        return True
     return bool(_TEST_NAME.fullmatch(posix.name)) or any(
         part in _TEST_DIRS for part in posix.parts[:-1]
     )
@@ -86,17 +92,25 @@ def _case_spellings(paths: Iterable[str]) -> dict[str, str]:
 
 
 def _refusal(
-    path: str, *, exists: bool, withheld: Mapping[str, str], spellings: Mapping[str, str]
+    path: str,
+    data: bytes,
+    *,
+    exists: bool,
+    withheld: Mapping[str, str],
+    spellings: Mapping[str, str],
+    is_secret: Callable[[str], bool] | None,
 ) -> str | None:
-    """这个改动为什么不能写回（None = 可以写）。"""
+    """这个改动为什么不能写回（None = 可以写）。``invalid_path`` / ``ignored`` 的不进交付提交。"""
 
-    if path in withheld:
-        return f"withheld:{withheld[path]}"
     problem = _path_problem(path)
     if problem is not None:
         return problem
+    if path in withheld:
+        return f"withheld:{withheld[path]}"
     if _secret_name(path):
         return "secret_name"
+    if is_secret is not None and _readable(data) and is_secret(data.decode("utf-8")):
+        return "secret_content"
     if not exists:
         parts = PurePosixPath(path).parts
         for depth in range(1, len(parts) + 1):
@@ -114,12 +128,14 @@ def build_change_set(
     *,
     reserved: Sequence[str],
     superseded: Mapping[str, Sequence[str]] | None = None,
+    is_secret: Callable[[str], bool] | None = None,
 ) -> dict[str, Any]:
     """改动集：``produced`` 里和底提交不同的文件（SDK 自己的保留路径不算交付）。
 
     ``base`` 是任务行里的底记录（``final_report["workspace_base"]``）；``superseded`` 是判定树
-    里被覆盖掉的版本（路径 → 那些步骤），照实写进改动集。全部改动（含不能写回的）叠成交付提交，
-    它就是判定树验过的那棵树。"""
+    里被覆盖掉的版本（路径 → 那些步骤），照实写进改动集；``is_secret`` 判内容像不像密钥。改动
+    （含不能写回的，路径本身不合法的除外）叠成交付提交：判定树 = 底 + 种子 + 资料 + 这些改动，种子与
+    资料不交付。"""
 
     base_commit = str(base["commit"])
     manifest = bases.manifest(base_commit)
@@ -136,7 +152,17 @@ def build_change_set(
         blob = git_blob_id(item.data)
         if entry is not None and entry.blob == blob:
             continue
-        changed[item.path] = item.data
+        refused = _refusal(
+            item.path,
+            item.data,
+            exists=entry is not None,
+            withheld=withheld,
+            spellings=spellings,
+            is_secret=is_secret,
+        )
+        if refused not in {"invalid_path", "ignored"}:
+            # 路径不合法的（带换行、引号开头……）进不了提交，也不会写回，只列出来
+            changed[item.path] = item.data
         files.append(
             {
                 "path": item.path,
@@ -152,9 +178,7 @@ def build_change_set(
                 "artifact_id": item.artifact_id,
                 "task_id": item.task_id,
                 "overridden_steps": overridden.get(item.path, []),
-                "refused": _refusal(
-                    item.path, exists=entry is not None, withheld=withheld, spellings=spellings
-                ),
+                "refused": refused,
             }
         )
     commit = bases.commit_on(
@@ -165,6 +189,8 @@ def build_change_set(
     return {
         "base_commit": base_commit,
         "commit": commit,
+        # 这个底的身份：写回时核对，不写进别的项目
+        "location": dict(base.get("source") or {}).get("location"),
         "files": files,
         "counts": {
             "files": len(files),
@@ -179,7 +205,8 @@ def build_change_set(
 def delivery_diff(bases: BaseRepo, change_set: Mapping[str, Any], path: str) -> str:
     """改动集里一个文件相对底的 unified diff；不在改动集里的路径抛 ``KeyError``。"""
 
-    if not any(item["path"] == path for item in change_set.get("files", ())):
+    entry = next((item for item in change_set.get("files", ()) if item["path"] == path), None)
+    if entry is None or entry["refused"] in {"invalid_path", "ignored"}:
         raise KeyError(path)
     return bases.diff(str(change_set["base_commit"]), str(change_set["commit"]), path)
 
@@ -196,6 +223,12 @@ def apply_change_set(
     每个文件一条回执：``status`` 见 :class:`~.workspace_base.FileWrite`；写了的再按现状复核，
     核不上记 ``failed``（``verify_mismatch``）——不把没落地的说成写了。"""
 
+    location = change_set.get("location")
+    if location is None or location != target.location():
+        raise DeliveryRefused(
+            "delivery_target_mismatch",
+            f"这个交付拍自 {location!r}，现在接的底是 {target.location()!r}：不写",
+        )
     entries = {str(item["path"]): item for item in change_set.get("files", ())}
     if paths is None:
         chosen = sorted(entries)
@@ -246,7 +279,11 @@ def apply_change_set(
         )
     applied = [row["path"] for row in receipt if row["status"] == "applied"]
     if applied:
-        now = target.current_hashes(applied)
+        try:
+            now = dict(target.current_hashes(applied))
+        except Exception as error:  # noqa: BLE001 - 复核读不出来：不能说写成了
+            logger.debug("delivery_verify_failed", exc_info=True)
+            now = {path: f"!verify_failed: {type(error).__name__}" for path in applied}
         for row in receipt:
             if row["status"] == "applied" and now.get(row["path"]) != row["blob"]:
                 row["status"] = "failed"
@@ -270,15 +307,28 @@ class DeliveryLedger:
             "w", dir=path.parent, delete=False, encoding="utf-8", suffix=".tmp"
         ) as out:
             json.dump(body, out, ensure_ascii=False, sort_keys=True)
+            out.flush()
+            os.fsync(out.fileno())
         os.replace(out.name, path)
+        directory = os.open(path.parent, os.O_RDONLY)
+        try:
+            os.fsync(directory)
+        finally:
+            os.close(directory)
 
     def receipts(self, mission_id: str) -> list[dict[str, Any]]:
         """这个任务做完的写回回执，按时间先后。"""
 
         found = []
         for path in sorted(self.root.glob("*.json")) if self.root.is_dir() else ():
-            record = json.loads(path.read_text(encoding="utf-8"))
-            if record.get("state") == "done" and record["params"]["mission_id"] == mission_id:
+            try:
+                record = json.loads(path.read_text(encoding="utf-8"))
+                done = record.get("state") == "done"
+                mine = done and record["params"]["mission_id"] == mission_id
+            except (OSError, ValueError, KeyError, TypeError, AttributeError):
+                logger.warning("delivery_ledger_record_unreadable: %s", path.name)
+                continue
+            if mine:
                 found.append(dict(record["receipt"]))
         return sorted(found, key=lambda receipt: (receipt["at_ms"], receipt["operation_key"]))
 
@@ -286,7 +336,13 @@ class DeliveryLedger:
         path = self._file(operation_key)
         if not path.is_file():
             return None
-        return dict(json.loads(path.read_text(encoding="utf-8")))
+        try:
+            return dict(json.loads(path.read_text(encoding="utf-8")))
+        except (OSError, ValueError, TypeError) as error:
+            raise DeliveryRefused(
+                "delivery_ledger_unreadable",
+                f"这个操作键的写回记录读不了（{type(error).__name__}）：先查明再写，不盲目重做",
+            ) from error
 
     def apply(
         self,

@@ -1846,7 +1846,9 @@ class OrchestrationHost:
         for item in change["files"]:
             row = dict(item)
             row["diff"] = None
-            if not item.get("readable"):
+            if item.get("refused") in {"invalid_path", "ignored"}:
+                row["diff_omitted"] = "invalid_path"  # 路径不合法，不在交付提交里
+            elif not item.get("readable"):
                 row["diff_omitted"] = "binary_or_large"
             else:
                 text = delivery_diff(self._bases(), change, str(item["path"]))
@@ -1883,6 +1885,12 @@ class OrchestrationHost:
             raise HostRequestError(
                 "delivery_unsupported", "这个宿主的底不能写回（没有实现 WritableBase）"
             )
+        if change.get("location") is None or change.get("location") != target.location():
+            raise HostRequestError(
+                "delivery_target_mismatch",
+                f"这个任务的底拍自 {change.get('location')!r}，"
+                f"宿主现在接的是 {target.location()!r}：不写",
+            )
         known = {str(item["path"]) for item in change["files"]}
         if paths is not None and (
             not isinstance(paths, list) or not all(isinstance(path, str) for path in paths)
@@ -1900,6 +1908,11 @@ class OrchestrationHost:
             )
         except DeliveryRefused as error:
             raise HostRequestError(error.code, str(error)) from error
+        except (BaseError, OSError) as error:
+            # 读交付内容、写账本出错：账本留在「已占」，同一个键重调时三方比对认得出写过的文件
+            raise HostRequestError(
+                "delivery_failed", f"写回没做完（{type(error).__name__}）：{error}"
+            ) from error
         return {**receipt, "commit": change["commit"]}
 
     def assurance_root_diagnostic(self) -> dict[str, Any]:

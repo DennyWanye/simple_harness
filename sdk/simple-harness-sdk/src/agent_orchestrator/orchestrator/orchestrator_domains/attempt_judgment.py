@@ -14,9 +14,9 @@ from typing import TYPE_CHECKING, Any, cast
 
 from simple_harness.agents import AgentConfig, AgentLimits
 
+from ...artifacts.delivery import Produced, build_change_set
 from ...artifacts.store import ArtifactStoreError, read_verified
 from ...artifacts.versioning import ArtifactConflict, UpstreamInput
-from ...artifacts.delivery import Produced, build_change_set
 from ...artifacts.workspace_base import (
     RESERVED_BASE_PREFIXES,
     BaseError,
@@ -50,6 +50,7 @@ from ...governance.policies import effective_tools
 from ...graph.eligibility import EligiblePrimitiveTask
 from ...graph.projection_validation import GraphIntegrityError
 from ...graph.terminal import accepted_tasks
+from ...observability.secrets import find_secrets
 from ...runtime.action_schema import ACTION_PREFIX
 from ...runtime.agent_worker import user_message_json
 from ...runtime.first_request_budget import FirstRequestBudget
@@ -952,6 +953,7 @@ class AttemptJudgmentMixin(OrchestratorCore):
                 superseded={
                     str(row["path"]): list(row["superseded_task_ids"]) for row in superseded
                 },
+                is_secret=lambda text: bool(find_secrets(text)),
             )
         except (ArtifactConflict, ArtifactStoreError, BaseError) as error:
             logger.debug("change_set_failed", exc_info=True)

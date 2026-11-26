@@ -133,7 +133,12 @@ class WritableBase(Protocol):
     """能把交付写回去的底。blob 号是 git 的（见 :func:`git_blob_id`），没有这个文件为 None。
 
     ``write_file`` 自己做比对：现状 == 新内容 → ``already``；现状 == ``expected`` → 写；
-    其他 → ``conflict``，不写。路径经过软链、与已有文件只差大小写的，一律 ``refused``。"""
+    其他 → ``conflict``，不写。路径经过软链、与已有文件只差大小写的，一律 ``refused``。
+
+    ``location()`` 是这个底的身份（例如目录的真实路径）；适配器拍底时要把同一个值记进
+    ``BaseCapture.source["location"]``，写回时 SDK 核对两者一致，不把一个项目的交付写进另一个。"""
+
+    def location(self) -> str: ...
 
     def current_hashes(self, paths: Sequence[str]) -> Mapping[str, str | None]: ...
 
@@ -148,22 +153,22 @@ def git_blob_id(data: bytes) -> str:
     return hashlib.sha1(b"blob %d\0" % len(data) + data, usedforsecurity=False).hexdigest()
 
 
-def _exact_case(root: Path, relative: str) -> bool:
-    """路径上已经存在的每一级，名字的大小写与要写的一致（不区分大小写的文件系统上，
-    只差大小写的名字会落到别人的文件上）。"""
+def _spelling_problem(root: Path, relative: str) -> str | None:
+    """路径上已经存在的每一级，名字的大小写与要写的一致（不区分大小写的文件系统上，只差大小写的
+    名字会落到别人的文件上），且上级都是目录。"""
 
     current = root
     for part in PurePosixPath(relative).parts:
         try:
             names = os.listdir(current)
         except FileNotFoundError:
-            return True
+            return None
         except NotADirectoryError:
-            return False
+            return "not_a_directory"
         if part not in names and any(name.casefold() == part.casefold() for name in names):
-            return False
+            return "case_conflict"
         current = current / part
-    return True
+    return None
 
 
 @dataclass(frozen=True, slots=True)
@@ -262,8 +267,11 @@ class DirectoryBase:
                 if target.is_symlink() or target.is_file():
                     yield target.relative_to(self.root).as_posix()
 
+    def location(self) -> str:
+        return os.path.realpath(self.root)
+
     def _source(self) -> dict[str, str]:
-        return {"kind": "directory"}
+        return {"kind": "directory", "location": self.location()}
 
     def capture(self, scope: Sequence[str]) -> BaseCapture:
         files: list[BaseFile] = []
@@ -298,8 +306,9 @@ class DirectoryBase:
             return FileWrite("refused", None, "invalid_path")
         if _through_link(self.root, path):
             return FileWrite("refused", None, "symlink")
-        if not _exact_case(self.root, path):
-            return FileWrite("refused", None, "case_conflict")
+        spelling = _spelling_problem(self.root, path)
+        if spelling is not None:
+            return FileWrite("refused", None, spelling)
         try:
             current = self._current(path)
         except (OSError, ArtifactStoreError) as error:
@@ -326,9 +335,13 @@ class DirectoryBase:
             with os.fdopen(handle, "wb") as out:
                 out.write(data)
             os.chmod(temporary, mode)
+            # 比对之后到这里，使用方可能刚存了盘：改名前再比一次，把窗口缩到改名那一下
+            now = self._current(path)
+            if now != current:
+                return FileWrite("conflict", now)
             os.replace(temporary, target)
             temporary = None
-        except OSError as error:
+        except (OSError, ArtifactStoreError) as error:
             return FileWrite("failed", current, f"write_failed: {type(error).__name__}")
         finally:
             if temporary is not None:
@@ -380,7 +393,8 @@ class GitRepoBase(DirectoryBase):
     def _source(self) -> dict[str, str]:
         done = self._run("rev-parse", "--verify", "-q", "HEAD")
         head = done.stdout.decode().strip() if done.returncode == 0 else ""
-        return {"kind": "git", "head": head} if head else {"kind": "git"}
+        source = {"kind": "git", "location": self.location()}
+        return {**source, "head": head} if head else source
 
 
 class InMemoryBase:
@@ -395,7 +409,10 @@ class InMemoryBase:
     ) -> None:
         self.files = dict(files)
         self.executable = frozenset(executable)
-        self.source = dict(source or {"kind": "memory"})
+        self.source = dict(source or {"kind": "memory", "location": "memory"})
+
+    def location(self) -> str:
+        return str(self.source.get("location", "memory"))
 
     def capture(self, scope: Sequence[str]) -> BaseCapture:
         return BaseCapture(
@@ -574,6 +591,10 @@ class BaseRepo:
         """在 ``parent`` 上叠一组文件（新增或整份替换），提交人、时间固定：同样的改动得到同一个
         提交号。引用 ``refs/harness/delivery/<提交号>`` 保住它。"""
 
+        for path in files:
+            # 路径原样进 fast-import 流：换行、引号开头的名字会被 git 读成别的命令
+            if _path_problem(path) is not None:
+                raise BaseError("base_repo_failed", f"交付提交不收这个路径：{path!r}")
         self.ensure()
         executable = frozenset(executable)
         temporary = f"refs/harness/import/{uuid.uuid4().hex}"
@@ -590,8 +611,14 @@ class BaseRepo:
         stream += b"done\n"
         self._git("fast-import", "--quiet", "--done", input=bytes(stream))
         commit = self._git("rev-parse", "--verify", temporary).decode().strip()
-        self._git("update-ref", f"refs/harness/delivery/{commit}", commit)
         self._git("update-ref", "-d", temporary)
+        # 写完核对：交付提交 = 父提交的树叠上这些文件，一个不多、一个不少、字节一致
+        expected = {path: blob for path, (blob, _mode) in self._tree(parent).items()}
+        expected.update({path: git_blob_id(data) for path, data in files.items()})
+        got = {path: blob for path, (blob, _mode) in self._tree(commit).items()}
+        if got != expected:
+            raise BaseError("base_repo_failed", "交付提交与要写的文件对不上")
+        self._git("update-ref", f"refs/harness/delivery/{commit}", commit)
         return commit
 
     def diff(self, old: str, new: str, path: str) -> str:

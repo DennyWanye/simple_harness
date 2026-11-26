@@ -175,3 +175,85 @@ def test_a_mission_without_a_base_has_no_change_set(tmp_path):
             assert refused.value.code == "no_delivery"
 
     asyncio.run(case())
+
+
+INJECTED = "ledger/zz\ndata 0\n\nM 100644 inline ledger/money.py"
+SHOWN = "def cents(text):\n    return round(float(text) * 100)  # harmless\n"
+REAL = "import os\nos.system('echo pwned')\n"
+
+
+def _injecting_worker(request):
+    """核验第一轮的整局复现：money.py 写成一份，再用带换行的文件名
+    想让交付提交里显示另一份。"""
+
+    from agent_orchestrator.testing.fixtures import package_of
+
+    outputs = list(package_of(request).get("task_contract", {}).get("outputs") or [])
+    written = sum(1 for message in request.messages if "tool" in str(message.role).lower())
+    if written == len(outputs):
+        return ("workspace_write_file", {"path": INJECTED, "content": SHOWN})
+    reply = worker_reply(request)
+    if isinstance(reply, tuple) and reply[0] == "workspace_write_file":
+        path = reply[1]["path"]
+        content = {"ledger/money.py": REAL}.get(path, "x = 1\n")
+        return ("workspace_write_file", {"path": path, "content": content})
+    return reply
+
+
+def test_what_the_person_sees_is_what_gets_written(tmp_path):
+    user = _user_repo(tmp_path / "user")
+
+    async def case():
+        provider = LayeredScriptedProvider(worker=_injecting_worker)
+        async with _host(
+            tmp_path / "root", provider=provider, workspace_base=GitRepoBase(user)
+        ) as host:
+            mission_id = await _finished(host)
+            view = host.delivery(mission_id)
+            files = {item["path"]: item for item in view["files"]}
+            if INJECTED in files:  # 这个名字被工作区收下了：它不能写回、也不进交付提交
+                assert files[INJECTED]["refused"] == "invalid_path"
+                assert files[INJECTED]["diff"] is None
+            # 人看到的 money.py 的 diff，就是要写进去的那一份
+            assert "+os.system('echo pwned')" in files["ledger/money.py"]["diff"]
+            assert "harmless" not in files["ledger/money.py"]["diff"]
+            receipt = host.apply_delivery(mission_id, operation_key="k", paths=["ledger/money.py"])
+            assert [row["status"] for row in receipt["files"]] == ["applied"]
+            assert (user / "ledger/money.py").read_text() == REAL
+
+    asyncio.run(case())
+
+
+def test_only_a_completed_mission_is_written_back_and_only_to_its_own_base(tmp_path):
+    user = _user_repo(tmp_path / "user")
+    other = _user_repo(tmp_path / "other")
+
+    async def case():
+        provider = LayeredScriptedProvider(worker=_worker)
+        async with _host(
+            tmp_path / "root", provider=provider, workspace_base=GitRepoBase(user)
+        ) as host:
+            mission_id = await _finished(host)
+            real = host.snapshot
+
+            def failed(mid):
+                snapshot = real(mid)
+                snapshot["snapshot"]["mission"]["status"] = "FAILED"
+                return snapshot
+
+            host.snapshot = failed
+            with pytest.raises(HostRequestError) as not_ready:
+                host.apply_delivery(mission_id, operation_key="k")
+            assert not_ready.value.code == "delivery_not_ready"
+            del host.snapshot
+        # 同一个数据目录换了项目开宿主：这个任务的交付不写进别的仓库
+        async with _host(
+            tmp_path / "root", provider=provider, workspace_base=GitRepoBase(other)
+        ) as host:
+            with pytest.raises(HostRequestError) as mismatch:
+                host.apply_delivery(mission_id, operation_key="k2")
+            assert mismatch.value.code == "delivery_target_mismatch"
+            assert not (other / "ledger/cli.py").exists()
+            assert host._deliveries().get("k2") is None  # 没开始写，账本里不留「已占」
+
+    asyncio.run(case())
