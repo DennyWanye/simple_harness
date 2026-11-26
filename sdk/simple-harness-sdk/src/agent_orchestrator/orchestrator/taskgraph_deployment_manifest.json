@@ -1,6 +1,6 @@
 {
   "acceptance_evidence": null,
-  "deployment_id": "30407a0bb911955010a4bbfdf8a09f1dcec27e0764aaeed36bc5252aad73a4eb",
+  "deployment_id": "2467c83985c24e65195ade1575fb9fee05ad980daa0b053031a467e7bd6dcfe1",
   "schema": "taskgraph-htn-wiring-derivation-v1",
   "source_files": {
     "agent_orchestrator/__init__.py": "eb50152258b356bc7866e55823fc45c7209cb6150efe205dd03c40c33beedbc2",
@@ -284,7 +284,7 @@
     "agent_orchestrator/orchestrator/operation_runtime.py": "b8f22be6643d7cb86f051e05c349b4a6968cb7cfae8cb390faf392b423d67171",
     "agent_orchestrator/orchestrator/orchestrator_domains/__init__.py": "8ce8f578f5d705eb6bdfd5f2561553d2b772ae0bad54ce6746c01ba21cfc6f0c",
     "agent_orchestrator/orchestrator/orchestrator_domains/attempt_collection.py": "d4c57585ecc0cd63d203e338173b8ca3ae64c2ede6846e8e464afad301a506dc",
-    "agent_orchestrator/orchestrator/orchestrator_domains/attempt_dispatch.py": "19a63cdbae90567192fee1691624d164a096e36c80a9c1c37ddf5a5167bf3a55",
+    "agent_orchestrator/orchestrator/orchestrator_domains/attempt_dispatch.py": "bf7f95af8718dcccea54e5dd51e0b2abb28fda6fb537d6885842aa2508c82bce",
     "agent_orchestrator/orchestrator/orchestrator_domains/attempt_judgment.py": "ebe5a9e7b1f4389d6258816e6d6249bc50e4ed26dd05f9deaf771ce73f352e8a",
     "agent_orchestrator/orchestrator/orchestrator_domains/core.py": "45ddc14561dd6e87fde9f4a488ff23f6a1a9543323f56973256ee29141d7082d",
     "agent_orchestrator/orchestrator/orchestrator_domains/cycle.py": "7696db1c65fc7dad13c84e154f2aa7c78cc043602719d81899a041f16bacc062",

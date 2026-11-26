@@ -578,9 +578,7 @@ class AttemptDispatchMixin(OrchestratorCore):
         base_commit = mission_base_commit(mission.final_report)
         try:
             base = (
-                {}
-                if base_commit is None
-                else self.assembled.workspaces.bases.manifest(base_commit)
+                {} if base_commit is None else self.assembled.workspaces.bases.manifest(base_commit)
             )
         except BaseError as error:
             raise WorkspaceError(f"base_unreadable: {error}") from error
