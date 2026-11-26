@@ -225,7 +225,7 @@ class AttemptJudgmentMixin(OrchestratorCore):
             base_merges=[
                 {"path": item.path, **item.facts.to_json()}
                 for item in tree
-                if item.facts.merged_steps or item.facts.merge_skipped not in (None, "no_base")
+                if item.facts.merged_steps or item.facts.merge_skipped is not None
             ],
         )
         if superseded:

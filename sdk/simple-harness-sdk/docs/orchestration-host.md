@@ -974,7 +974,7 @@ host.base  # {"enabled": True, "git": "2.54.0"}；没有 git 2.38+ 时 enabled=F
 
 拼写歧义按路径列一条 `refused: "path_spelling"`。判定事件、改动集和 `host.delivery()` 都在 `refused_proposals` 数组中逐项给出被拒提议的 `task_id` 和 `artifact_id`。底里已有的条目报告原 blob、SHA-256 和大小，新增拼写的这三个字段均为 `null`。宿主省略这些条目的 diff，每个点名或全量写回的路径各有一条拒写回执。其他文件照常交付。
 
-有多个不同内容时，`merge_skipped` 给出原因。无底为 `no_base`（仅判定事件），底中无该路径为 `added`，不可读文本为 `binary`，继承、重试或缺少冻结起点证明为 `lineage`，Git 冲突为 `conflict`，拼写歧义为 `path_spelling`。冲突输出整体丢弃。`merge_conflict` 列出冲突涉及的步骤，`overridden_steps` 列出与胜出字节不同的落选步骤。选回底字节时，该路径的原因和覆盖名单进入改动集及宿主视图的 `unchanged_merge_facts`，不计入改动文件数。派发前发现写入目标与上游输入冲突时，仍可交给规划器处理。
+有多个不同内容时，`merge_skipped` 给出原因（没有底的任务不加这个字段，判定事件与以前相同）：底中无该路径为 `added`，不可读文本为 `binary`，继承、重试或缺少冻结起点证明为 `lineage`，Git 冲突为 `conflict`，拼写歧义为 `path_spelling`。冲突输出整体丢弃。`merge_conflict` 列出冲突涉及的步骤，`overridden_steps` 列出与胜出字节不同的落选步骤。选回底字节时，该路径的原因和覆盖名单进入改动集及宿主视图的 `unchanged_merge_facts`，不计入改动文件数。派发前发现写入目标与上游输入冲突时，仍可交给规划器处理。SDK 自己合并产生的冲突标记从不写进任何文件；但某个步骤自己写出、并已通过验收的文件里若本来就含 `<<<<<<<` 这类文本（例如讲 git 的文档），SDK 当作正常内容交付，不另行拦截。已知未修（另开一项）：写回检查只按大小写比对目录名，任务结束后使用方把目录换成只差 Unicode 规范化写法的同名目录时，文件会写进新目录；有底任务的 `file:` 条件用另一种大小写写法也会判满足。
 
 ```python
 view = host.delivery(mission_id)

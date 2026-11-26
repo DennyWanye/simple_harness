@@ -73,7 +73,8 @@ def _select_file(
     if len({artifact.content_hash for _, _, artifact, _ in placements}) == 1:
         return original()
     if repo is None:
-        return original("no_base")
+        # 没有底的任务：判定事件与以前逐字相同，不加任何合并字段
+        return original()
     if entry is None:
         return original("added")
     if not entry.readable:

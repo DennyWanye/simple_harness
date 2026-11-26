@@ -388,7 +388,8 @@ def test_ambiguous_spelling_is_reported(tmp_path, monkeypatch, path, alias):
     }
 
 
-def test_no_base_records_why_the_original_winner_was_kept(tmp_path, monkeypatch):
+def test_no_base_keeps_the_event_exactly_as_before(tmp_path, monkeypatch):
+    # 核验第三轮：没有底的任务，判定事件的形状与 main 逐字相同（不加 merge_skipped）
     tree, event, _ = judge(tmp_path, monkeypatch, None, [LEFT, RIGHT])
     assert (tree / PATH).read_bytes() == RIGHT
     assert set(event) == {
@@ -408,10 +409,8 @@ def test_no_base_records_why_the_original_winner_was_kept(tmp_path, monkeypatch)
         "kept_content_hash",
         "kept_by",
         "superseded_task_ids",
-        "merge_skipped",
         "superseded",
     }
-    assert record["merge_skipped"] == "no_base"
     assert record["kept_by"] == "acceptance_order" and record["superseded_task_ids"] == ["t0"]
 
 
