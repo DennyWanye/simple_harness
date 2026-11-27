@@ -56,7 +56,7 @@ from simple_harness.tools.schema import ArgumentsValidationError, validate_argum
 
 from ..artifacts.paths import under_prefix
 from ..artifacts.workspace import Workspace, WorkspaceError, WorkspaceManager
-from ..artifacts.workspace_base import HARNESS_ROOT
+from ..artifacts.workspace_base import HARNESS_ROOT, is_secret_name
 from .sandbox import ExecutionReceipt, ProcessOnlyExecutor, SandboxExecutorPort, SandboxSpec
 
 TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
@@ -1170,6 +1170,15 @@ class WorkspaceToolGateway:
             # escapes raise WorkspaceError here, before any effect
             _attempt_workspace(workspace).resolve(path)
             canonical = _canonical(path)
+            if call.name == "workspace_write_file" and is_secret_name(canonical):
+                return self._reject(
+                    call,
+                    record,
+                    code="secret_name",
+                    outcome="secret_name",
+                    stage="policy",
+                    message="凭据文件请由用户自行处理。工作区写工具拒绝写入此路径。",
+                )
             if _under(canonical, binding.denied_prefixes):
                 return self._reject(
                     call,

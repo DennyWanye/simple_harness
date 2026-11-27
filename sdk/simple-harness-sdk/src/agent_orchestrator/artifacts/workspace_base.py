@@ -1251,7 +1251,7 @@ def _git_alias(part: str) -> bool:
     return part.casefold() != ".git" and folded in {".git", "git~1"}
 
 
-def _secret_name(path: str) -> bool:
+def is_secret_name(path: str) -> bool:
     name = PurePosixPath(path).name
     return any(pattern.fullmatch(name) for pattern in SECRET_NAME_PATTERNS)
 
@@ -1284,7 +1284,7 @@ def capture_base(
             withheld[item.path] = problem
         elif under_prefix(item.path.casefold(), tuple(r.casefold() for r in reserved)):
             withheld[item.path] = "reserved_path"
-        elif _secret_name(item.path):
+        elif is_secret_name(item.path):
             withheld[item.path] = "secret_name"
         else:
             candidates[item.path] = item

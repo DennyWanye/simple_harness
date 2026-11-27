@@ -1,11 +1,6 @@
 {
-  "acceptance_evidence": {
-    "gate_run_at": "2026-11-27T17:27:10+00:00",
-    "gate_sha256": "edc05259040051ce4e1f30e5ae3ff6db6bd3c7885632cf268078e30661942ff9",
-    "gate_status": "PASS",
-    "source_files_sha256": "fb0a2860fef16f8fe4bec974b7c3d0d17b51b247cc04cb2ff23a5e09ce270564"
-  },
-  "deployment_id": "e78b1045b1d96a8765a7d1d357aa0e600b523e3b658dae71dd57b57e37f89333",
+  "acceptance_evidence": null,
+  "deployment_id": "72565ff3691e85a2994788d0236004c6594df39327737a63e3634ea14c83aec2",
   "schema": "taskgraph-htn-wiring-derivation-v1",
   "source_files": {
     "agent_orchestrator/__init__.py": "eb50152258b356bc7866e55823fc45c7209cb6150efe205dd03c40c33beedbc2",
@@ -26,7 +21,7 @@
     "agent_orchestrator/artifacts/_writeback_metadata.py": "9bad82d69d5272b48e963d76b68e71e57ca1bd7c21e6a39552100a90d75bbc60",
     "agent_orchestrator/artifacts/_xattrs.py": "c7baedf84e0e185345a30c00d74cb58802363ae534e4452a73c9564c9872cbaa",
     "agent_orchestrator/artifacts/bound_workspace.py": "b4da9499d64588120828e1e83320ea0f00fa2f0f8a9e12d8512d8e7173e08be2",
-    "agent_orchestrator/artifacts/delivery.py": "e391555a26a2575c4ad802652a85e4fc0b7d19425f6d910e0c8cd833a92419f3",
+    "agent_orchestrator/artifacts/delivery.py": "80c8cddd107326caeb6e853416791bb2ed7c03cf72735a6d8a5561fd128e559c",
     "agent_orchestrator/artifacts/input_bindings.py": "a7272181d79c4c1fc7c1f436e7dd602a3d1d6796d14c3d4fd58b69a442cf7256",
     "agent_orchestrator/artifacts/judgment_merge.py": "fb18e9a63f784cf235c1ad3276b414a596f4079155b792b61c659d2eba862c2d",
     "agent_orchestrator/artifacts/paths.py": "60dcce7923ea3850d8e49f9289a7cdeb0dadd40715fa3d611735af7a570841e9",
@@ -34,8 +29,8 @@
     "agent_orchestrator/artifacts/store.py": "4cfe16fcf0a51eb2a966e73c04a23046167aa882e1402cc02c1a25aeb5e18954",
     "agent_orchestrator/artifacts/taskgraph_inputs.py": "b567cfdbd065477bb5a8b2677116332a53c14c7855771e876e1492e49831583f",
     "agent_orchestrator/artifacts/versioning.py": "11961adb1f9756b68c69afe97496ef1a4f922c47bf1c49d368bc7e3eeefc188d",
-    "agent_orchestrator/artifacts/workspace.py": "02ab9fb584365c05ef87b414b8c21d17518f96b363d1c3a3887cce22ce882835",
-    "agent_orchestrator/artifacts/workspace_base.py": "712cda68fa62855ada45cba39e61dce43e7f3a78c8fa3db36edfabda5226016b",
+    "agent_orchestrator/artifacts/workspace.py": "393b37a4020d369fa5750e414276d7156745b2d423d2029635ba67a709762851",
+    "agent_orchestrator/artifacts/workspace_base.py": "9743f69b1913ce1f1e8552c2dc7698aa3998badbd222637df8bb3146d6c14066",
     "agent_orchestrator/assurance/__init__.py": "c4a392cea6590f6e36af3948f5813b3027bd365c2a3ba7df474c1853c1a57c17",
     "agent_orchestrator/assurance/certificates.py": "cd5b51b737108cbedde71d386995ff69a0f3cf667aaf1a97d586e7a99da807bf",
     "agent_orchestrator/assurance/check_bindings.py": "ac4cf0d1210d56c9224d3539f79aeca82c3e0a3e97d10859820a7b650666c096",
@@ -178,7 +173,7 @@
     "agent_orchestrator/host/delegation.py": "d9d683472d9943e70e44f6f51371923f32a1468da7a901ff446d0c058a3ecf62",
     "agent_orchestrator/host/embedding.py": "ac37172e30842aec43c0af0ac81a4a7b35094fadda0c5fcae8f8efddcef22d48",
     "agent_orchestrator/host/goals.py": "1c949b8d83d3c09a6bc1a6168193dff051e6e82e2488aa8a51af6e77ae998330",
-    "agent_orchestrator/host/host.py": "7fdafa17776d1cf3ebbb70a3bfabed5537ef54b3d201305eeb6eb79b5f9d972f",
+    "agent_orchestrator/host/host.py": "64f1ab2ca3e75c01bf9bb71c3b9a048c1759121f5368d55685a85edbd3154279",
     "agent_orchestrator/host/inbox.py": "3f37993029f9938ce1551728b0c5b79a5a0d835b279bf3380af649ab9d4249d3",
     "agent_orchestrator/host/instance_lock.py": "4b2f3787ad479e51e45095216e93eac3673340e64caba70d3e8a4a30b7b26e82",
     "agent_orchestrator/host/offline.py": "28cb5277259b6fcbc4f7c9155a4cfd2862a8a50a637d68b9e994d766bb77d02a",
@@ -478,7 +473,7 @@
     "agent_orchestrator/runtime/taskgraph_local_work.py": "b5c76926ec37f3762c7ab839c37bedca4c00bdab5bc2a549eea529af5283a3c6",
     "agent_orchestrator/runtime/taskgraph_operation_sources.py": "77cf3a968bb78617d4ec758901f84cc0b23729d3b3908e173593cb851d19c743",
     "agent_orchestrator/runtime/tool_catalog.py": "8139feb4c745f161169a37f77e4b43825981d906e89fbbd4364a50be861ac11c",
-    "agent_orchestrator/runtime/tool_gateway.py": "b73ec7e4901a1ebff62668858124c84c7f71bb2df5be925984630adc060f21b2",
+    "agent_orchestrator/runtime/tool_gateway.py": "dc8e03392bc59459a165a2e94808f238d56450f9bf5427d93759783206f06d31",
     "agent_orchestrator/scheduling/__init__.py": "3119afdfd9b30ef3ba26e597ff8d8c980c22ca3e2540b1eadd844ac380047815",
     "agent_orchestrator/scheduling/allocator.py": "10673c09d6e783935107ef25d9e0832cfe018f0c259ca87aaab35686a8790c96",
     "agent_orchestrator/scheduling/backpressure.py": "ad389fabbdb951ba5cea730dd26f432f597b207fef69b5dff27b16308c0ccf08",
@@ -870,7 +865,7 @@
     "simple_harness/workflows/personal_v1/ports.py": "1e5ec7df071b3ab19729f0768811fcc5544fd6a89421b4b34f7f5dde28ead1de",
     "simple_harness/workflows/personal_v1/selection.py": "c65c5e41abebfacc359bff6fe79f39b3cd87f0ff2739e2b398215ccd9dde033f"
   },
-  "taskgraph_acceptance": "VALIDATED",
+  "taskgraph_acceptance": "NOT_RUN",
   "upstream": {
     "business_replay": "CONSISTENT",
     "business_replay_receipt_sha256": "ba06c71d6123c2726041d11fe385cfec01cb57bef29ff9b22f6d9551cda05887",

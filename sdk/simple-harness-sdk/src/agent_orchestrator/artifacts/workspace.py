@@ -41,7 +41,7 @@ from ..runtime.sandbox import pending_workspace_executions, recover_workspace_ex
 from .input_bindings import MaterialisationEntry
 from .paths import under_prefix
 from .store import ArtifactStore, ArtifactStoreError, read_nofollow, read_verified
-from .workspace_base import BaseError, BaseRepo
+from .workspace_base import BaseError, BaseRepo, is_secret_name
 
 
 class WorkspaceError(ValueError):
@@ -256,15 +256,16 @@ class Workspace:
         produced_by: str,
         versions: Mapping[str, int] | None = None,
     ) -> list[Artifact]:
-        """Every file as an Artifact record (content hash + per-path version); with a
-        store, the bytes are written to it and ``storage_uri`` names the stored file.  A
-        tree holding a symlink is refused, never recorded without it (P3.2 D3)."""
+        """先检查软链，再按文件名扣留凭据。其余文件按路径版本和内容哈希登记；
+        配置了产物存储时，``storage_uri`` 指向存入的字节。"""
 
         links = self.symlinks()
         if links:
             raise _symlink_refusal(links)
         artifacts = []
         for relative in self.list_files():
+            if is_secret_name(Path(relative).as_posix()):
+                continue
             data = _source_bytes(self.root / relative, relative)
             content_hash = hashlib.sha256(data).hexdigest()
             storage_uri = str(self.root / relative)

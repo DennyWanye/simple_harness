@@ -42,6 +42,7 @@ from ..artifacts.delivery import (
     DeliveryRefused,
     apply_change_set,
     delivery_diff,
+    delivery_secret_reason,
     same_location,
 )
 from ..artifacts.paths import under_prefix
@@ -1856,6 +1857,11 @@ class OrchestrationHost:
         mission, change = self._change_set(mission_id)
         files = []
         for item in change["files"]:
+            if reason := delivery_secret_reason(item["path"], item.get("refused")):
+                files.append(
+                    {"path": item["path"], "refused": reason, "diff": None, "diff_omitted": reason}
+                )
+                continue
             row = dict(item)
             row["diff"] = None
             if item.get("refused") in {"invalid_path", "ignored"}:
