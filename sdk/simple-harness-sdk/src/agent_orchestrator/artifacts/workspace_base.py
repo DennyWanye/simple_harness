@@ -33,11 +33,11 @@ import subprocess  # noqa: S404 - 固定的 git 底层命令，参数不来自�
 import tempfile
 import uuid
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
-from contextlib import ExitStack, contextmanager, suppress
+from contextlib import ExitStack, contextmanager
 from contextvars import ContextVar
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path, PurePosixPath
-from typing import Protocol, runtime_checkable
+from typing import BinaryIO, Protocol, runtime_checkable
 
 from . import _writeback_metadata, _xattrs
 from .paths import ambiguous_paths, spelling_key, under_prefix
@@ -61,6 +61,7 @@ SECRET_NAME_PATTERNS = (
 HARNESS_ROOT = ".harness/"
 RESERVED_BASE_PREFIXES = (HARNESS_ROOT, ".assurance/")
 _COMMITTER = "SimpleHarness <harness@localhost> 0 +0000"
+_STAGING_NAME = re.compile(r"\.[0-9a-f]{32}\.harness")
 _CONTROL = re.compile(r"[\x00-\x1f\x7f]")
 
 
@@ -133,6 +134,7 @@ class FileWrite:
     status: str
     current: str | None
     reason: str | None = None
+    cleanup_error: str | None = None
 
 
 @runtime_checkable
@@ -317,6 +319,45 @@ def _staging_parent(parent: Path) -> Iterator[tuple[Path, int | None]]:
             yield Path(), fd
 
 
+def _open_stage(name: Path, parent_fd: int | None, mode: int) -> BinaryIO:
+    if parent_fd is None:
+        import _winapi
+        import msvcrt
+
+        # Windows 须共享删除权限才可持有写句柄改名。这样即使改名失败且文件已设为
+        # 只读，仍可用创建它的句柄截断，无需再按路径打开或放宽文件权限。
+        handle = _winapi.CreateFile(
+            str(name), _winapi.GENERIC_WRITE, 0x1 | 0x2 | 0x4, 0, 1, 0x80, 0
+        )  # CREATE_NEW 独占创建普通文件，权限继承自父目录。
+        try:
+            fd = msvcrt.open_osfhandle(handle, os.O_WRONLY | os.O_BINARY)
+        except OSError:
+            _winapi.CloseHandle(handle)
+            raise
+    else:
+        fd = os.open(name, os.O_WRONLY | os.O_CREAT | os.O_EXCL, mode, dir_fd=parent_fd)
+    return os.fdopen(fd, "wb", buffering=0)
+
+
+def _discard_stage(
+    out: BinaryIO, name: Path, parent_fd: int | None, created: os.stat_result
+) -> str | None:
+    """只截断自己的暂存文件；截断失败也继续尝试删除，并单独报告清理错误。"""
+    errors = []
+    try:
+        os.ftruncate(out.fileno(), 0)
+    except OSError as error:
+        errors.append(f"truncate: {type(error).__name__}")
+    try:
+        if os.path.samestat(created, os.stat(name, dir_fd=parent_fd, follow_symlinks=False)):
+            os.unlink(name, dir_fd=parent_fd)
+    except FileNotFoundError:
+        pass
+    except OSError as error:
+        errors.append(f"unlink: {type(error).__name__}")
+    return ", ".join(errors) or None
+
+
 class DirectoryBase:
     """本机目录（没有 git 的也行）：全量遍历；软链扣留，不跟随。"""
 
@@ -367,6 +408,8 @@ class DirectoryBase:
         source = self._source()
         for relative in sorted(set(self._paths(scope))):
             target = self.root / relative
+            if _STAGING_NAME.fullmatch(target.name):
+                continue
             if _through_link(self.root, relative):
                 withheld[relative] = "symlink"
             elif target.is_file():
@@ -505,90 +548,128 @@ class DirectoryBase:
                 return FileWrite("refused", current, "symlink")
             # 创建、改名和清理共用父目录句柄，父目录移走后也能删除暂存的交付内容。
             with _staging_parent(target.parent) as (directory, parent_fd):
+                if parent_fd is not None and (
+                    problem := _writeback_metadata.acl_problem(parent_fd, inheritable_only=True)
+                ):
+                    return FileWrite("refused", current, problem)
                 name = directory / f".{uuid.uuid4().hex}.harness"
-                handle = os.open(
-                    name, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600, dir_fd=parent_fd
-                )
-                with os.fdopen(handle, "wb") as out, ExitStack() as opened:
-                    # POSIX 持有句柄直到清理完成，期间 inode 不会被回收复用。
+                with (
+                    _open_stage(name, parent_fd, 0o666 if current is None else 0o600) as out,
+                    ExitStack() as opened,
+                ):
                     created = os.fstat(out.fileno())
-                    staged = True
+                    outcome = None
+                    cleanup = None
                     try:
-                        out.write(data)
-                        out.flush()
-                        source = None
-                        if current is None:
-                            mode = 0o755 if executable else 0o644
-                        elif _xattrs.AVAILABLE:
-                            source = opened.enter_context(open_nofollow(target))
-                            source_info = os.fstat(source.fileno())
-                            problem = _writeback_metadata.replacement_problem(
-                                source.fileno(), out.fileno(), source_info, created
-                            )
-                            if problem is not None:
-                                return FileWrite("refused", current, problem)
-                            mode = stat.S_IMODE(source_info.st_mode)
-                            try:
-                                attrs = _xattrs.copy_to_stage(source.fileno(), out.fileno())
-                            except OSError:
-                                return FileWrite("refused", current, "xattr_unpreserved")
-                        else:
-                            mode = stat.S_IMODE(target.stat().st_mode)
-                        # 属性复制完成后才恢复权限，原文件可能是只读的。
-                        os.chmod(name if parent_fd is None else out.fileno(), mode)
-                        if parent_fd is None:
-                            out.close()  # Windows 改名之前需要释放文件句柄。
-                        scanned: dict[Path, tuple[int, ...] | None] = {}
-                        spelling = _spelling_problem(self.root, path, scanned)
-                        if spelling is not None:
-                            return FileWrite("refused", current, spelling)
-                        if _through_link(self.root, path):
-                            return FileWrite("refused", current, "symlink")
-                        if root_id is not None and self.root_id() != root_id:
-                            return FileWrite("refused", current, "delivery_target_mismatch")
-                        parent_info = directory.stat() if parent_fd is None else os.fstat(parent_fd)
-                        if not os.path.samestat(parent_info, target.parent.stat()):
-                            return FileWrite("refused", current, "parent_changed")
-                        if source is not None:
-                            # 复读两端，既防复制期间用户改属性，也防文件系统改写属性值。
-                            try:
-                                if (
-                                    _xattrs.snapshot(source.fileno()) != attrs
-                                    or _xattrs.snapshot(out.fileno()) != attrs
-                                ):
-                                    return FileWrite("refused", current, "xattr_unpreserved")
-                            except OSError:
-                                return FileWrite("refused", current, "xattr_unpreserved")
-                        # 拼写扫描可能耗时，最后才读现状，然后立即以原子改名提交。
-                        now = self._current(path)
-                        if now != current:
-                            return FileWrite("conflict", now)
-                        if change := self._confirm_read(path, scanned, now):
-                            return change
-                        if source is not None and _revision(target) != _version(source_info):
-                            return FileWrite("refused", current, "path_changed")
-                        if not os.path.samestat(
-                            created, os.stat(name, dir_fd=parent_fd, follow_symlinks=False)
-                        ):
-                            return FileWrite("refused", current, "path_changed")
-                        os.replace(
+                        outcome = self._write_staged(
+                            path,
+                            data,
+                            current,
+                            root_id,
+                            executable,
                             name,
-                            directory / target.name,
-                            src_dir_fd=parent_fd,
-                            dst_dir_fd=parent_fd,
+                            parent_fd,
+                            out,
+                            created,
+                            opened,
                         )
-                        staged = False
+                    except (OSError, ArtifactStoreError) as error:
+                        outcome = FileWrite(
+                            "failed", current, f"write_failed: {type(error).__name__}"
+                        )
                     finally:
-                        if staged:
-                            if parent_fd is None:
-                                out.close()
-                            with suppress(FileNotFoundError):
-                                if os.path.samestat(
-                                    created, os.stat(name, dir_fd=parent_fd, follow_symlinks=False)
-                                ):
-                                    os.unlink(name, dir_fd=parent_fd)
+                        if outcome is None or outcome.status != "applied":
+                            cleanup = _discard_stage(out, name, parent_fd, created)
+                    return replace(outcome, cleanup_error=cleanup) if cleanup else outcome
         except (OSError, ArtifactStoreError) as error:
             return FileWrite("failed", current, f"write_failed: {type(error).__name__}")
+
+    def _write_staged(
+        self,
+        path: str,
+        data: bytes,
+        current: str | None,
+        root_id: str | None,
+        executable: bool,
+        name: Path,
+        parent_fd: int | None,
+        out: BinaryIO,
+        created: os.stat_result,
+        opened: ExitStack,
+    ) -> FileWrite:
+        target = self.root / path
+        fd = out.fileno()
+        source = None
+        mode = None
+        if current is None:
+            if problem := _writeback_metadata.new_stage_problem(fd, created):
+                return FileWrite("refused", current, problem)
+            if executable and parent_fd is not None:
+                # 只给已有读权限的类别加执行位，保留内核按 umask 和默认 ACL 给出的读写位。
+                initial = stat.S_IMODE(created.st_mode)
+                mode = initial | ((initial & 0o444) >> 2)
+        elif _xattrs.AVAILABLE:
+            source = opened.enter_context(open_nofollow(target))
+            source_info = os.fstat(source.fileno())
+            if problem := _writeback_metadata.replacement_problem(
+                source.fileno(), fd, source_info, created
+            ):
+                return FileWrite("refused", current, problem)
+            mode = stat.S_IMODE(source_info.st_mode)
+        else:
+            mode = stat.S_IMODE(target.stat().st_mode)
+        # 缓冲区在清理之前关闭，失败后不会再把缓冲正文刷回已截断的文件。
+        with open(fd, "wb", closefd=False) as body:
+            body.write(data)
+        if source is not None:
+            try:
+                attrs = _xattrs.copy_to_stage(source.fileno(), fd)
+            except OSError:
+                return FileWrite("refused", current, "xattr_unpreserved")
+        if mode is not None:
+            # 创建后若有人收紧了暂存文件权限，不能用旧模式把读写位恢复。
+            if current is None and (os.fstat(fd).st_mode ^ mode) & 0o666:
+                return FileWrite("refused", current, "metadata_unpreserved: mode")
+            os.chmod(name if parent_fd is None else fd, mode)
+            if parent_fd is not None and stat.S_IMODE(os.fstat(fd).st_mode) != mode:
+                return FileWrite("refused", current, "metadata_unpreserved: mode")
+        scanned: dict[Path, tuple[int, ...] | None] = {}
+        spelling = _spelling_problem(self.root, path, scanned)
+        if spelling is not None:
+            return FileWrite("refused", current, spelling)
+        if _through_link(self.root, path):
+            return FileWrite("refused", current, "symlink")
+        if root_id is not None and self.root_id() != root_id:
+            return FileWrite("refused", current, "delivery_target_mismatch")
+        parent_info = name.parent.stat() if parent_fd is None else os.fstat(parent_fd)
+        if not os.path.samestat(parent_info, target.parent.stat()):
+            return FileWrite("refused", current, "parent_changed")
+        if source is not None:
+            # 复读两端，既防复制期间用户改属性，也防文件系统改写属性值。
+            try:
+                if (
+                    _xattrs.snapshot(source.fileno()) != attrs
+                    or _xattrs.snapshot(out.fileno()) != attrs
+                ):
+                    return FileWrite("refused", current, "xattr_unpreserved")
+            except OSError:
+                return FileWrite("refused", current, "xattr_unpreserved")
+        # 拼写扫描可能耗时，最后才读现状，然后立即以原子改名提交。
+        now = self._current(path)
+        if now != current:
+            return FileWrite("conflict", now)
+        if change := self._confirm_read(path, scanned, now):
+            return change
+        if source is not None and _revision(target) != _version(source_info):
+            return FileWrite("refused", current, "path_changed")
+        if not os.path.samestat(created, os.stat(name, dir_fd=parent_fd, follow_symlinks=False)):
+            return FileWrite("refused", current, "path_changed")
+        os.replace(
+            name,
+            name.with_name(target.name),
+            src_dir_fd=parent_fd,
+            dst_dir_fd=parent_fd,
+        )
         return FileWrite("applied", current)
 
 

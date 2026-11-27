@@ -1,3 +1,11 @@
+最后更新：2026-11-27（SDK 写回的新建权限、暂存清理和模式核验，未发版）。
+
+`DirectoryBase` 与 `GitRepoBase` 在 POSIX 上以 `0666` 请求创建新文件，由内核应用 umask 和目录默认 ACL。请求执行位时只给已有读权限的类别加执行位，先确认读写位仍与创建时一致。替换已有文件仍检查所有者、所属组、可见扩展属性及 macOS 标志，恢复权限后从暂存描述符读回模式。包括 setgid 在内的模式不一致时，该文件以 `metadata_unpreserved: mode` 拒写，保留原 inode 和正文。
+
+macOS 在创建暂存文件前检查直接父目录的 ACL。文件继承、目录继承条目都会使该目录的新建和替换逐项回 `metadata_unpreserved: acl`。只作用于父目录本身的 ACL 允许继续检查。空暂存文件通过元数据检查后才写正文。中途拒写或失败时先从创建句柄截断，再核对条目身份并删除。清理出错单列于回执的 `cleanup_error`。两种底拍底时都排除 `.<32 位小写十六进制数>.harness` 形式的文件。APFS 压缩、`UF_TRACKED` 及 Linux `chattr` 标志的边界见[宿主文档 §4f](../sdk/simple-harness-sdk/docs/orchestration-host.md#交付改动集与写回)。
+
+最终源码在 macOS 定向 54 项通过，在离线 Ubuntu/ext4 定向 47 项通过。两种底的默认 ACL 与同目录普通创建一致，非成员组的 setgid 替换均拒写。macOS 16 项独立变异和其中 2 项 Linux 复跑均触发预期失败。macOS 指定套件 387 项，360 通过、14 失败、13 跳过。13 个宿主整局超时，1 个范围委派未建成；独立恢复诊断停在 `recovery_locked`。4 个宿主用例缺少执行隔离区，9 个 Linux ACL 用例已在 ext4 通过。部署清单 861 个成员及部署 ID 已复核，部署验收为 `NOT_RUN`。证据索引 `SHA256SUMS` 的 SHA-256 为 `4ee2c1083ad7ef7e6728095e9790de6fc22c93ca06919930063b43dceb1e9dd3`。[本机验收记录与逐项复跑清单](../.local-test-evidence/2026-11-27/writeback-staging/final/验收记录.md)
+
 最后更新：2026-11-27（SDK 磁盘写回逐文件拒绝元数据会改变的替换，未发版）。
 
 `DirectoryBase` 与 `GitRepoBase` 共享同一写回入口。替换已有文件前比较原文件句柄和暂存文件句柄对应的 UID、GID。macOS 还通过 `acl_get_fd` 核验两端的扩展 ACL，并比较所有者可设的文件标志。身份或标志不匹配、任一端带 ACL 或 ACL 查询失败时，该文件回 `refused`，原 inode 保留，原因分别指明 `uid`、`gid`、`flags` 或 `acl`。Linux 可见的 POSIX ACL 仍随扩展属性复制并复核。新建文件沿用系统元数据，同批其他文件继续写回。[宿主文档 §4f](../sdk/simple-harness-sdk/docs/orchestration-host.md#交付改动集与写回)

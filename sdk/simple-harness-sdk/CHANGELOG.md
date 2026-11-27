@@ -10,6 +10,8 @@
 - Git 拍底先筛 `base_scope`，再按工作树精确拼写核验范围内的路径。每个用到的目录建一次拼写键索引。
 - macOS 和 Linux 写回已有文件时保留调用者当前可列举的扩展属性，包括 macOS 资源分叉、Finder 标签和隔离标记。属性无法原样保留时，该文件回 `refused/xattr_unpreserved`。
 - macOS 和 Linux 在原文件与暂存文件的 UID 或 GID 不同时逐文件拒写。macOS 还会拒绝带扩展 ACL、无法核实 ACL 或用户可设标志有差异的替换。`refused` 回执的 `reason` 以 `metadata_unpreserved: ` 开头并指明类别。Linux 可见的 POSIX ACL 继续按扩展属性逐字节保留。隐藏属性和大资源分叉的限制见[宿主文档 §4f](docs/orchestration-host.md#交付改动集与写回)。
+- 新文件按同目录普通创建的方式取得模式和有效 ACL。替换时在改名前读回模式，包括 setgid 在内的位不符即以 `metadata_unpreserved: mode` 拒写。
+- macOS 父目录有可继承 ACL 时，同目录的新建和替换均提前以 `acl` 拒写。失败清理先截断正文再删除，逐文件回执单列 `cleanup_error`，下次拍底跳过 SDK 暂存名。APFS 压缩、`UF_TRACKED` 和 Linux `chattr +d` 的边界见[宿主文档 §4f](docs/orchestration-host.md#交付改动集与写回)。
 
 ### 升级注意（相对 opt.230）
 

@@ -41,13 +41,29 @@ def check_refusal(target, apply, reason):
 @darwin
 @pytest.mark.parametrize("kind", [DirectoryBase, GitRepoBase])
 @pytest.mark.parametrize("acl_on_parent", [False, True], ids=["original", "inherited-by-stage"])
-def test_extended_acl_refuses_only_replacement(tmp_path, kind, acl_on_parent):
+def test_extended_acl_refuses_only_replacement(tmp_path, kind, acl_on_parent, monkeypatch):
     target, apply = batch(tmp_path, kind)
     if acl_on_parent:
-        # 拍底后才设置继承条目，原文件没有 ACL，新建的暂存文件会继承。
-        subprocess.run(
-            ["chmod", "+a", "everyone deny writeextattr,file_inherit", target.parent], check=True
-        )
+        # 父目录预检后才出现继承条目，仅本次创建的暂存文件获得 ACL。
+        open_file = os.open
+
+        def inherit_once(path, *args, **kwargs):
+            if str(path).endswith(".harness"):
+                monkeypatch.setattr(os, "open", open_file)
+                subprocess.run(
+                    ["chmod", "+a", "everyone deny writeextattr,file_inherit", target.parent],
+                    check=True,
+                )
+                try:
+                    return open_file(path, *args, **kwargs)
+                finally:
+                    subprocess.run(
+                        ["chmod", "-a", "everyone deny writeextattr,file_inherit", target.parent],
+                        check=True,
+                    )
+            return open_file(path, *args, **kwargs)
+
+        monkeypatch.setattr(os, "open", inherit_once)
     else:
         subprocess.run(["chmod", "+a", "everyone deny writeextattr", target], check=True)
     before = subprocess.check_output(["ls", "-len", target])
@@ -63,7 +79,11 @@ def test_unreadable_acl_refuses_only_replacement(tmp_path, monkeypatch):
 
     target, apply = batch(tmp_path)
 
+    get_acl = _writeback_metadata._libc.acl_get_fd
+
     def denied(fd):
+        if not os.path.samestat(os.fstat(fd), target.stat()):
+            return get_acl(fd)
         ctypes.set_errno(errno.EACCES)
         return None
 
