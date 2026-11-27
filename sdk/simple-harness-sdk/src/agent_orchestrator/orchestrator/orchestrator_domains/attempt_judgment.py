@@ -7,9 +7,10 @@
 from __future__ import annotations
 
 import logging
+import os
 from collections.abc import Mapping, Sequence
 from dataclasses import replace
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, Any, cast
 
 from simple_harness.agents import AgentConfig, AgentLimits
@@ -96,6 +97,36 @@ logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
     from ...contracts.resolution import GoalResolution
     from ...storage.store import Store
+
+
+def _based_file_checks(root: Path, statements: Sequence[str]) -> dict[str, tuple[bool, str]]:
+    """在运行判定测试前记录精确文件名和无法列举的子树。"""
+    unreadable: dict[str, str] = {}
+
+    def record_error(error: OSError) -> None:
+        folder = Path(error.filename) if error.filename else root
+        unreadable[folder.relative_to(root).as_posix()] = type(error).__name__
+
+    exact_paths = {
+        (Path(directory) / name).relative_to(root).as_posix()
+        for directory, _, names in os.walk(root, onerror=record_error)
+        for name in names
+    }
+    checks = {}
+    for criterion in statements:
+        if not criterion.startswith("file:"):
+            continue
+        relative = criterion.removeprefix("file:")
+        met = relative in exact_paths
+        reason = "file exists" if met else "file missing"
+        if unreadable and not met:
+            for parent in PurePosixPath(relative).parents:
+                folder = parent.as_posix()
+                if folder in unreadable:
+                    reason = f"file unverifiable: {folder} ({unreadable[folder]})"
+                    break
+        checks[criterion] = met, reason
+    return checks
 
 
 def _turn_error_code(failure: Mapping[str, Any]) -> str | None:
@@ -1044,8 +1075,9 @@ class AttemptJudgmentMixin(OrchestratorCore):
         # P0-2: one judgment tree per orchestrator instance — another instance may be
         # running pytest in its own; the judgment Commit itself is idempotent
         view_id = f"{mission.id}-judge-{self._owner}"
+        base_commit = mission_base_commit(mission.final_report)
         copy = self.assembled.workspaces.integrated_copy(
-            view_id, seed=seed, files=files, base=mission_base_commit(mission.final_report)
+            view_id, seed=seed, files=files, base=base_commit
         )
         self._register_copy(
             "judge",
@@ -1063,20 +1095,9 @@ class AttemptJudgmentMixin(OrchestratorCore):
                 summaries.append(stored.envelope.summary)
         summary = "\n".join(summaries)
         statements = current_statements(self.store, mission)
-        guarded = (
-            ambiguous_paths(
-                spellings,
-                queries=(c.removeprefix("file:") for c in statements if c.startswith("file:")),
-            )
-            if spellings
-            else set()
-        )
-        base_commit = mission_base_commit(mission.final_report)
-        exact_base_paths = (
-            self.assembled.workspaces.bases.manifest(base_commit).keys()
-            if guarded and base_commit
-            else ()
-        )
+        file_checks = {}
+        if base_commit is not None and any(c.startswith("file:") for c in statements):
+            file_checks = _based_file_checks(copy.root, statements)
         test_runs: dict[str, dict[str, Any]] = {}
         for criterion in statements:
             if not criterion.startswith("pytest:"):
@@ -1121,21 +1142,22 @@ class AttemptJudgmentMixin(OrchestratorCore):
                     }
                 )
             elif criterion.startswith("file:"):
-                relative = criterion.removeprefix("file:")
-                try:
-                    met = copy.resolve(relative).is_file()
-                    if met and relative in guarded:
-                        # 歧义组只物化底中的精确条目，即使条件采用了从未出现过的第三种拼写。
-                        met = relative in exact_base_paths
-                except Exception:  # noqa: BLE001
-                    logger.debug("evaluate_criteria_is_file_failed", exc_info=True)
-                    met = False
+                if criterion in file_checks:
+                    met, reason = file_checks[criterion]
+                else:
+                    relative = criterion.removeprefix("file:")
+                    try:
+                        met = copy.resolve(relative).is_file()
+                    except Exception:  # noqa: BLE001
+                        logger.debug("evaluate_criteria_is_file_failed", exc_info=True)
+                        met = False
+                    reason = "file exists" if met else "file missing"
                 judgments.append(
                     {
                         "criterion": criterion,
                         "met": met,
                         "judge": "rule_check",
-                        "reason": "file exists" if met else "file missing",
+                        "reason": reason,
                     }
                 )
             elif criterion.startswith(ACTION_PREFIX):

@@ -47,8 +47,10 @@ def judge(
     aliases=(),
     frozen=None,
     seed=None,
+    sources=None,
     adopted=None,
     criteria=None,
+    reasons=None,
     blocked=False,
     execution_updates=None,
 ):
@@ -68,7 +70,7 @@ def judge(
     if base is not None:
         report["workspace_base"] = {
             "commit": manager.bases.commit_files(base),
-            "source": {"location": target.location()},
+            "source": target.capture(()).source,
         }
     mission = SimpleNamespace(id="mission", final_report=report)
     tasks, artifacts, ports, acceptances = [], {}, [], []
@@ -195,7 +197,7 @@ def judge(
         _register_copy=Mock(),
         _commit_fail_mission=Mock(),
         _reimport_unsettled=lambda _: None,
-        _current_source_files=lambda _: {},
+        _current_source_files=lambda _: sources or {},
         _assured_root_grades=lambda *_: {},
         _config=SimpleNamespace(
             deployment_policy=SimpleNamespace(
@@ -224,6 +226,8 @@ def judge(
         assert not (manager.root / "mission-judge-owner-verify").exists()
         return None
     judgments, _ = result
+    if reasons:
+        assert {row["criterion"]: row["reason"] for row in judgments} == reasons
     if criteria:
         assert {item["criterion"]: item["met"] for item in judgments} == criteria
     elif not aliases and not seed:

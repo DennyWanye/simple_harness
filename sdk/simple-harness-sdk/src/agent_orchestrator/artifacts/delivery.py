@@ -27,6 +27,7 @@ import tempfile
 import threading
 import time
 from collections.abc import Callable, Mapping, Sequence
+from contextlib import nullcontext
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Any
@@ -35,6 +36,8 @@ from .judgment_merge import MergeFacts
 from .paths import ambiguous_paths, under_prefix
 from .workspace_base import (
     BaseRepo,
+    BaseUnavailable,
+    DirectoryBase,
     WritableBase,
     _path_problem,
     _readable,
@@ -126,6 +129,7 @@ def build_change_set(
     （排除非法路径及拼写歧义）叠成交付提交：判定树 = 底 + 种子 + 资料 + 这些改动，种子与
     资料不交付。"""
 
+    source = dict(base.get("source") or {})
     base_commit = str(base["commit"])
     manifest = bases.manifest(base_commit)
     withheld = {str(k): str(v) for k, v in dict(base.get("withheld") or {}).items()}
@@ -207,7 +211,8 @@ def build_change_set(
         **({"unchanged_merge_facts": unchanged_facts} if unchanged_facts else {}),
         "commit": commit,
         # 这个底的身份：写回时核对，不写进别的项目
-        "location": dict(base.get("source") or {}).get("location"),
+        "location": source.get("location"),
+        **({"root_id": source["root_id"]} if "root_id" in source else {}),
         "files": files,
         "counts": {
             "files": len(files),
@@ -228,10 +233,18 @@ def delivery_diff(bases: BaseRepo, change_set: Mapping[str, Any], path: str) -> 
     return bases.diff(str(change_set["base_commit"]), str(change_set["commit"]), path)
 
 
-def same_location(recorded: object, current: str) -> bool:
-    """拍底时记下的位置与现在接的底是不是同一个。同一个目录的不同写法（大小写、firmlink）算同一个；
-    记下的位置被换成了软链（哪怕指向别的项目）不算——宁可拒写，不写进别的仓库。"""
-
+def same_location(change: Mapping[str, Any], target: WritableBase) -> bool:
+    """磁盘底须核对拍底时的设备与 inode；相同目录允许以另一种路径写法打开。"""
+    recorded = change.get("location")
+    current = target.location()
+    if isinstance(target, DirectoryBase):
+        try:
+            if target.root_id() != change.get("root_id"):
+                return False
+        except (BaseUnavailable, OSError):
+            return False
+    elif "root_id" in change:
+        return False
     if not isinstance(recorded, str) or not recorded:
         return False
     if recorded == current:
@@ -262,10 +275,10 @@ def apply_change_set(
     核不上记 ``failed``（``verify_mismatch``）——不把没落地的说成写了。"""
 
     location = change_set.get("location")
-    if not same_location(location, target.location()):
+    if not same_location(change_set, target):
         raise DeliveryRefused(
             "delivery_target_mismatch",
-            f"这个交付拍自 {location!r}，现在接的底是 {target.location()!r}：不写",
+            f"无法核对拍底目录身份：交付位置 {location!r}，当前底 {target.location()!r}",
         )
     entries = {str(item["path"]): item for item in change_set.get("files", ())}
     if paths is None:
@@ -277,6 +290,22 @@ def apply_change_set(
         chosen = sorted(set(paths))
     writable = [path for path in chosen if entries[path]["refused"] is None]
     blobs = bases.blobs(sorted({str(entries[path]["blob"]) for path in writable}))
+    root = (
+        target.at_captured_root(change_set["root_id"])
+        if isinstance(target, DirectoryBase)
+        else nullcontext()
+    )
+    with root:
+        return _write_files(target, change_set, entries, chosen, blobs)
+
+
+def _write_files(
+    target: WritableBase,
+    change_set: Mapping[str, Any],
+    entries: Mapping[str, Any],
+    chosen: Sequence[str],
+    blobs: Mapping[str, bytes],
+) -> list[dict[str, Any]]:
     receipt: list[dict[str, Any]] = []
     for path in chosen:
         entry = entries[path]
@@ -315,22 +344,18 @@ def apply_change_set(
                 "current_blob": outcome.current,
             }
         )
-    applied = [row["path"] for row in receipt if row["status"] == "applied"]
-    if applied:
+    for row in receipt:
+        if row["status"] != "applied":
+            continue
+        path = row["path"]
         try:
-            now = dict(target.current_hashes(applied))
-        except Exception:  # noqa: BLE001 - 复核读不出来：不能说写成了
+            actual = target.current_hashes([path]).get(path)
+        except Exception:  # noqa: BLE001 - 适配器读取失败只影响正在核对的这个文件
             logger.debug("delivery_verify_failed", exc_info=True)
-            for row in receipt:
-                if row["status"] == "applied":
-                    # 写是写了，但读不回来核对：如实说核对不了，不说写成了
-                    row["status"] = "failed"
-                    row["reason"] = "verify_failed"
-            return receipt
-        for row in receipt:
-            if row["status"] == "applied" and now.get(row["path"]) != row["blob"]:
-                row["status"] = "failed"
-                row["reason"] = "verify_mismatch"
+            row.update(status="failed", reason="verify_failed")
+            continue
+        if actual != row["blob"] or not same_location(change_set, target):
+            row.update(status="failed", reason="verify_mismatch")
     return receipt
 
 

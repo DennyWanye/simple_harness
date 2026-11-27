@@ -1901,7 +1901,7 @@ class OrchestrationHost:
             raise HostRequestError(
                 "delivery_unsupported", "这个宿主的底不能写回（没有实现 WritableBase）"
             )
-        if not same_location(change.get("location"), target.location()):
+        if not same_location(change, target):
             raise HostRequestError(
                 "delivery_target_mismatch",
                 f"这个任务的底拍自 {change.get('location')!r}，"

@@ -161,7 +161,11 @@ def test_a_directory_base_withholds_symlinks_and_skips_tool_caches(tmp_path):
     record = _capture(repo, DirectoryBase(root))
     assert set(repo.manifest(record.commit)) == {"pkg/mod.py"}
     assert record.withheld == {"outside.txt": "symlink"}
-    assert record.source == {"kind": "directory", "location": os.path.realpath(root)}
+    assert record.source == {
+        "kind": "directory",
+        "location": os.path.realpath(root),
+        "root_id": f"{root.stat().st_dev}:{root.stat().st_ino}",
+    }
 
 
 def test_a_git_repo_base_is_the_working_tree_without_ignored_files(tmp_path):
@@ -189,7 +193,12 @@ def test_a_git_repo_base_is_the_working_tree_without_ignored_files(tmp_path):
     assert (
         repo.read(record.commit, "ledger/book.py") == "committed = False  # 改了没提交\n".encode()
     )
-    assert record.source == {"kind": "git", "location": os.path.realpath(user), "head": head}
+    assert record.source == {
+        "kind": "git",
+        "location": os.path.realpath(user),
+        "root_id": f"{user.stat().st_dev}:{user.stat().st_ino}",
+        "head": head,
+    }
     assert _git(user, "status", "--porcelain") == before
     assert _git(user, "for-each-ref") == refs_before
 
