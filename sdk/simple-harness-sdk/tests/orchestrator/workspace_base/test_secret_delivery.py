@@ -198,3 +198,238 @@ def test_reopened_host_skips_sensitive_diffs(tmp_path, monkeypatch, historical):
                 assert stored == {"example.txt": PUBLIC}
 
     asyncio.run(case())
+
+
+@pytest.mark.parametrize(
+    ("path", "body", "reason"),
+    [
+        ("nested/.eNvRc", PUBLIC, "secret_name"),
+        ("nested/Id_Ed25519.PUB", PUBLIC, "secret_name"),
+        ("nested/.NpMrC", PUBLIC, "secret_name"),
+        (".env.example", PUBLIC, None),
+        ("nested/.EnV.SaMpLe", PUBLIC, None),
+        ("nested/.env.template", PUBLIC, None),
+        (".ENV.example", KEY_TEXT, "secret_content"),
+    ],
+    ids=["envrc", "ssh-key", "npmrc", "example", "sample", "template", "secret-template"],
+)
+def test_same_credential_decision_at_four_boundaries(tmp_path, path, body, reason):
+    manager = WorkspaceManager(tmp_path / "work")
+    work = manager.create("attempt", seed={})
+    gateway = WorkspaceToolGateway(manager)
+    gateway.bind("worker", WorkspaceBinding("attempt", "work", True, ("workspace_write_file",)))
+    call = ToolCall(
+        CallId("write"), "workspace_write_file", {"path": path, "content": body.decode()}
+    )
+    result = asyncio.run(gateway.execute(call, {"run_id": "worker"}))
+    assert result.error_code == reason
+    assert (work.root / path).exists() == (reason is None)
+    # 绕过写工具也要得到相同决定。
+    work.write_bytes(path, body)
+    artifacts = work.snapshot(mission_id="m", task_id="t", produced_by="worker")
+    assert [a.path for a in artifacts] == ([path] if reason is None else [])
+    repo = manager.bases
+    base = capture_base(
+        InMemoryBase({path: body}), repo, scope=(), limits=CaptureLimits(), is_secret=find_secrets
+    )
+    assert base.withheld.get(path) == reason
+    assert repo.files(base.commit) == ({path: body} if reason is None else {})
+    empty = capture_base(
+        InMemoryBase({}), repo, scope=(), limits=CaptureLimits(), is_secret=find_secrets
+    )
+    change = build_change_set(
+        repo, empty.to_json(), [Produced(path, body, None, None)], reserved=()
+    )
+    assert change["files"][0]["refused"] == reason
+    assert repo.files(change["commit"]) == repo.files(base.commit)
+
+
+def test_scan_to_end_of_large_text_at_capture_and_delivery(tmp_path):
+    repo = BaseRepo(tmp_path / "work.git")
+    prefix = b"x" * (512 * 1024) + b"\n"
+    files = {
+        "middle.txt": prefix + KEY_TEXT + prefix,
+        "end.txt": prefix + KEY_TEXT,
+        "public.txt": prefix,
+        "binary.dat": b"\x00" + KEY_TEXT,
+    }
+    base = capture_base(
+        InMemoryBase(files), repo, scope=(), limits=CaptureLimits(), is_secret=find_secrets
+    )
+    empty = capture_base(
+        InMemoryBase({}), repo, scope=(), limits=CaptureLimits(), is_secret=find_secrets
+    )
+    change = build_change_set(
+        repo, empty.to_json(), [Produced(k, v, None, None) for k, v in files.items()], reserved=()
+    )
+    expected = {k: files[k] for k in ("public.txt", "binary.dat")}
+    assert repo.files(change["commit"]).keys() == expected.keys()
+    assert repo.files(change["commit"]) == repo.files(base.commit) == expected
+    assert change["counts"]["refused"] == 2
+    assert not next(r for r in change["files"] if r["path"] == "public.txt")["readable"]
+
+
+@pytest.mark.parametrize(
+    "problem", ["old", "new", "configured", "too_large", "missing_commit", "binary"]
+)
+def test_diff_checks_actual_sides_even_for_other_refusals(tmp_path, problem):
+    async def case():
+        async with _host(
+            tmp_path / "host", extra_secrets=("fixture-only-configured-value",)
+        ) as host:
+            repo = host._bases()
+            path = "readme.txt"
+            old = {"old": KEY_TEXT, "too_large": b"a" * (512 * 1024 + 1), "binary": b"\0data"}.get(
+                problem, PUBLIC
+            )
+            new = {"new": KEY_TEXT, "configured": b"fixture-only-configured-value"}.get(
+                problem, MARKER
+            )
+            base = repo.commit_files({path: old})
+            commit = repo.commit_on(base, {path: new})
+            change = {
+                "base_commit": "0" * 40 if problem == "missing_commit" else base,
+                "commit": commit,
+                "counts": {"files": 1},
+                "files": [{"path": path, "readable": True, "refused": "withheld:symlink"}],
+            }
+            host._change_set = lambda mid: ({"status": "COMPLETED"}, change)
+            row = host.delivery("m")["files"][0]
+            expected = {
+                "too_large": "binary_or_large",
+                "binary": "binary_or_large",
+                "missing_commit": "unreadable",
+            }.get(problem, "secret_content")
+            assert row == {
+                "path": path,
+                "refused": "withheld:symlink",
+                "diff": None,
+                "diff_omitted": expected,
+            }
+
+    asyncio.run(case())
+
+
+def test_skipped_snapshot_files_reach_host_receipts(tmp_path, monkeypatch):
+    from test_host_delivery import _finished, _user_repo, _worker
+
+    from agent_orchestrator.artifacts.workspace import Workspace
+    from agent_orchestrator.artifacts.workspace_base import GitRepoBase
+    from agent_orchestrator.testing.scripted_replies import LayeredScriptedProvider
+
+    adapter = GitRepoBase(_user_repo(tmp_path / "user"))
+    configured = "test-only-nonpattern-value"
+    original = Workspace.snapshot
+
+    def with_bypass(workspace, **kwargs):
+        # 仅在产出目标文件的尝试中模拟从写工具以外放入文件。
+        if (workspace.root / "ledger/cli.py").is_file():
+            workspace.write_bytes("sign/test.P12", MARKER)
+            workspace.write_text("templates/.env.example", configured)
+            workspace.write_text("settings.txt", configured)
+        return original(workspace, **kwargs)
+
+    monkeypatch.setattr(Workspace, "snapshot", with_bypass)
+
+    async def case():
+        options = dict(
+            workspace_base=adapter,
+            extra_secrets=(configured,),
+            provider=LayeredScriptedProvider(worker=_worker),
+        )
+        async with _host(tmp_path / "host", **options) as host:
+            mid = await _finished(host)
+        async with _host(tmp_path / "host", **options) as reopened:
+            view = reopened.delivery(mid)
+            reasons = {
+                "sign/test.P12": "secret_name",
+                "templates/.env.example": "secret_content",
+                "settings.txt": "secret_content",
+            }
+            assert {r["path"]: r["refused"] for r in view["files"] if r["refused"]} == reasons
+            assert view["counts"] == {
+                "files": 5,
+                "added": 4,
+                "modified": 1,
+                "tests": 0,
+                "refused": 3,
+            }
+            assert not reasons.keys() & reopened._bases().files(view["commit"]).keys()
+            receipt = reopened.apply_delivery(mid, operation_key="mixed")
+            assert receipt["counts"]["applied"] == 2 and receipt["counts"]["refused"] == 3
+            assert {
+                r["path"]: r["reason"] for r in receipt["files"] if r["status"] == "refused"
+            } == reasons
+
+    asyncio.run(case())
+
+
+async def _produce_opt231_history(root):
+    import os
+
+    from test_host_delivery import _finished, _secret_worker, _user_repo
+
+    from agent_orchestrator.artifacts.workspace_base import DirectoryBase
+    from agent_orchestrator.orchestrator import recovery_coordinator
+    from agent_orchestrator.testing.scripted_replies import LayeredScriptedProvider
+
+    # 子进程中只替换查询本进程身份的系统调用，两个版本都用真实宿主和 Git。
+    original = recovery_coordinator.process_identity
+    recovery_coordinator.process_identity = lambda pid: (
+        {"process_started_at": f"fixture-{pid}"} if pid == os.getpid() else original(pid)
+    )
+    assert Path(host_module.__file__).resolve().is_relative_to(Path.cwd() / "src")
+    user = _user_repo(root / "user")
+    (user / "ledger/cli.py").symlink_to("book.py")
+    async with _host(
+        root / "host",
+        workspace_base=DirectoryBase(user),
+        provider=LayeredScriptedProvider(worker=_secret_worker),
+    ) as host:
+        mid = await _finished(host)
+        row = next(r for r in host.delivery(mid)["files"] if r["path"] == "ledger/cli.py")
+        assert row["refused"] == "withheld:symlink" and row["diff"]
+        (root / "mission-id").write_text(mid)
+
+
+def test_opt231_host_delivery_reopens_without_secret_diff(tmp_path):
+    import os
+    import subprocess
+    import tarfile
+
+    from agent_orchestrator.artifacts.workspace_base import DirectoryBase
+
+    sdk = Path(__file__).resolve().parents[3]
+    baseline = "4640a04fddaaa2134834e7778774855a74a1e552"
+    if subprocess.run(["git", "cat-file", "-e", baseline], cwd=sdk, capture_output=True).returncode:
+        pytest.skip("跨版本验证需要本地 Git 中的 opt.231 源码")
+    archive = tmp_path / "sdk.tar"
+    subprocess.run(["git", "archive", "-o", str(archive), baseline, "src"], cwd=sdk, check=True)
+    old = tmp_path / "opt231"
+    with tarfile.open(archive) as source:
+        source.extractall(old, filter="data")
+    subprocess.run(
+        [sys.executable, __file__, str(tmp_path)],
+        cwd=old,
+        check=True,
+        timeout=150,
+        env={**os.environ, "PYTHONPATH": str(old / "src"), "UV_OFFLINE": "1"},
+    )
+
+    async def reopen():
+        async with _host(
+            tmp_path / "host", workspace_base=DirectoryBase(tmp_path / "user")
+        ) as host:
+            rows = {
+                r["path"]: r for r in host.delivery((tmp_path / "mission-id").read_text())["files"]
+            }
+            row = rows["ledger/cli.py"]
+            assert row["refused"] == "withheld:symlink"
+            assert row["diff"] is None and row["diff_omitted"] == "secret_content"
+            assert "+    return round" in rows["ledger/money.py"]["diff"]
+
+    asyncio.run(reopen())
+
+
+if __name__ == "__main__":
+    asyncio.run(_produce_opt231_history(Path(sys.argv[1])))

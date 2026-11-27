@@ -59,7 +59,6 @@ from ...governance.policies import effective_tools
 from ...graph.eligibility import EligiblePrimitiveTask
 from ...graph.projection_validation import GraphIntegrityError
 from ...graph.terminal import accepted_tasks
-from ...observability.secrets import find_secrets
 from ...runtime.action_schema import ACTION_PREFIX
 from ...runtime.agent_worker import user_message_json
 from ...runtime.first_request_budget import FirstRequestBudget
@@ -273,6 +272,8 @@ class AttemptJudgmentMixin(OrchestratorCore):
         new_mode: HierarchicalDispatch,
         tasks: Sequence[Task],
         sources: Mapping[str, bytes],
+        *,
+        snapshot_refused: dict[str, str] | None = None,
     ) -> tuple[list[JudgmentFile], list[dict[str, Any]], int, set[str]]:
         """只取根结论当前采用的产物。各版本直接从同一底文本起步时才合并；冲突或不能合并时，
         仍按根要求、声明端口、验收次序选版本。根要求引用的原端口证据保留在 SDK 目录。"""
@@ -307,6 +308,10 @@ class AttemptJudgmentMixin(OrchestratorCore):
             task_id = str(acceptance.task_id)
             rank = rank_of[str(acceptance.acceptance_id)]
             task = tasks_by_id.get(task_id) or self.store.get_task(task_id)
+            if snapshot_refused is not None and task is not None and task.accepted_result_id:
+                result = self.store.get_result(task.accepted_result_id)
+                if result is not None:
+                    snapshot_refused.update(result.snapshot_refused)
             for artifact_id in () if task is None else task.accepted_artifacts:
                 place(task_id, self.store.get_artifact(artifact_id), rank, None)
         for row in semantics.list_acceptance_outputs(mission.id):
@@ -984,8 +989,13 @@ class AttemptJudgmentMixin(OrchestratorCore):
         if not isinstance(base, Mapping) or new_mode is None:
             return None
         try:
+            snapshot_refused: dict[str, str] = {}
             tree, superseded, _, _ = self._judgment_tree(
-                mission, new_mode, tasks, self._current_source_files(mission)
+                mission,
+                new_mode,
+                tasks,
+                self._current_source_files(mission),
+                snapshot_refused=snapshot_refused,
             )
             produced = []
             for item in tree:
@@ -1010,7 +1020,7 @@ class AttemptJudgmentMixin(OrchestratorCore):
                 superseded={
                     str(row["path"]): list(row["superseded_task_ids"]) for row in superseded
                 },
-                is_secret=lambda text: bool(find_secrets(text)),
+                snapshot_refused=snapshot_refused,
             )
         except (ArtifactConflict, ArtifactStoreError, BaseError) as error:
             logger.debug("change_set_failed", exc_info=True)

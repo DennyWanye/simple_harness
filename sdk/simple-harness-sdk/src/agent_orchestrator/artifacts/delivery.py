@@ -32,7 +32,6 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Any
 
-from ..observability.secrets import find_secrets
 from .judgment_merge import MergeFacts
 from .paths import ambiguous_paths, under_prefix
 from .workspace_base import (
@@ -42,8 +41,8 @@ from .workspace_base import (
     WritableBase,
     _path_problem,
     _readable,
+    credential_reason,
     git_blob_id,
-    is_secret_name,
 )
 
 logger = logging.getLogger(__name__)
@@ -103,7 +102,7 @@ def delivery_secret_reason(path: str, refused: str | None) -> str | None:
         "withheld:secret_content",
     }:
         return refused
-    return "secret_name" if is_secret_name(path) else None
+    return credential_reason(path)
 
 
 def build_change_set(
@@ -114,6 +113,7 @@ def build_change_set(
     reserved: Sequence[str],
     superseded: Mapping[str, Sequence[str]] | None = None,
     is_secret: Callable[[str], bool] | None = None,
+    snapshot_refused: Mapping[str, str] | None = None,
 ) -> dict[str, Any]:
     """改动集：``produced`` 里和底提交不同的文件（SDK 自己的保留路径不算交付）。
 
@@ -125,16 +125,22 @@ def build_change_set(
     base_commit = str(base["commit"])
     manifest = bases.manifest(base_commit)
     withheld = {str(k): str(v) for k, v in dict(base.get("withheld") or {}).items()}
-    spellings = ambiguous_paths((*manifest, *withheld, *(item.path for item in produced)))
+    skipped = snapshot_refused or {}
+    spellings = ambiguous_paths((*manifest, *withheld, *skipped, *(item.path for item in produced)))
     folded_reserved = tuple(prefix.casefold() for prefix in reserved)
     overridden = {path: list(steps) for path, steps in dict(superseded or {}).items()}
     files: list[dict[str, Any]] = []
     unchanged_facts: list[dict[str, Any]] = []
     changed: dict[str, bytes] = {}
     added = tests = 0
-    detect_secret = is_secret if is_secret is not None else find_secrets
+    detect_secret = is_secret if is_secret is not None else bases.is_secret
+    for path, reason in skipped.items():
+        if not under_prefix(path.casefold(), folded_reserved):
+            files.append({"path": path, "refused": reason})
+            added += path not in manifest
+            tests += (path in manifest and is_test_path(path)) or is_test_config(path)
     for item in sorted(produced, key=lambda produced_item: produced_item.path):
-        if under_prefix(item.path.casefold(), folded_reserved):
+        if item.path in skipped or under_prefix(item.path.casefold(), folded_reserved):
             continue
         entry = manifest.get(item.path)
         merge = item.merge
@@ -156,9 +162,8 @@ def build_change_set(
         tests += is_test
         withheld_reason = f"withheld:{withheld[item.path]}" if item.path in withheld else None
         secret = delivery_secret_reason(item.path, withheld_reason)
-        readable = _readable(item.data)
-        if secret is None and readable and detect_secret(item.data.decode("utf-8")):
-            secret = "secret_content"
+        if secret is None:
+            secret = credential_reason(item.path, item.data, is_secret=detect_secret)
         if secret is not None:
             files.append({"path": item.path, "refused": secret})
             continue
@@ -195,7 +200,7 @@ def build_change_set(
                 "blob": blob,
                 "sha256": hashlib.sha256(item.data).hexdigest(),
                 "size": len(item.data),
-                "readable": readable,
+                "readable": _readable(item.data),
                 "artifact_id": item.artifact_id,
                 "task_id": item.task_id,
                 "refused": refused,
@@ -213,7 +218,7 @@ def build_change_set(
         # 这个底的身份：写回时核对，不写进别的项目
         "location": source.get("location"),
         **({"root_id": source["root_id"]} if "root_id" in source else {}),
-        "files": files,
+        "files": sorted(files, key=lambda row: row["path"]),
         "counts": {
             "files": len(files),
             "added": added,

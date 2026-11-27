@@ -39,6 +39,7 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path, PurePosixPath
 from typing import BinaryIO, Protocol, runtime_checkable
 
+from ..observability.secrets import find_secrets
 from . import _writeback_metadata, _xattrs
 from .paths import ambiguous_paths, spelling_key, under_prefix
 from .store import ArtifactStoreError, open_nofollow, read_nofollow
@@ -50,11 +51,12 @@ READABLE_MAX_BYTES = 512 * 1024
 IGNORED_DIRS = frozenset({"__pycache__", ".pytest_cache", ".git"})
 #: 按名字直接扣留的文件：凭据、私钥、证书一类，即使被 git 跟踪了也不交给模型。
 SECRET_NAME_PATTERNS = (
-    re.compile(r"^\.env(\..*)?$"),
-    re.compile(r".*\.(pem|key|p12|pfx|keystore|jks|mobileprovision)$", re.IGNORECASE),
+    re.compile(r"^\.env(rc|\..*)?$"),
+    re.compile(r".*\.(pem|key|p12|pfx|keystore|jks|mobileprovision)$"),
     re.compile(r"^id_(rsa|dsa|ecdsa|ed25519)(\.pub)?$"),
     re.compile(r"^\.(netrc|npmrc|pypirc)$"),
 )
+_ENV_TEMPLATES = frozenset({".env.example", ".env.sample", ".env.template"})
 #: SDK 自己在工作区里用的根：资料（``.harness/sources/``）、执行者草稿（``.harness/scratch/``）、
 #: 判定树里落选的产出（``.harness/accepted-outputs/``），以及保证通道材料（``.assurance/``）。
 #: 底里撞上的扣留；改动集里这些路径不交付。
@@ -845,14 +847,17 @@ def _isolated_env(**extra: str) -> dict[str, str]:
     return env
 
 
-def _readable(data: bytes) -> bool:
-    if len(data) > READABLE_MAX_BYTES or b"\0" in data[:8192]:
-        return False
+def _text_content(data: bytes) -> str | None:
+    if b"\0" in data[:8192]:
+        return None
     try:
-        data.decode("utf-8")
+        return data.decode("utf-8")
     except UnicodeDecodeError:
-        return False
-    return True
+        return None
+
+
+def _readable(data: bytes) -> bool:
+    return len(data) <= READABLE_MAX_BYTES and _text_content(data) is not None
 
 
 class BaseRepo:
@@ -861,6 +866,10 @@ class BaseRepo:
     def __init__(self, path: str | Path, *, git: str = "git") -> None:
         self.path = Path(path)
         self._git_program = git
+        self.extra_secrets: tuple[str, ...] = ()
+
+    def is_secret(self, text: str) -> bool:
+        return bool(find_secrets(text, extra=self.extra_secrets))
 
     # ------------------------------------------------------------ 底层
     def _git(
@@ -1018,9 +1027,32 @@ class BaseRepo:
         self._git("update-ref", f"refs/harness/delivery/{commit}", commit)
         return commit
 
+    def _check_diff_side(self, commit: str, path: str, *, allow_absent: bool) -> None:
+        # 按提交与精确路径取对象，不能用改动集自报的 blob、大小或可读标记。
+        entry = self._git(
+            "--literal-pathspecs", "ls-tree", "-lz", "--full-tree", commit, "--", path
+        )
+        if not entry and allow_absent:
+            return
+        meta, _, name = entry.partition(b"\t")
+        if name != path.encode("utf-8") + b"\0":
+            raise BaseError("unreadable", "不能确认 diff 的路径")
+        mode, kind, blob, size = meta.split()
+        if kind != b"blob" or mode not in {b"100644", b"100755"}:
+            raise BaseError("unreadable", "diff 的一侧不是普通文件")
+        if int(size) > READABLE_MAX_BYTES:
+            raise BaseError("binary_or_large", "diff 的一侧超过展示上限")
+        text = _text_content(self._git("cat-file", "blob", blob.decode("ascii")))
+        if text is None:
+            raise BaseError("binary_or_large", "diff 的一侧是二进制")
+        if self.is_secret(text):
+            raise BaseError("secret_content", "diff 的一侧命中凭据")
+
     def diff(self, old: str, new: str, path: str) -> str:
         """两个提交之间一个文件的 unified diff（不走用户配置的外部 diff、文本转换）。"""
 
+        self._check_diff_side(old, path, allow_absent=True)
+        self._check_diff_side(new, path, allow_absent=False)
         out = self._git(
             "--literal-pathspecs",
             "diff",
@@ -1252,8 +1284,28 @@ def _git_alias(part: str) -> bool:
 
 
 def is_secret_name(path: str) -> bool:
-    name = PurePosixPath(path).name
-    return any(pattern.fullmatch(name) for pattern in SECRET_NAME_PATTERNS)
+    name = PurePosixPath(path).name.casefold()
+    return name not in _ENV_TEMPLATES and any(
+        pattern.fullmatch(name) for pattern in SECRET_NAME_PATTERNS
+    )
+
+
+def credential_reason(
+    path: str,
+    content: bytes | str | None = None,
+    *,
+    is_secret: Callable[[str], object] = find_secrets,
+    templates_only: bool = False,
+) -> str | None:
+    """按末级名字扣凭据。模板始终查正文，拍底与交付还查其他文本。"""
+    if is_secret_name(path):
+        return "secret_name"
+    if content is None or (
+        templates_only and PurePosixPath(path).name.casefold() not in _ENV_TEMPLATES
+    ):
+        return None
+    text = _text_content(content) if isinstance(content, bytes) else content
+    return "secret_content" if text is not None and is_secret(text) else None
 
 
 def capture_base(
@@ -1284,8 +1336,8 @@ def capture_base(
             withheld[item.path] = problem
         elif under_prefix(item.path.casefold(), tuple(r.casefold() for r in reserved)):
             withheld[item.path] = "reserved_path"
-        elif is_secret_name(item.path):
-            withheld[item.path] = "secret_name"
+        elif reason := credential_reason(item.path):
+            withheld[item.path] = reason
         else:
             candidates[item.path] = item
     # 底也会铺到折叠大小写或规范化 Unicode 的磁盘，须先扣留整组歧义路径。
@@ -1305,8 +1357,8 @@ def capture_base(
             # 读不了（没有权限、拍的时候被删掉或换成软链）：扣留这一个，不让整次拍底失败
             withheld[path] = "unreadable"
             continue
-        if _readable(data) and is_secret(data.decode("utf-8")):
-            withheld[path] = "secret_content"
+        if reason := credential_reason(path, data, is_secret=is_secret):
+            withheld[path] = reason
             continue
         files[path] = data
         if item.executable:

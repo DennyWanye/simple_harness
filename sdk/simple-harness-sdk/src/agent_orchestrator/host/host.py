@@ -22,6 +22,7 @@ import json
 import logging
 import os
 import secrets
+import subprocess
 import sys
 import time
 from collections.abc import Awaitable, Callable, Iterator, Mapping, Sequence
@@ -750,6 +751,7 @@ class OrchestrationHost:
 
     def _new_orchestrator(self) -> Any:
         def assemble_startup(orchestrator: Any) -> None:
+            orchestrator.assembled.workspaces.bases.extra_secrets = self.secret_values()
             self.deployment.assemble(orchestrator)
             self.native.bind_orchestrator(orchestrator)
 
@@ -1333,7 +1335,7 @@ class OrchestrationHost:
                 self._bases(),
                 scope=tuple(scope),
                 limits=CaptureLimits(self.settings.base_max_files, self.settings.base_max_bytes),
-                is_secret=lambda text: bool(find_secrets(text, extra=self.secret_values())),
+                is_secret=self._bases().is_secret,
                 reserved=(
                     *RESERVED_BASE_PREFIXES,
                     *self.orchestrator._config.deployment_policy.denied_path_prefixes,
@@ -1868,14 +1870,28 @@ class OrchestrationHost:
                 row["diff_omitted"] = "invalid_path"  # 路径不合法，不在交付提交里
             elif item.get("refused") == "path_spelling":
                 row["diff_omitted"] = "path_spelling"
-            elif not item.get("readable"):
-                row["diff_omitted"] = "binary_or_large"
             else:
-                text = delivery_diff(self._bases(), change, str(item["path"]))
-                if len(text) > self.DELIVERY_DIFF_MAX_CHARS:
-                    row["diff_omitted"] = "too_large"
-                else:
-                    row["diff"] = text
+                try:
+                    text = delivery_diff(self._bases(), change, str(item["path"]))
+                    if len(text) <= self.DELIVERY_DIFF_MAX_CHARS:
+                        row["diff"] = text
+                        files.append(row)
+                        continue
+                    omitted = "too_large"
+                except BaseError as error:
+                    omitted = (
+                        error.reason
+                        if error.reason in {"binary_or_large", "secret_content"}
+                        else "unreadable"
+                    )
+                except (OSError, subprocess.SubprocessError, ValueError):
+                    omitted = "unreadable"
+                row = {
+                    "path": item["path"],
+                    "refused": item.get("refused"),
+                    "diff": None,
+                    "diff_omitted": omitted,
+                }
             files.append(row)
         return {
             "mission_id": mission_id,
