@@ -1,6 +1,6 @@
 {
   "acceptance_evidence": null,
-  "deployment_id": "bab374a6cda0698fd0ce6c338443ce05cb0fbe61f4a5765689112295606fe22b",
+  "deployment_id": "e91f7827ca65d04e1ec50c205113ab7f738bfe62d46f18ee0d20740fe2771ea9",
   "schema": "taskgraph-htn-wiring-derivation-v1",
   "source_files": {
     "agent_orchestrator/__init__.py": "eb50152258b356bc7866e55823fc45c7209cb6150efe205dd03c40c33beedbc2",
@@ -18,6 +18,7 @@
     "agent_orchestrator/api/policies.py": "82c6c59959c2e0f0844ce659d2ac347abbd9e6f0556dd2237ec0987c699c11fc",
     "agent_orchestrator/api/taskgraph.py": "2388df7cb2f69931c4534106eb9531ad0bb524a1c7fe417478cb178ed5fbd0ce",
     "agent_orchestrator/artifacts/__init__.py": "3119afdfd9b30ef3ba26e597ff8d8c980c22ca3e2540b1eadd844ac380047815",
+    "agent_orchestrator/artifacts/_writeback_metadata.py": "1d12a8edc40257e183dd47b8f755b0f6ae80ca6a9424dbba7b6ffd96f8e971e2",
     "agent_orchestrator/artifacts/_xattrs.py": "be15285bc1d1d259e9649f384976c503aac940da0d81e8a541e0208f26e4f94d",
     "agent_orchestrator/artifacts/bound_workspace.py": "b4da9499d64588120828e1e83320ea0f00fa2f0f8a9e12d8512d8e7173e08be2",
     "agent_orchestrator/artifacts/delivery.py": "aa12ca7ab2e1d28059ccab25e717a30e2a21eaa9c224fed1b65732dc0ea444ac",
@@ -29,7 +30,7 @@
     "agent_orchestrator/artifacts/taskgraph_inputs.py": "b567cfdbd065477bb5a8b2677116332a53c14c7855771e876e1492e49831583f",
     "agent_orchestrator/artifacts/versioning.py": "11961adb1f9756b68c69afe97496ef1a4f922c47bf1c49d368bc7e3eeefc188d",
     "agent_orchestrator/artifacts/workspace.py": "02ab9fb584365c05ef87b414b8c21d17518f96b363d1c3a3887cce22ce882835",
-    "agent_orchestrator/artifacts/workspace_base.py": "15be0457040013512cee3669c00a46c495e231bdd77ac80b6e371a7ce69421bb",
+    "agent_orchestrator/artifacts/workspace_base.py": "d0ea73e4612566175515b422e2a9bee38862d8895a1c79d4cd8e1b4f931d6970",
     "agent_orchestrator/assurance/__init__.py": "c4a392cea6590f6e36af3948f5813b3027bd365c2a3ba7df474c1853c1a57c17",
     "agent_orchestrator/assurance/certificates.py": "cd5b51b737108cbedde71d386995ff69a0f3cf667aaf1a97d586e7a99da807bf",
     "agent_orchestrator/assurance/check_bindings.py": "ac4cf0d1210d56c9224d3539f79aeca82c3e0a3e97d10859820a7b650666c096",

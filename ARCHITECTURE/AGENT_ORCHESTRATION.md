@@ -1,3 +1,9 @@
+最后更新：2026-11-27（SDK 磁盘写回逐文件拒绝元数据会改变的替换，未发版）。
+
+`DirectoryBase` 与 `GitRepoBase` 共享同一写回入口。替换已有文件前比较原文件句柄和暂存文件句柄对应的 UID、GID。macOS 还通过 `acl_get_fd` 核验两端的扩展 ACL，并比较所有者可设的文件标志。身份或标志不匹配、任一端带 ACL 或 ACL 查询失败时，该文件回 `refused`，原 inode 保留，原因分别指明 `uid`、`gid`、`flags` 或 `acl`。Linux 可见的 POSIX ACL 仍随扩展属性复制并复核。新建文件沿用系统元数据，同批其他文件继续写回。[宿主文档 §4f](../sdk/simple-harness-sdk/docs/orchestration-host.md#交付改动集与写回)
+
+macOS 定向 31 通过，Ubuntu/ext4 定向 24 通过，9 个关键变异全部被捕获。指定验收范围在 macOS 共 337 通过、14 失败、5 跳过。13 个宿主整局超时，1 个范围委派没有建成任务，恢复探针在 `recovery_locked` 无法查询进程身份。4 项需要可用执行隔离区，另 1 项 Linux POSIX ACL 用例已在 Ubuntu 通过。部署清单的 861 个成员哈希已复核，部署验收状态为 `NOT_RUN`。[本机验收记录与逐项复跑清单](../.local-test-evidence/2026-11-27/writeback-metadata/验收记录.md) 同目录 `SHA256SUMS` 的 SHA-256 为 `fe81b1235678f57d8f57d937a9cf8ef7c572f8c1a6203584e7efc4b866e9cded`。
+
 最后更新：2026-11-27（SDK 磁盘写回保留扩展属性，未发版）。
 
 `DirectoryBase` 与 `GitRepoBase` 在替换已有文件时从打开的原文件读取此刻可列举的扩展属性，逐个复制到暂存文件，再恢复权限。macOS 使用 libc 的文件描述符接口，Linux 使用 `os.*xattr`。最终核对比较两端的属性名和值，并核对目标仍是复制开始时的文件版本。属性读写失败或字节不符会在原子改名前拒写该文件，回执为 `refused/xattr_unpreserved`。新建文件沿用系统创建时的属性。原文件及暂存文件的属性通过文件描述符访问，POSIX 最终核对到改名之间仍有竞态。[宿主文档 §4f](../sdk/simple-harness-sdk/docs/orchestration-host.md#交付改动集与写回)

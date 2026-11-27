@@ -39,7 +39,7 @@ from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 from typing import Protocol, runtime_checkable
 
-from . import _xattrs
+from . import _writeback_metadata, _xattrs
 from .paths import ambiguous_paths, spelling_key, under_prefix
 from .store import ArtifactStoreError, open_nofollow, read_nofollow
 
@@ -522,6 +522,11 @@ class DirectoryBase:
                         elif _xattrs.AVAILABLE:
                             source = opened.enter_context(open_nofollow(target))
                             source_info = os.fstat(source.fileno())
+                            problem = _writeback_metadata.replacement_problem(
+                                source.fileno(), out.fileno(), source_info, created
+                            )
+                            if problem is not None:
+                                return FileWrite("refused", current, problem)
                             mode = stat.S_IMODE(source_info.st_mode)
                             try:
                                 attrs = _xattrs.copy_to_stage(source.fileno(), out.fileno())

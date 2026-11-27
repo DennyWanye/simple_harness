@@ -8,7 +8,8 @@
 - 写回在拼写扫描之后做最终内容比对，读前、读后确认精确条目才回 `already`。暂存文件随其创建目录清理。判定树无法列举的子树在 `file:` 条件中报告 `file unverifiable`；写后复核的枚举失败只影响对应文件。
 - 同目录增删无关文件时，写回会重新核对目标路径和内容，回执及同键重放保留实际结果。暂存名长度固定，支持 255 字节的合法文件名。
 - Git 拍底先筛 `base_scope`，再按工作树精确拼写核验范围内的路径。每个用到的目录建一次拼写键索引。
-- macOS 和 Linux 写回已有文件时保留目标当前的扩展属性，包括 macOS 资源分叉、Finder 标签和隔离标记。属性无法原样保留时，该文件回 `refused/xattr_unpreserved`。
+- macOS 和 Linux 写回已有文件时保留调用者当前可列举的扩展属性，包括 macOS 资源分叉、Finder 标签和隔离标记。属性无法原样保留时，该文件回 `refused/xattr_unpreserved`。
+- macOS 和 Linux 在原文件与暂存文件的 UID 或 GID 不同时逐文件拒写。macOS 还会拒绝带扩展 ACL、无法核实 ACL 或用户可设标志有差异的替换。`refused` 回执的 `reason` 以 `metadata_unpreserved: ` 开头并指明类别。Linux 可见的 POSIX ACL 继续按扩展属性逐字节保留。隐藏属性和大资源分叉的限制见[宿主文档 §4f](docs/orchestration-host.md#交付改动集与写回)。
 
 ### 升级注意（相对 opt.230）
 
