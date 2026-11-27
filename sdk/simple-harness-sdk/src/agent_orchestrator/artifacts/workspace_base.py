@@ -61,7 +61,6 @@ SECRET_NAME_PATTERNS = (
 HARNESS_ROOT = ".harness/"
 RESERVED_BASE_PREFIXES = (HARNESS_ROOT, ".assurance/")
 _COMMITTER = "SimpleHarness <harness@localhost> 0 +0000"
-_STAGING_NAME = re.compile(r"\.[0-9a-f]{32}\.harness")
 _CONTROL = re.compile(r"[\x00-\x1f\x7f]")
 
 
@@ -340,9 +339,13 @@ def _open_stage(name: Path, parent_fd: int | None, mode: int) -> BinaryIO:
 
 
 def _discard_stage(
-    out: BinaryIO, name: Path, parent_fd: int | None, created: os.stat_result
+    out: BinaryIO,
+    name: Path,
+    parent_fd: int | None,
+    created: os.stat_result,
+    copied_attrs: list[str],
 ) -> str | None:
-    """只截断自己的暂存文件；截断失败也继续尝试删除，并单独报告清理错误。"""
+    """通过创建句柄截断正文；无法移除自己的目录项时，逐个清理已复制的属性。"""
     errors = []
     try:
         os.ftruncate(out.fileno(), 0)
@@ -351,10 +354,17 @@ def _discard_stage(
     try:
         if os.path.samestat(created, os.stat(name, dir_fd=parent_fd, follow_symlinks=False)):
             os.unlink(name, dir_fd=parent_fd)
+            return ", ".join(errors) or None
     except FileNotFoundError:
         pass
     except OSError as error:
         errors.append(f"unlink: {type(error).__name__}")
+    # 条目也可能被移走；始终用原描述符清理，避免误删替代文件的属性。
+    for attr in copied_attrs:
+        try:
+            _xattrs.removexattr(out.fileno(), attr)
+        except OSError as error:
+            errors.append(f"removexattr {attr}: {type(error).__name__}")
     return ", ".join(errors) or None
 
 
@@ -408,8 +418,6 @@ class DirectoryBase:
         source = self._source()
         for relative in sorted(set(self._paths(scope))):
             target = self.root / relative
-            if _STAGING_NAME.fullmatch(target.name):
-                continue
             if _through_link(self.root, relative):
                 withheld[relative] = "symlink"
             elif target.is_file():
@@ -553,11 +561,15 @@ class DirectoryBase:
                 ):
                     return FileWrite("refused", current, problem)
                 name = directory / f".{uuid.uuid4().hex}.harness"
+                mode = 0o600
+                if current is None:
+                    mode = 0o777 if executable else 0o666
                 with (
-                    _open_stage(name, parent_fd, 0o666 if current is None else 0o600) as out,
+                    _open_stage(name, parent_fd, mode) as out,
                     ExitStack() as opened,
                 ):
                     created = os.fstat(out.fileno())
+                    copied_attrs: list[str] = []
                     outcome = None
                     cleanup = None
                     try:
@@ -566,7 +578,7 @@ class DirectoryBase:
                             data,
                             current,
                             root_id,
-                            executable,
+                            copied_attrs,
                             name,
                             parent_fd,
                             out,
@@ -579,7 +591,7 @@ class DirectoryBase:
                         )
                     finally:
                         if outcome is None or outcome.status != "applied":
-                            cleanup = _discard_stage(out, name, parent_fd, created)
+                            cleanup = _discard_stage(out, name, parent_fd, created, copied_attrs)
                     return replace(outcome, cleanup_error=cleanup) if cleanup else outcome
         except (OSError, ArtifactStoreError) as error:
             return FileWrite("failed", current, f"write_failed: {type(error).__name__}")
@@ -590,7 +602,7 @@ class DirectoryBase:
         data: bytes,
         current: str | None,
         root_id: str | None,
-        executable: bool,
+        copied_attrs: list[str],
         name: Path,
         parent_fd: int | None,
         out: BinaryIO,
@@ -604,10 +616,6 @@ class DirectoryBase:
         if current is None:
             if problem := _writeback_metadata.new_stage_problem(fd, created):
                 return FileWrite("refused", current, problem)
-            if executable and parent_fd is not None:
-                # 只给已有读权限的类别加执行位，保留内核按 umask 和默认 ACL 给出的读写位。
-                initial = stat.S_IMODE(created.st_mode)
-                mode = initial | ((initial & 0o444) >> 2)
         elif _xattrs.AVAILABLE:
             source = opened.enter_context(open_nofollow(target))
             source_info = os.fstat(source.fileno())
@@ -623,13 +631,10 @@ class DirectoryBase:
             body.write(data)
         if source is not None:
             try:
-                attrs = _xattrs.copy_to_stage(source.fileno(), fd)
+                attrs = _xattrs.copy_to_stage(source.fileno(), fd, copied_attrs)
             except OSError:
                 return FileWrite("refused", current, "xattr_unpreserved")
         if mode is not None:
-            # 创建后若有人收紧了暂存文件权限，不能用旧模式把读写位恢复。
-            if current is None and (os.fstat(fd).st_mode ^ mode) & 0o666:
-                return FileWrite("refused", current, "metadata_unpreserved: mode")
             os.chmod(name if parent_fd is None else fd, mode)
             if parent_fd is not None and stat.S_IMODE(os.fstat(fd).st_mode) != mode:
                 return FileWrite("refused", current, "metadata_unpreserved: mode")

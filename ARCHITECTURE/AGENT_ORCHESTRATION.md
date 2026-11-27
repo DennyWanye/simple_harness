@@ -1,10 +1,10 @@
-最后更新：2026-11-27（SDK 写回的新建权限、暂存清理和模式核验，未发版）。
+最后更新：2026-11-27（SDK 写回按内核权限新建文件、清理残留扩展属性、保留用户删除，未发版）。
 
-`DirectoryBase` 与 `GitRepoBase` 在 POSIX 上以 `0666` 请求创建新文件，由内核应用 umask 和目录默认 ACL。请求执行位时只给已有读权限的类别加执行位，先确认读写位仍与创建时一致。替换已有文件仍检查所有者、所属组、可见扩展属性及 macOS 标志，恢复权限后从暂存描述符读回模式。包括 setgid 在内的模式不一致时，该文件以 `metadata_unpreserved: mode` 拒写，保留原 inode 和正文。
+`DirectoryBase` 与 `GitRepoBase` 在 POSIX 上以 `0777` 请求创建可执行文件、以 `0666` 请求创建普通文件，由内核应用 umask 和目录默认 ACL，创建后不再 chmod。替换已有文件仍检查所有者、所属组、可见扩展属性及 macOS 标志，恢复权限后从暂存描述符读回模式。包括 setgid 在内的模式不一致时，该文件以 `metadata_unpreserved: mode` 拒写，保留原 inode 和正文。
 
-macOS 在创建暂存文件前检查直接父目录的 ACL。文件继承、目录继承条目都会使该目录的新建和替换逐项回 `metadata_unpreserved: acl`。只作用于父目录本身的 ACL 允许继续检查。空暂存文件通过元数据检查后才写正文。中途拒写或失败时先从创建句柄截断，再核对条目身份并删除。清理出错单列于回执的 `cleanup_error`。两种底拍底时都排除 `.<32 位小写十六进制数>.harness` 形式的文件。APFS 压缩、`UF_TRACKED` 及 Linux `chattr` 标志的边界见[宿主文档 §4f](../sdk/simple-harness-sdk/docs/orchestration-host.md#交付改动集与写回)。
+macOS 在创建暂存文件前检查直接父目录的 ACL。文件继承、目录继承条目都会使该目录的新建和替换逐项回 `metadata_unpreserved: acl`。只作用于父目录本身的 ACL 允许继续检查。空暂存文件通过元数据检查后才写正文。中途拒写或失败时先从创建句柄截断，再核对条目身份并删除。若暂存条目无法移除，通过同一描述符逐个删除已复制的扩展属性，包括资源分叉。复制中途失败也清理已写入的属性。回执的 `cleanup_error` 单列清理错误。两种底拍底均按通常规则收录残留的空文件及与暂存名同形的用户文件。用户拍底后删除原件，交付修改回 `conflict`。APFS 压缩、`UF_TRACKED` 及 Linux `chattr` 标志的边界见[宿主文档 §4f](../sdk/simple-harness-sdk/docs/orchestration-host.md#交付改动集与写回)。
 
-最终源码在 macOS 定向 54 项通过，在离线 Ubuntu/ext4 定向 47 项通过。两种底的默认 ACL 与同目录普通创建一致，非成员组的 setgid 替换均拒写。macOS 16 项独立变异和其中 2 项 Linux 复跑均触发预期失败。macOS 指定套件 387 项，360 通过、14 失败、13 跳过。13 个宿主整局超时，1 个范围委派未建成；独立恢复诊断停在 `recovery_locked`。4 个宿主用例缺少执行隔离区，9 个 Linux ACL 用例已在 ext4 通过。部署清单 861 个成员及部署 ID 已复核，部署验收为 `NOT_RUN`。证据索引 `SHA256SUMS` 的 SHA-256 为 `4ee2c1083ad7ef7e6728095e9790de6fc22c93ca06919930063b43dceb1e9dd3`。[本机验收记录与逐项复跑清单](../.local-test-evidence/2026-11-27/writeback-staging/final/验收记录.md)
+本轮 macOS 写回定向 50 项通过，Ubuntu/ext4 暂存、扩展属性与元数据定向 78 项通过。非特权账户复跑 44 项权限对照通过。独立授予执行的 ACL 得到 `0310`，限制具名用户只读的 ACL 得到 `0740`，均与同名内核创建对照的模式和有效 ACL 一致。macOS 12 次、Linux 3 次变异均触发预期失败。macOS 指定套件共 420 项，369 通过、14 失败、37 跳过。13 个宿主整局超时，范围委派的第二次工具回执为 `orchestration_degraded_recovery`。独立恢复诊断在 `recovery_locked` 无法查询进程身份。跳过的 33 项 Linux ACL 用例已在 ext4 通过，4 项需要可用的执行隔离区。部署清单 861 个源码哈希与部署 ID 已复核，部署验收为 `NOT_RUN`。[本机验收记录与逐项证据](../.local-test-evidence/2026-11-27/writeback-kernel-create/验收记录.md) · [证据哈希索引](../.local-test-evidence/2026-11-27/writeback-kernel-create/SHA256SUMS)（索引 SHA-256 为 `f76e960df76e62aaa4f7721898adc9fa36c380ed4fb7dd2531e6e282ead6f05b`）。
 
 最后更新：2026-11-27（SDK 磁盘写回逐文件拒绝元数据会改变的替换，未发版）。
 

@@ -8,7 +8,7 @@ import sys
 AVAILABLE = hasattr(os, "listxattr") or sys.platform == "darwin"
 
 if hasattr(os, "listxattr"):
-    from os import getxattr, listxattr, setxattr
+    from os import getxattr, listxattr, removexattr, setxattr
 elif sys.platform == "darwin":
     import ctypes as c
 
@@ -20,6 +20,8 @@ elif sys.platform == "darwin":
     _libc.fgetxattr.restype = c.c_ssize_t
     _libc.fsetxattr.argtypes = _libc.fgetxattr.argtypes
     _libc.fsetxattr.restype = c.c_int
+    _libc.fremovexattr.argtypes = [c.c_int, c.c_char_p, c.c_int]
+    _libc.fremovexattr.restype = c.c_int
 
     def _checked(result: int) -> int:
         if result < 0:
@@ -46,6 +48,9 @@ elif sys.platform == "darwin":
     def setxattr(fd: int, name: str, value: bytes) -> None:
         _checked(_libc.fsetxattr(fd, os.fsencode(name), value, len(value), 0, 0))
 
+    def removexattr(fd: int, name: str) -> None:
+        _checked(_libc.fremovexattr(fd, os.fsencode(name), 0))
+
 
 def snapshot(fd: int) -> dict[str, bytes]:
     try:
@@ -58,11 +63,13 @@ def snapshot(fd: int) -> dict[str, bytes]:
     return {name: getxattr(fd, name) for name in names}
 
 
-def copy_to_stage(source: int, staged: int) -> dict[str, bytes]:
+def copy_to_stage(source: int, staged: int, copied: list[str]) -> dict[str, bytes]:
     original = snapshot(source)
     inherited = snapshot(staged)
     for name, value in original.items():
         # 系统可能为两个文件赋予相同的只读属性，此时无须重写。
         if inherited.get(name) != value:
             setxattr(staged, name, value)
+            # 每写成一个就登记，后续属性复制失败时也能清理此前写入的值。
+            copied.append(name)
     return original

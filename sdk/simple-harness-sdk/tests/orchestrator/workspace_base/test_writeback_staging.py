@@ -9,7 +9,7 @@ import subprocess
 import sys
 
 import pytest
-from test_delivery import _change_set, _produced
+from test_delivery import _base, _change_set, _git, _produced
 from test_spelling_writeback import prepare
 
 from agent_orchestrator.artifacts import _writeback_metadata
@@ -17,32 +17,94 @@ from agent_orchestrator.artifacts.delivery import apply_change_set
 from agent_orchestrator.artifacts.workspace_base import DirectoryBase, GitRepoBase
 
 
+@pytest.mark.parametrize("kind", [DirectoryBase, GitRepoBase])
+def test_user_deletion_of_stage_shaped_name_is_a_conflict(tmp_path, kind):
+    name = ".fc305b47114843b99c71123a6be26802.harness"
+    adapter, repo, base = prepare(tmp_path, name, kind)
+    if kind is GitRepoBase:
+        _git(adapter.root, "add", "--", name)
+        _git(
+            adapter.root,
+            "-c",
+            "user.name=Test",
+            "-c",
+            "user.email=test@localhost",
+            "commit",
+            "-qm",
+            "保存用户文件",
+        )
+        assert _git(adapter.root, "show", "HEAD:" + name) == "base"
+        base = _base(repo, adapter)
+    change = _change_set(repo, base, [_produced(name, b"delivery")])
+    target = adapter.root / name
+    target.unlink()
+    [row] = apply_change_set(adapter, repo, change)
+    assert (change["files"][0]["op"], row["status"], target.exists()) == (
+        "modify",
+        "conflict",
+        False,
+    )
+
+
+def _kernel_creation(target, executable, *, acl=False):
+    # 同目录、同名、同一创建请求。先记下内核给出的权限，腾出路径给交付。
+    mode = 0o777 if executable else 0o666
+    fd = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL, mode)
+    try:
+        return stat.S_IMODE(os.fstat(fd).st_mode), (
+            os.getxattr(target, "system.posix_acl_access") if acl else None
+        )
+    finally:
+        os.close(fd)
+        target.unlink()
+
+
 @pytest.mark.skipif(os.name != "posix", reason="需要 POSIX 模式位")
 @pytest.mark.parametrize("kind", [DirectoryBase, GitRepoBase])
 @pytest.mark.parametrize("executable", [False, True])
-@pytest.mark.parametrize(("mask", "execute_bits"), [(0o077, 0o100), (0o007, 0o110)])
-def test_new_mode_follows_ordinary_creation(tmp_path, kind, executable, mask, execute_bits):
+@pytest.mark.parametrize("mask", [0o022, 0o077, 0o007])
+def test_new_mode_follows_ordinary_creation(tmp_path, monkeypatch, kind, executable, mask):
     adapter, _, _ = prepare(tmp_path, "notes", kind)
+    target = adapter.root / "new"
     old = os.umask(mask)
     try:
-        control = adapter.root / "control"
-        control.write_bytes(b"control")
-        row = adapter.write_file("new", b"delivery", expected=None, executable=executable)
+        expected, _ = _kernel_creation(target, executable)
+        # 即使 chmod 恰好给出相同的模式，它也可能改变 ACL 的有效权限。
+        with monkeypatch.context() as patch:
+            patch.setattr(os, "chmod", lambda *args: pytest.fail("新建文件调用了 chmod"))
+            row = adapter.write_file("new", b"delivery", expected=None, executable=executable)
     finally:
         os.umask(old)
-    expected = stat.S_IMODE(control.stat().st_mode) | (execute_bits if executable else 0)
-    assert row.status == "applied"
-    assert stat.S_IMODE((adapter.root / "new").stat().st_mode) == expected
+    assert (row.status, target.read_bytes(), stat.S_IMODE(target.stat().st_mode)) == (
+        "applied",
+        b"delivery",
+        expected,
+    )
 
 
 @pytest.mark.skipif(sys.platform != "linux", reason="需要 Linux 目录默认 ACL")
-@pytest.mark.parametrize("mask", [0, 6])
+@pytest.mark.parametrize(
+    ("owner", "named", "acl_mask"),
+    [
+        (7, 6, 0),
+        (7, 6, 6),
+        pytest.param(3, 1, 1, id="execute-without-read"),
+        pytest.param(7, 5, 4, id="masked-execute"),
+    ],
+)
+@pytest.mark.parametrize("umask", [0o022, 0o077])
 @pytest.mark.parametrize("executable", [False, True])
 @pytest.mark.parametrize("kind", [DirectoryBase, GitRepoBase])
-def test_new_file_inherits_effective_acl(tmp_path, kind, executable, mask):
+def test_new_file_inherits_effective_acl(tmp_path, kind, executable, umask, owner, named, acl_mask):
     adapter, _, _ = prepare(tmp_path, "notes", kind)
     undef = 0xFFFFFFFF
-    entries = [(1, 7, undef), (2, 6, 1234), (4, 0, undef), (16, mask, undef), (32, 0, undef)]
+    entries = [
+        (1, owner, undef),
+        (2, named, 1234),
+        (4, 0, undef),
+        (16, acl_mask, undef),
+        (32, 0, undef),
+    ]
     acl = struct.pack("<I", 2) + b"".join(struct.pack("<HHI", *entry) for entry in entries)
     try:
         os.setxattr(adapter.root, "system.posix_acl_default", acl)
@@ -50,18 +112,22 @@ def test_new_file_inherits_effective_acl(tmp_path, kind, executable, mask):
         if error.errno == errno.ENOTSUP:
             pytest.skip("文件系统不支持默认 ACL")
         raise
-    control = adapter.root / "control"
-    control.write_bytes(b"control")
-    if executable:
-        mode = stat.S_IMODE(control.stat().st_mode)
-        control.chmod(mode | ((mode & 0o444) >> 2))
-    row = adapter.write_file("new", b"delivery", expected=None, executable=executable)
     target = adapter.root / "new"
-    assert (row.status, target.read_bytes()) == ("applied", b"delivery")
-    assert stat.S_IMODE(target.stat().st_mode) == stat.S_IMODE(control.stat().st_mode)
-    assert os.getxattr(target, "system.posix_acl_access") == os.getxattr(
-        control, "system.posix_acl_access"
-    )
+    old = os.umask(umask)
+    try:
+        expected = _kernel_creation(target, executable, acl=True)
+        row = adapter.write_file("new", b"delivery", expected=None, executable=executable)
+    finally:
+        os.umask(old)
+    assert row.status == "applied"
+    assert (
+        stat.S_IMODE(target.stat().st_mode),
+        os.getxattr(target, "system.posix_acl_access"),
+    ) == expected
+    assert target.stat().st_size == len(b"delivery")
+    if expected[0] & stat.S_IRUSR:
+        assert target.read_bytes() == b"delivery"
+    assert os.getxattr(adapter.root, "system.posix_acl_default") == acl
 
 
 @pytest.mark.skipif(sys.platform != "darwin", reason="需要 macOS 继承 ACL")
@@ -168,7 +234,7 @@ def test_cleanup_retains_reason_and_no_body(tmp_path, monkeypatch, kind, failure
         expected,
         "unlink: PermissionError",
         b"",
-        {"notes", ".notes.harness"},
+        {"notes", ".notes.harness", stage.name},
         [0] if failure == "metadata" else [],
     )
     assert (adapter.root / "notes").read_bytes() == b"base"
@@ -231,14 +297,14 @@ def test_new_stage_checks_its_own_acl_before_body(tmp_path, monkeypatch):
             "unlink: PermissionError",
             b"",
         )
-        assert {item.path for item in adapter.capture(()).files} == {"notes"}
+        assert {item.path for item in adapter.capture(()).files} == {"notes", stage.name}
     finally:
         for p in adapter.root.iterdir():
             subprocess.run(["chmod", "-N", p], check=True)
 
 
 @pytest.mark.skipif(os.name != "posix", reason="需要 POSIX 模式位")
-def test_adding_execute_does_not_restore_revoked_read_write(tmp_path, monkeypatch):
+def test_new_file_keeps_permissions_restricted_after_creation(tmp_path, monkeypatch):
     adapter, _, _ = prepare(tmp_path, "notes")
     fstat = os.fstat
     restricted = False
@@ -254,8 +320,8 @@ def test_adding_execute_does_not_restore_revoked_read_write(tmp_path, monkeypatc
 
     monkeypatch.setattr(os, "fstat", restrict_after_creation)
     row = adapter.write_file("new", b"new", expected=None, executable=True)
-    assert (row.status, row.reason) == ("refused", "metadata_unpreserved: mode")
-    assert not (adapter.root / "new").exists()
+    assert (row.status, restricted) == ("applied", True)
+    assert stat.S_IMODE((adapter.root / "new").stat().st_mode) == 0o400
 
 
 @pytest.mark.skipif(sys.platform != "darwin", reason="需要 macOS 文件标志")

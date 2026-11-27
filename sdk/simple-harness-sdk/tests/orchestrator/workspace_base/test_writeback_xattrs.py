@@ -193,3 +193,81 @@ def test_writeback_without_a_platform_attribute_api(tmp_path, monkeypatch):
     monkeypatch.setattr(_xattrs, "snapshot", lambda fd: pytest.fail("不应调用扩展属性接口"))
     [row] = apply_change_set(adapter, repo, change)
     assert row["status"] == "applied" and (adapter.root / "notes").read_bytes() == b"new"
+
+
+@pytest.mark.skipif(sys.platform != "darwin", reason="需要 macOS 资源分叉和目录 ACL")
+@pytest.mark.parametrize("kind", [DirectoryBase, GitRepoBase])
+def test_undeletable_stage_loses_original_fork_and_attrs(tmp_path, kind):
+    adapter, repo, base = prepare(tmp_path, "notes", kind)
+    target = adapter.root / "notes"
+    fork = target / "..namedfork/rsrc"
+    fork.write_bytes(b"original resource fork")
+    set_attr(target, CUSTOM, b"original attribute")
+    change = _change_set(repo, base, [_produced("notes", b"delivery")])
+    subprocess.run(["chmod", "+a", "everyone deny delete_child", adapter.root], check=True)
+    try:
+        [row] = apply_change_set(adapter, repo, change)
+        [stage] = adapter.root.glob("*.harness")
+        assert (row["status"], row["reason"], row["cleanup_error"]) == (
+            "failed",
+            "write_failed: PermissionError",
+            "unlink: PermissionError",
+        )
+        assert stage.read_bytes() == b""
+        attrs = disk_attrs(stage)
+        assert "com.apple.ResourceFork" not in attrs and CUSTOM not in attrs
+        assert (target.read_bytes(), fork.read_bytes(), disk_attrs(target)[CUSTOM]) == (
+            b"base",
+            b"original resource fork",
+            b"original attribute",
+        )
+    finally:
+        subprocess.run(["chmod", "-N", adapter.root], check=True)
+
+
+@requires_xattrs
+def test_partial_copy_reports_each_cleanup_failure_and_continues(tmp_path, monkeypatch):
+    from agent_orchestrator.artifacts import _xattrs
+
+    adapter, repo, base = prepare(tmp_path, "notes")
+    target = adapter.root / "notes"
+    names = ["user.a", "user.b", "user.c", "user.d"]
+    for name in names:
+        set_attr(target, name, b"private")
+    change = _change_set(repo, base, [_produced("notes", b"delivery")])
+    list_names = _xattrs.listxattr
+    write = _xattrs.setxattr
+    remove = _xattrs.removexattr
+
+    def copy(fd, name, data):
+        if name == "user.d":
+            raise OSError(errno.EIO, "中断复制")
+        write(fd, name, data)
+
+    def discard(fd, name):
+        if name in ("user.a", "user.b"):
+            raise PermissionError(errno.EACCES, "无法删除属性")
+        remove(fd, name)
+
+    def deny_unlink(*args, **kwargs):
+        raise PermissionError(errno.EACCES, "无法删除条目")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(_xattrs, "listxattr", lambda fd: sorted(list_names(fd)))
+        patch.setattr(_xattrs, "setxattr", copy)
+        patch.setattr(_xattrs, "removexattr", discard)
+        patch.setattr(os, "unlink", deny_unlink)
+        [row] = apply_change_set(adapter, repo, change)
+    [stage] = adapter.root.glob("*.harness")
+    assert (row["status"], row["reason"], stage.read_bytes()) == (
+        "refused",
+        "xattr_unpreserved",
+        b"",
+    )
+    assert set(row["cleanup_error"].split(", ")) == {
+        "unlink: PermissionError",
+        "removexattr user.a: PermissionError",
+        "removexattr user.b: PermissionError",
+    }
+    assert set(disk_attrs(stage)).intersection(names) == {"user.a", "user.b"}
+    assert all(disk_attrs(target)[name] == b"private" for name in names)
