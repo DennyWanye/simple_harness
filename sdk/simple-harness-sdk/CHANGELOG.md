@@ -8,6 +8,23 @@
 - 写回在拼写扫描之后做最终内容比对，读前、读后确认精确条目才回 `already`。暂存文件随其创建目录清理。判定树无法列举的子树在 `file:` 条件中报告 `file unverifiable`；写后复核的枚举失败只影响对应文件。
 - 同目录增删无关文件时，写回会重新核对目标路径和内容，回执及同键重放保留实际结果。暂存名长度固定，支持 255 字节的合法文件名。
 - Git 拍底先筛 `base_scope`，再按工作树精确拼写核验范围内的路径。每个用到的目录建一次拼写键索引。
+- macOS 和 Linux 写回已有文件时保留调用者当前可列举的扩展属性，包括 macOS 资源分叉、Finder 标签和隔离标记。属性无法原样保留时，该文件回 `refused/xattr_unpreserved`。
+- macOS 和 Linux 在原文件与暂存文件的 UID 或 GID 不同时逐文件拒写。macOS 还会拒绝带扩展 ACL、无法核实 ACL 或用户可设标志有差异的替换。`refused` 回执的 `reason` 以 `metadata_unpreserved: ` 开头并指明类别。Linux 可见的 POSIX ACL 继续按扩展属性逐字节保留。隐藏属性和大资源分叉的限制见[宿主文档 §4f](docs/orchestration-host.md#交付改动集与写回)。
+- POSIX 新建交付文件时按可执行性请求 `0777` 或 `0666`，由内核应用 umask 与父目录默认 ACL，创建后不再 chmod。替换时在改名前读回模式，包括 setgid 在内的位不符即以 `metadata_unpreserved: mode` 拒写。
+- macOS 父目录有可继承 ACL 时，同目录的新建和替换均提前以 `acl` 拒写。暂存正文截断后若删除失败，通过创建句柄逐个清除已复制的扩展属性，包括资源分叉。回执单列 `cleanup_error`。拍底按通常规则收录残留文件及与暂存名同形的用户文件，写回能识别用户对原件的删除。APFS 压缩、`UF_TRACKED` 和 Linux `chattr +d` 的边界见[宿主文档 §4f](docs/orchestration-host.md#交付改动集与写回)。
+
+### 升级注意（相对 opt.230）
+
+任务资料从 `sources/` 搬到 `.harness/sources/`，判定树的落选产出从 `accepted-outputs/` 搬到 `.harness/accepted-outputs/`。读取资料的使用方要改用新路径，读取落选产出的使用方要按本次判定事件的 `kept_at` 取文件。执行者的 `.harness/scratch/` 草稿不交付。
+
+无底任务的 `file:sources/ref.md` 不能再用来判定附件存在。请把条件改为任务实际交付的文件，例如要求执行者生成并验收 `file:report.md`。`file:` 不能指向 SDK 保留根，直接改成 `file:.harness/sources/ref.md` 会报 `file_criterion_reserved_path`。核验报告 `review-opt231/REPORT.md`「必须修」第 4 条复现了旧路径条件由满足变为缺失，以及落选文件的 `kept_at` 随目录迁移。
+
+**升级前请让在途委派跑完或取消。** SDK 不兼容 opt.230 的旧资料路径。带资料委派若已记账、尚未建成任务，升级恢复会记为 `not_found`，同键重试仍失败。若升级前任务已建成，原样重放会返回原任务 ID，并报 `spec_drift: true`。两种状态的原地升级对照见核验报告 `review-opt231/REPORT.md`「必须修」第 3 条。
+
+- **有底任务**　打开宿主时传入 `workspace_base=DirectoryBase(...)` 或 `GitRepoBase(...)`，建任务时可用 `base_scope` 限定拍底范围。[宿主文档 §4f](docs/orchestration-host.md#4f-任务的底在使用方已有的文件上干活)
+- **改动集与写回**　用 `host.delivery(mission_id)` 查看改动和 diff，用 `host.apply_delivery(mission_id, operation_key=..., paths=...)` 写回所选文件并取得逐文件回执。[宿主文档 §4f](docs/orchestration-host.md#交付改动集与写回)
+- **三方合并**　判定树以底文本为共同祖先合并独立步骤对同一路径的修改。交付视图的 `merged_steps` 标记参与合并的步骤，`merge_skipped` 说明跳过原因。[宿主文档 §4f](docs/orchestration-host.md#交付改动集与写回)
+- **拼写守卫**　有底任务的 `file:` 按精确拼写判定。写回回执用 `case_conflict` 和 `spelling_alias` 区分大小写与 Unicode 规范化别名。[宿主文档 §4f](docs/orchestration-host.md#交付改动集与写回)
 
 ## 未发布 — SDK 自己的路径搬到 `.harness/`（工作区以底为基础 P2b，2026-11-26）
 

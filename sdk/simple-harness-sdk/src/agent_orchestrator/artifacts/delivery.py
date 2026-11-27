@@ -336,6 +336,8 @@ def _write_files(
                 }
             )
             continue
+        if outcome.cleanup_error:
+            row["cleanup_error"] = outcome.cleanup_error
         receipt.append(
             {
                 **row,
