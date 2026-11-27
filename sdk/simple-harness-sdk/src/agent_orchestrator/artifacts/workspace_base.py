@@ -39,6 +39,7 @@ from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 from typing import Protocol, runtime_checkable
 
+from . import _xattrs
 from .paths import ambiguous_paths, spelling_key, under_prefix
 from .store import ArtifactStoreError, open_nofollow, read_nofollow
 
@@ -502,24 +503,33 @@ class DirectoryBase:
             target.parent.mkdir(parents=True, exist_ok=True)
             if _through_link(self.root, path):  # 建目录的同时被换成了软链
                 return FileWrite("refused", current, "symlink")
-            mode = (
-                target.stat().st_mode & 0o7777
-                if current is not None
-                else (0o755 if executable else 0o644)
-            )
             # 创建、改名和清理共用父目录句柄，父目录移走后也能删除暂存的交付内容。
             with _staging_parent(target.parent) as (directory, parent_fd):
                 name = directory / f".{uuid.uuid4().hex}.harness"
                 handle = os.open(
                     name, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600, dir_fd=parent_fd
                 )
-                with os.fdopen(handle, "wb") as out:
+                with os.fdopen(handle, "wb") as out, ExitStack() as opened:
                     # POSIX 持有句柄直到清理完成，期间 inode 不会被回收复用。
                     created = os.fstat(out.fileno())
                     staged = True
                     try:
                         out.write(data)
                         out.flush()
+                        source = None
+                        if current is None:
+                            mode = 0o755 if executable else 0o644
+                        elif _xattrs.AVAILABLE:
+                            source = opened.enter_context(open_nofollow(target))
+                            source_info = os.fstat(source.fileno())
+                            mode = stat.S_IMODE(source_info.st_mode)
+                            try:
+                                attrs = _xattrs.copy_to_stage(source.fileno(), out.fileno())
+                            except OSError:
+                                return FileWrite("refused", current, "xattr_unpreserved")
+                        else:
+                            mode = stat.S_IMODE(target.stat().st_mode)
+                        # 属性复制完成后才恢复权限，原文件可能是只读的。
                         os.chmod(name if parent_fd is None else out.fileno(), mode)
                         if parent_fd is None:
                             out.close()  # Windows 改名之前需要释放文件句柄。
@@ -534,12 +544,24 @@ class DirectoryBase:
                         parent_info = directory.stat() if parent_fd is None else os.fstat(parent_fd)
                         if not os.path.samestat(parent_info, target.parent.stat()):
                             return FileWrite("refused", current, "parent_changed")
+                        if source is not None:
+                            # 复读两端，既防复制期间用户改属性，也防文件系统改写属性值。
+                            try:
+                                if (
+                                    _xattrs.snapshot(source.fileno()) != attrs
+                                    or _xattrs.snapshot(out.fileno()) != attrs
+                                ):
+                                    return FileWrite("refused", current, "xattr_unpreserved")
+                            except OSError:
+                                return FileWrite("refused", current, "xattr_unpreserved")
                         # 拼写扫描可能耗时，最后才读现状，然后立即以原子改名提交。
                         now = self._current(path)
                         if now != current:
                             return FileWrite("conflict", now)
                         if change := self._confirm_read(path, scanned, now):
                             return change
+                        if source is not None and _revision(target) != _version(source_info):
+                            return FileWrite("refused", current, "path_changed")
                         if not os.path.samestat(
                             created, os.stat(name, dir_fd=parent_fd, follow_symlinks=False)
                         ):
