@@ -22,7 +22,6 @@ import json
 import logging
 import os
 import secrets
-import subprocess
 import sys
 import time
 from collections.abc import Awaitable, Callable, Iterator, Mapping, Sequence
@@ -42,7 +41,6 @@ from ..artifacts.delivery import (
     DeliveryLedger,
     DeliveryRefused,
     apply_change_set,
-    delivery_diff,
     delivery_secret_reason,
     same_location,
 )
@@ -1858,41 +1856,31 @@ class OrchestrationHost:
 
         mission, change = self._change_set(mission_id)
         files = []
+        pending = {}
         for item in change["files"]:
-            if reason := delivery_secret_reason(item["path"], item.get("refused")):
-                files.append(
-                    {"path": item["path"], "refused": reason, "diff": None, "diff_omitted": reason}
-                )
-                continue
-            row = dict(item)
-            row["diff"] = None
-            if item.get("refused") in {"invalid_path", "ignored"}:
-                row["diff_omitted"] = "invalid_path"  # 路径不合法，不在交付提交里
+            row = {**item, "diff": None}
+            files.append(row)
+            path = item["path"]
+            reason = delivery_secret_reason(path, item.get("refused"))
+            if reason:
+                row["diff_omitted"] = reason
+            elif item.get("refused") in {"invalid_path", "ignored"}:
+                row["diff_omitted"] = "invalid_path"
             elif item.get("refused") == "path_spelling":
                 row["diff_omitted"] = "path_spelling"
             else:
-                try:
-                    text = delivery_diff(self._bases(), change, str(item["path"]))
-                    if len(text) <= self.DELIVERY_DIFF_MAX_CHARS:
-                        row["diff"] = text
-                        files.append(row)
-                        continue
-                    omitted = "too_large"
-                except BaseError as error:
-                    omitted = (
-                        error.reason
-                        if error.reason in {"binary_or_large", "secret_content"}
-                        else "unreadable"
-                    )
-                except (OSError, subprocess.SubprocessError, ValueError):
-                    omitted = "unreadable"
-                row = {
-                    "path": item["path"],
-                    "refused": item.get("refused"),
-                    "diff": None,
-                    "diff_omitted": omitted,
-                }
-            files.append(row)
+                pending[path] = row
+        if pending:
+            for path, result in self._bases().checked_diffs(
+                change["base_commit"], change["commit"], list(pending)
+            ):
+                row = pending[path]
+                if isinstance(result, BaseError):
+                    row["diff_omitted"] = result.reason
+                elif len(result) > self.DELIVERY_DIFF_MAX_CHARS:
+                    row["diff_omitted"] = "too_large"
+                else:
+                    row["diff"] = result
         return {
             "mission_id": mission_id,
             "status": str(mission.get("status")),

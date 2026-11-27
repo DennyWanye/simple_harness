@@ -960,7 +960,7 @@ host.base  # {"enabled": True, "git": "2.54.0"}；没有 git 2.38+ 时 enabled=F
 | 顺手跑的测试 | 一条 `pytest:` 都没写时，验收只跑这一步新写或改过的测试文件（`test_*.py` / `*_test.py`，每个文件各跑一次），不跑使用方仓库原有的测试；收集不到测试的文件（没有测试函数、被仓库配置反选，pytest 退出码 5）不算失败；仓库的 pytest 配置或根目录 `conftest.py` 在隔离区里加载不了（例如要装了才有的插件，退出码 4）照样判失败；一个有测试的都没有就在空目录里跑一次（不加载仓库的 pytest 配置与 `conftest.py`），算「不适用、视为满足」。写了 `pytest:`（含不带路径的 `pytest:`，那是要求跑整棵树）照条件跑 |
 | 错误码 | `base_unavailable`（宿主没接底却带了 `base_scope`，或 git 不可用）、`base_too_large`、`invalid_request`（范围写法不对、种子与底重名）、`base_repo_failed`（工作仓库的 git 命令失败，说明里带 git 的报错） |
 | 幂等 | 同一个 `idempotency_key` 重试沿用原任务的底，不重拍 |
-| 工作区里的凭据文件 | 拍底、写工具、快照和交付按末级文件名匹配，全部忽略大小写，目录名不影响子文件。`.envrc` 在凭据名单内。`.env.example`、`.env.sample`、`.env.template` 在任意层级都可以使用，四处均对模板文本做内容检查。写工具拒绝时返回 `secret_name` 或 `secret_content`。其他途径产生的凭据名文件在快照读取前扣留，含密钥的模板在存入产物前扣留。 |
+| 工作区里的凭据文件 | 拍底、写工具、快照和交付按末级文件名匹配，全部忽略大小写，目录名不影响子文件。`.envrc` 在凭据名单内。`.env.example`、`.env.sample`、`.env.template` 在任意层级都可以使用，四处均对模板文本做内容检查。写工具拒绝时返回 `secret_name` 或 `secret_content`。其他途径产生的凭据名文件和含密钥的模板均在存入产物前扣留。新增的凭据名文件直接跳过；起始输入中的同名文件仅为核对变化读取哈希。 |
 | SDK 自己的路径 | 都在 `.harness/` 下：任务资料 `.harness/sources/`（会话委派带的资料自动放到这里）、执行者草稿 `.harness/scratch/`（照常传给后续步骤，不交给使用方）、判定树里落选的产出 `.harness/accepted-outputs/`。使用方仓库里的 `Sources/`、`sources/` 照常进底。直接带资料建任务时路径写 `.harness/sources/...`（以前是 `sources/...`）；`file:` 条件不能指向 `.harness/`、`.assurance/`（回 `file_criterion_reserved_path`） |
 | 同一路径有多个版本 | 根结论采用至少两种不同内容，且底中有该精确路径。底和候选都是不含 NUL、至多 512 KiB 的 UTF-8 文本。每次尝试的冻结起点能证明该路径直接来自同一底提交，文件及各级目录拼写唯一。此时按验收顺序，以底文件作共同祖先逐次运行 `git merge-file`。只有每次都干净才使用合并字节。 |
 | 沿用覆盖规则 | 缺少底、共同新增、不可读、起点无法证明或合并冲突时，按根要求关联优先、其次声明端口、再按验收次序保留一份完整原版。继承同一路径、同字节多绑定、交叉继承或从上次工作区重试都可能改变起点。其他路径的上游挂载不影响本文件。 |
@@ -979,11 +979,15 @@ host.base  # {"enabled": True, "git": "2.54.0"}；没有 git 2.38+ 时 enabled=F
 
 ```python
 view = host.delivery(mission_id)
-# {"base_commit", "commit", "counts": {"files", "added", "modified", "tests", "refused"},
-#  "files": [{"path", "op": "add"|"modify", "test", "refused", "diff", "base_blob", "blob",
-#             "overridden_steps", "artifact_id", "task_id", ...}], "applies": [以前的写回回执]}
+# files 中可能出现以下条目（摘录字段）
+# {"path": "conftest.py", "op": "add", "test": True, "size": 200012, "readable": True,
+#  "refused": None, "diff": None, "diff_omitted": "too_large"}
+# {"path": "asset.bin", "op": "add", "test": False, "size": 8, "readable": False,
+#  "refused": None, "diff": None, "diff_omitted": "binary_or_large"}
+# {"path": ".envrc", "refused": "secret_name", "diff": None, "diff_omitted": "secret_name"}
+# 旧交付中原先允许写回的 .envrc 仍是 refused=None，diff_omitted="secret_name"。
 
-receipt = host.apply_delivery(mission_id, operation_key="点击-123", paths=None)  # 或只写几个文件
+receipt = host.apply_delivery(mission_id, operation_key="apply-123", paths=None)  # 或只写几个文件
 # {"files": [{"path", "status": "applied"|"already"|"conflict"|"refused"|"failed", "reason",
 #             "base_blob", "blob", "current_blob"}], "counts": {...}, "repeat": False, ...}
 ```
@@ -991,8 +995,8 @@ receipt = host.apply_delivery(mission_id, operation_key="点击-123", paths=None
 | 事 | 说明 |
 |---|---|
 | 改动集里有什么 | 判定树里和底提交内容不同的文件：新增（`add`）或修改（`modify`）。拼写歧义的提议也逐条列出并计入 `refused`。其余没动的底文件、SDK 自己的路径（`.harness/` 下的资料、草稿、落选产出）不在里面。`test: true` = 改了底里**已有的**测试文件，或新增 / 修改测试配置（`conftest.py`、`pytest.ini`、`tox.ini`、`.coveragerc`、`pyproject.toml`、`setup.cfg`）；新写的测试文件不算。交付时单列给人看，自动写回的规则不要放过它们 |
-| 不能写回的 | 拍底与交付构建对全部文本检查通用密钥模式及宿主显式配置的密钥值，包括模型 API key。检查覆盖全文，超过 512 KiB 仍检查。前 8192 字节含 NUL 或全文无法按 UTF-8 解码时，按二进制处理，只按凭据名扣留。命中的提议只记录 `path`、`refused`，取值为 `secret_name`、`secret_content` 或对应的 `withheld:` 原因。已采纳步骤的快照跳过项按路径去重计入 `counts.files`、`counts.refused`，写回该项会得到原因相同的 `refused` 回执。交付提交保留底中的原版本。其他扣留路径按 `withheld:<原因>` 记录，拼写歧义按 `path_spelling` 记录。非法路径只列出，不进交付提交。 |
-| 看 diff | `delivery()` 对所有新旧改动集先查名字和已记录的凭据原因。其余可展示条目按两个 Git 提交及精确路径分别读取，新增文件在底中缺失视为空。任一侧命中密钥则 `diff_omitted: secret_content`，对象读取失败为 `unreadable`，二进制或任一侧超过 512 KiB 为 `binary_or_large`，diff 超过 20 万字符为 `too_large`。这些情况下只返回路径、拒写原因、`diff: null` 和省略原因。公开文本照常显示 unified diff。历史对象、已有回执和已保存的拒写计数保留原值，读取时的检查使用当前宿主配置。 |
+| 不能写回的 | 拍底与交付构建对全部文本检查通用密钥模式及宿主显式配置的密钥值，包括模型 API key。检查覆盖全文，超过 512 KiB 仍检查。前 8192 字节含 NUL 或全文无法按 UTF-8 解码时，按二进制处理，只按凭据名扣留。命中的提议只记录 `path`、`refused`，取值为 `secret_name`、`secret_content` 或对应的 `withheld:` 原因。快照核对尝试起始输入的 SHA-256，排除未改动的种子、底和上游文件。若判定树为同一路径选中了产物，交付按最终字节检查；落选草稿的扣留原因仍在原步骤结果中。其余已采纳的快照拒写项按路径去重计入 `counts.files`、`counts.refused`，写回该项会得到原因相同的 `refused` 回执。交付提交保留底中的原版本。其他扣留路径按 `withheld:<原因>` 记录，拼写歧义按 `path_spelling` 记录。非法路径只列出，不进交付提交。 |
+| 看 diff | `delivery()` 对所有新旧改动集先查名字和已记录的凭据原因。其余可展示条目按底和交付提交各读一次树，从精确路径取得对象号，再批量读取待检查的 blob，新增文件在底中缺失视为空。任一侧命中密钥则 `diff_omitted: secret_content`，对象读取失败为 `unreadable`，二进制或任一侧超过 512 KiB 为 `binary_or_large`，diff 超过 20 万字符为 `too_large`。省略正文时保留原条目的全部审核字段，包括 `op`、`test`、`size`、`readable` 和原 `refused`；新凭据拒写项本身只存路径和原因。`diff_omitted` 只解释 `diff: null`。历史条目的计数、写回资格和回执沿用原记录，展示检查使用当前宿主配置。 |
 | 谁能写回 | 只有宿主：人点了，或宿主自己的档位规则。模型没有这个工具。任务完成（`COMPLETED`）后才能写，否则 `delivery_not_ready` |
 | 怎么写 | 逐文件三方比对。读到交付 blob 时，须确认读取前后文件与各级目录项均为精确拼写且未变化，才回 `already`。现状与底不同回 `conflict`。现状仍等于底时，先核对可在空暂存文件上检查的元数据，再写正文、扫描拼写并读取最终 blob。目录元数据变化时，逐级复核精确条目、设备号和 inode，对已存在的目标从打开的文件句柄复读内容。只增删兄弟文件仍可正常写回。最终核对后原子改名。POSIX 仍有最后一次核对完成到执行改名之间的竞态；同时编辑同一文件的宿主须自行协调这两个操作。写后逐文件复核，路径或 blob 核不上记 `failed/verify_mismatch`，枚举或读取出错只将该文件记为 `failed/verify_failed`。已知限制：建缺失目录期间若外部进程把上级目录换成只差大小写的别名，写回会拒写，但替代目录里可能留下本次建的空目录。 |
 | 写到哪 | `GitRepoBase` 和 `DirectoryBase` 只写工作目录，按原文件的模式位设置暂存文件。Git 写回产生未提交的工作树改动，索引和分支保持原状。暂存名形如 `.<32 位小写十六进制数>.harness`。两种底都按各自通常的拍底规则收录同形文件，用户在拍底后删除原件时，修改交付回 `conflict`。暂存文件绑定创建它的父目录，改名和清理前均核对暂存条目的设备号与 inode。软链报 `symlink`，大小写折叠即相同报 `case_conflict`，还需 Unicode 规范化才相同报 `spelling_alias`。上级是文件报 `not_a_directory`，目标是目录记 `conflict`。复核期间发现条目变动可拒写为 `path_changed`，暂存父目录被同拼写目录替换可报 `parent_changed`。写回中途拒绝或失败时，先截断暂存正文再尝试删除。清理失败的暂存文件会以 0 字节文件留在目录里，需要使用方手动删除。SDK 通过创建句柄逐个移除已复制的扩展属性，包括 macOS 资源分叉。若截断或属性删除也失败，正文或对应属性可能残留。逐文件回执保留原 `status` 和 `reason`，另以 `cleanup_error` 记录各项清理错误，属性删除错误含属性名。已知限制：属性写调用已落盘却报错时，这个属性不会登记进清理名单，若暂存文件又删不掉，可能残留该属性；写回进行中另行拍底，快照可能同时收到旧目标和带交付正文的暂存文件（写回完成后目录与再次拍底均正常）。 |
@@ -1006,6 +1010,27 @@ receipt = host.apply_delivery(mission_id, operation_key="点击-123", paths=None
 | 幂等 | 同一个 `operation_key` 再调返回原回执（`repeat: true`），不重放；同键不同参数（换了任务或文件）回 `idempotency_conflict`。写到一半进程没了，同键重调会重新执行：已经写过的文件三方比对认得出（`already`），不会写两遍。账本在数据目录 `bases/deliveries/` |
 | 自定义底 | 要能写回，底适配器另外实现 `WritableBase`：`location()`（底的身份，拍底时同一个值记进 `BaseCapture.source["location"]`）、`current_hashes(paths)`（git blob 号，没有为 None）与 `write_file(path, data, *, expected, executable) -> FileWrite`（自己做「现状仍是 expected 才写」）。没实现的回 `delivery_unsupported`，`delivery()` 照样能看 |
 | 错误码 | `no_delivery`（没有接底、还没判定、或改动集没算出来）、`delivery_not_ready`、`delivery_unsupported`、`delivery_target_mismatch`、`invalid_request`（`paths` 里有改动集外的路径、`operation_key` 写法不对）、`idempotency_conflict`、`delivery_ledger_unreadable`（这个键的账本记录坏了，先查明再写）、`delivery_failed`（读交付内容或写账本出错；同一个键重调是安全的）、`not_found` |
+
+宿主通过上面的 `delivery()` 和 `apply_delivery()` 即可完成审核与写回。以下是 SDK 内部已有工作区与交付构建代码的组合示例，使用构建器中的 `Produced`、`read_verified` 和保留路径 `reserved`。示例假定工作区从底和 UTF-8 文本种子开始，整步产出都已采纳。若还有上游输入，在种子之后覆盖对应路径的起始 SHA-256；多步任务的 `produced` 应来自最终判定树。
+
+```python
+from hashlib import sha256
+
+initial = {p: entry.sha256 for p, entry in repo.manifest(base["commit"]).items()}
+initial.update({p: sha256(text.encode("utf-8")).hexdigest() for p, text in seed.items()})
+refused = {}
+artifacts = workspace.snapshot(
+    mission_id=mission_id, task_id=task_id, produced_by=worker_id,
+    initial_hashes=initial, refused=refused,
+)
+produced = [
+    Produced(a.path, read_verified(a), a.id, a.task_id)
+    for a in artifacts if initial.get(a.path) != a.content_hash
+]
+change = build_change_set(
+    repo, base, produced, reserved=reserved, snapshot_refused=refused,
+)
+```
 
 ## 5. 要求怎么写
 

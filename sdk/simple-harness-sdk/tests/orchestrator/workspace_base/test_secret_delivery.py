@@ -175,13 +175,15 @@ def test_reopened_host_skips_sensitive_diffs(tmp_path, monkeypatch, historical):
 
         async with _host(root, workspace_base=adapter) as reopened:
             calls = []
-            original = host_module.delivery_diff
+            repo = reopened._bases()
+            original = repo._run_git
 
-            def observe(repo, change, path):
-                calls.append(path)
-                return original(repo, change, path)
+            def observe(*args, **kwargs):
+                if "diff" in args:
+                    calls.append(args[-1])
+                return original(*args, **kwargs)
 
-            monkeypatch.setattr(host_module, "delivery_diff", observe)
+            monkeypatch.setattr(repo, "_run_git", observe)
             view = reopened.delivery(mid)
             assert calls == ["example.txt"]
             assert MARKER.decode().strip() not in json.dumps(view)
@@ -190,7 +192,13 @@ def test_reopened_host_skips_sensitive_diffs(tmp_path, monkeypatch, historical):
                 if row["path"] == "example.txt":
                     assert "+ordinary public change" in row["diff"]
                 else:
-                    assert row["diff"] is None and row["diff_omitted"] == row["refused"]
+                    original_reason = next(
+                        item["refused"] for item in change["files"] if item["path"] == row["path"]
+                    )
+                    assert row["refused"] == original_reason
+                    assert row["diff"] is None and row["diff_omitted"] == (
+                        original_reason or "secret_name"
+                    )
             stored = reopened._bases().files(view["commit"])
             if historical:
                 assert stored[NAMES[0]] == MARKER
@@ -270,7 +278,7 @@ def test_scan_to_end_of_large_text_at_capture_and_delivery(tmp_path):
 
 
 @pytest.mark.parametrize(
-    "problem", ["old", "new", "configured", "too_large", "missing_commit", "binary"]
+    "problem", ["old", "new", "configured", "too_large", "missing_commit", "binary", "both"]
 )
 def test_diff_checks_actual_sides_even_for_other_refusals(tmp_path, problem):
     async def case():
@@ -279,12 +287,17 @@ def test_diff_checks_actual_sides_even_for_other_refusals(tmp_path, problem):
         ) as host:
             repo = host._bases()
             path = "readme.txt"
-            old = {"old": KEY_TEXT, "too_large": b"a" * (512 * 1024 + 1), "binary": b"\0data"}.get(
-                problem, PUBLIC
-            )
-            new = {"new": KEY_TEXT, "configured": b"fixture-only-configured-value"}.get(
-                problem, MARKER
-            )
+            old = {
+                "old": KEY_TEXT,
+                "both": KEY_TEXT,
+                "too_large": b"a" * (512 * 1024 + 1),
+                "binary": b"\0data",
+            }.get(problem, PUBLIC)
+            new = {
+                "new": KEY_TEXT,
+                "both": b"a" * (512 * 1024 + 1),
+                "configured": b"fixture-only-configured-value",
+            }.get(problem, MARKER)
             base = repo.commit_files({path: old})
             commit = repo.commit_on(base, {path: new})
             change = {
@@ -305,6 +318,7 @@ def test_diff_checks_actual_sides_even_for_other_refusals(tmp_path, problem):
                 "refused": "withheld:symlink",
                 "diff": None,
                 "diff_omitted": expected,
+                "readable": True,
             }
 
     asyncio.run(case())

@@ -1027,45 +1027,78 @@ class BaseRepo:
         self._git("update-ref", f"refs/harness/delivery/{commit}", commit)
         return commit
 
-    def _check_diff_side(self, commit: str, path: str, *, allow_absent: bool) -> None:
-        # 按提交与精确路径取对象，不能用改动集自报的 blob、大小或可读标记。
-        entry = self._git(
-            "--literal-pathspecs", "ls-tree", "-lz", "--full-tree", commit, "--", path
-        )
-        if not entry and allow_absent:
+    def _diff_omissions(self, old: str, new: str, paths: set[str]) -> dict[str, str]:
+        # 从提交取精确路径、模式和大小。目录也必须列出：Git 对目录做 diff 会包含子文件。
+        omissions: list[dict[str, str]] = [{}, {}]
+        by_blob: dict[str, list[tuple[int, str]]] = {}
+        for side, commit in enumerate((old, new)):
+            omitted = omissions[side]
+            seen = set()
+            tree = self._git("ls-tree", "-rtlz", "--full-tree", commit)
+            for record in tree.split(b"\0"):
+                meta, _, raw_path = record.partition(b"\t")
+                path = raw_path.decode("utf-8", errors="surrogateescape")
+                if not record or path not in paths:
+                    continue
+                seen.add(path)
+                mode, kind, blob, size = meta.split()
+                if kind != b"blob" or mode not in {b"100644", b"100755"} or not size.isdigit():
+                    omitted[path] = "unreadable"
+                elif int(size) > READABLE_MAX_BYTES:
+                    omitted[path] = "binary_or_large"
+                else:
+                    by_blob.setdefault(blob.decode("ascii"), []).append((side, path))
+            if side == 1:
+                omitted.update(dict.fromkeys(paths - seen, "unreadable"))
+
+        # 两侧共用一次批量读取；每份可检查的正文只扫描一次。
+        for blob, data in self.blobs(list(by_blob)).items():
+            content = _text_content(data)
+            if content is None or self.is_secret(content):
+                reason = "binary_or_large" if content is None else "secret_content"
+                for side, path in by_blob[blob]:
+                    omissions[side][path] = reason
+        # 维持逐路径读取时的顺序：两侧均不能展示时，报告底一侧的原因。
+        return omissions[1] | omissions[0]
+
+    def checked_diffs(
+        self, old: str, new: str, paths: Sequence[str]
+    ) -> Iterator[tuple[str, str | BaseError]]:
+        """批量检查两个提交中的实际对象，再逐路径返回 diff 或省略原因。"""
+        if not paths:
             return
-        meta, _, name = entry.partition(b"\t")
-        if name != path.encode("utf-8") + b"\0":
-            raise BaseError("unreadable", "不能确认 diff 的路径")
-        mode, kind, blob, size = meta.split()
-        if kind != b"blob" or mode not in {b"100644", b"100755"}:
-            raise BaseError("unreadable", "diff 的一侧不是普通文件")
-        if int(size) > READABLE_MAX_BYTES:
-            raise BaseError("binary_or_large", "diff 的一侧超过展示上限")
-        text = _text_content(self._git("cat-file", "blob", blob.decode("ascii")))
-        if text is None:
-            raise BaseError("binary_or_large", "diff 的一侧是二进制")
-        if self.is_secret(text):
-            raise BaseError("secret_content", "diff 的一侧命中凭据")
+        try:
+            omitted = self._diff_omissions(old, new, set(paths))
+        except (OSError, subprocess.SubprocessError, ValueError):
+            omitted = dict.fromkeys(paths, "unreadable")
+        for path in paths:
+            if path in omitted:
+                yield path, BaseError(omitted[path], "不能展示该路径的 diff")
+                continue
+            try:
+                out = self._git(
+                    "--literal-pathspecs",
+                    "diff",
+                    "--no-color",
+                    "--no-ext-diff",
+                    "--no-textconv",
+                    "--no-renames",
+                    old,
+                    new,
+                    "--",
+                    path,
+                )
+            except (OSError, subprocess.SubprocessError, ValueError):
+                yield path, BaseError("unreadable", "无法读取该路径的 diff")
+                continue
+            yield path, out.decode("utf-8", errors="replace")
 
     def diff(self, old: str, new: str, path: str) -> str:
-        """两个提交之间一个文件的 unified diff（不走用户配置的外部 diff、文本转换）。"""
-
-        self._check_diff_side(old, path, allow_absent=True)
-        self._check_diff_side(new, path, allow_absent=False)
-        out = self._git(
-            "--literal-pathspecs",
-            "diff",
-            "--no-color",
-            "--no-ext-diff",
-            "--no-textconv",
-            "--no-renames",
-            old,
-            new,
-            "--",
-            path,
-        )
-        return out.decode("utf-8", errors="replace")
+        """两个提交之间一个文件的 unified diff。"""
+        _, result = next(self.checked_diffs(old, new, [path]))
+        if isinstance(result, BaseError):
+            raise result
+        return result
 
     def _with_blobs(self, commit: str, manifest: Mapping[str, BaseEntry]) -> dict[str, BaseEntry]:
         blobs = self._tree(commit)

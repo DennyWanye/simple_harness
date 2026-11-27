@@ -41,7 +41,7 @@ from ..observability.secrets import find_secrets
 from ..runtime.sandbox import pending_workspace_executions, recover_workspace_executions
 from .input_bindings import MaterialisationEntry
 from .paths import under_prefix
-from .store import ArtifactStore, ArtifactStoreError, read_nofollow, read_verified
+from .store import ArtifactStore, ArtifactStoreError, open_nofollow, read_nofollow, read_verified
 from .workspace_base import BaseError, BaseRepo, credential_reason
 
 
@@ -258,6 +258,7 @@ class Workspace:
         produced_by: str,
         versions: Mapping[str, int] | None = None,
         refused: dict[str, str] | None = None,
+        initial_hashes: Mapping[str, str] | None = None,
     ) -> list[Artifact]:
         """先检查软链，再按文件名扣留凭据。其余文件按路径版本和内容哈希登记；
         配置了产物存储时，``storage_uri`` 指向存入的字节。"""
@@ -265,21 +266,31 @@ class Workspace:
         links = self.symlinks()
         if links:
             raise _symlink_refusal(links)
+        initial = initial_hashes or {}
         artifacts = []
         for relative in self.list_files():
             path = Path(relative).as_posix()
             if reason := credential_reason(path):
                 if refused is not None:
+                    # 只有起始输入中的同名文件需要读句柄比对，字节不进入产物存储。
+                    if path in initial:
+                        try:
+                            with open_nofollow(self.root / relative) as stream:
+                                digest = hashlib.file_digest(stream, "sha256").hexdigest()
+                        except (ArtifactStoreError, OSError):
+                            digest = None  # 无法证明与输入相同，保留拒写项。
+                        if digest == initial[path]:
+                            continue
                     refused[path] = reason
                 continue
             data = _source_bytes(self.root / relative, relative)
+            content_hash = hashlib.sha256(data).hexdigest()
             if reason := credential_reason(
                 path, data, is_secret=self.is_secret, templates_only=True
             ):
-                if refused is not None:
+                if refused is not None and content_hash != initial.get(path):
                     refused[path] = reason
                 continue
-            content_hash = hashlib.sha256(data).hexdigest()
             storage_uri = str(self.root / relative)
             if self.store is not None:
                 self.store.put_bytes(data)

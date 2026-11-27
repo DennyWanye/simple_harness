@@ -125,8 +125,10 @@ def build_change_set(
     base_commit = str(base["commit"])
     manifest = bases.manifest(base_commit)
     withheld = {str(k): str(v) for k, v in dict(base.get("withheld") or {}).items()}
-    skipped = snapshot_refused or {}
-    spellings = ambiguous_paths((*manifest, *withheld, *skipped, *(item.path for item in produced)))
+    # 判定树已有最终字节时，按这些字节重新检查；步骤的扣留记录仍保存在原结果中。
+    selected = {item.path for item in produced}
+    skipped = {p: reason for p, reason in (snapshot_refused or {}).items() if p not in selected}
+    spellings = ambiguous_paths((*manifest, *withheld, *skipped, *selected))
     folded_reserved = tuple(prefix.casefold() for prefix in reserved)
     overridden = {path: list(steps) for path, steps in dict(superseded or {}).items()}
     files: list[dict[str, Any]] = []
@@ -140,7 +142,7 @@ def build_change_set(
             added += path not in manifest
             tests += (path in manifest and is_test_path(path)) or is_test_config(path)
     for item in sorted(produced, key=lambda produced_item: produced_item.path):
-        if item.path in skipped or under_prefix(item.path.casefold(), folded_reserved):
+        if under_prefix(item.path.casefold(), folded_reserved):
             continue
         entry = manifest.get(item.path)
         merge = item.merge
