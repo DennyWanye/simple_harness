@@ -426,7 +426,7 @@ describe("P33 G creation and explicit approval branches", () => {
       ...DETAIL,
       sources: [
         {
-          path: "sources/a.md",
+          path: ".harness/sources/a.md",
           version_hash: "v1",
           kind: "markdown",
           revoked: false,
@@ -436,7 +436,7 @@ describe("P33 G creation and explicit approval branches", () => {
       ],
     });
     expect(
-      within(screen.getByRole("region", { name: "参考资料" })).getByText("sources/a.md"),
+      within(screen.getByRole("region", { name: "参考资料" })).getByText(".harness/sources/a.md"),
     ).toBeTruthy();
     cleanup();
     openMission(DETAIL);
@@ -497,7 +497,7 @@ describe("P33 G creation and explicit approval branches", () => {
         success_criteria: ["file:待办.md"],
         idempotency_key: expect.any(String),
       },
-      sources: [{ path: "sources/纪要.md", content: "1. 登录页改版", kind: "markdown" }],
+      sources: [{ path: ".harness/sources/纪要.md", content: "1. 登录页改版", kind: "markdown" }],
     });
   });
 
@@ -515,7 +515,7 @@ describe("P33 G creation and explicit approval branches", () => {
     expect(screen.getByTestId("submit-blocker").textContent).toContain("严格引用需要至少一份资料");
     fireEvent.click(screen.getByRole("button", { name: "添加来源" }));
     expect(screen.getByTestId("submit-blocker").textContent).toContain("每份来源资料都要填写路径");
-    fireEvent.change(screen.getByLabelText("来源路径 1"), { target: { value: "sources/a.md" } });
+    fireEvent.change(screen.getByLabelText("来源路径 1"), { target: { value: ".harness/sources/a.md" } });
     fireEvent.change(screen.getByLabelText("来源正文 1"), {
       target: { value: "条件：不支持。\r\n| A | B |" },
     });
@@ -530,7 +530,7 @@ describe("P33 G creation and explicit approval branches", () => {
         success_criteria: ["说明否定条件", STRICT_QUOTES_CRITERION],
         idempotency_key: expect.any(String),
       },
-      sources: [{ path: "sources/a.md", content: "条件：不支持。\n| A | B |", kind: "markdown" }],
+      sources: [{ path: ".harness/sources/a.md", content: "条件：不支持。\n| A | B |", kind: "markdown" }],
     });
     expect((screen.getByRole("button", { name: "提交任务" }) as HTMLButtonElement).disabled).toBe(
       true,
@@ -569,7 +569,7 @@ describe("P33 G creation and explicit approval branches", () => {
           state: "PENDING",
           source_change: {
             operation: "supersede",
-            path: "sources/a.md",
+            path: ".harness/sources/a.md",
             expected_version_hash: "old-hash",
             version_hash: "new-hash",
             old_revision: 3,
@@ -1239,7 +1239,7 @@ describe("Result final rejection", () => {
               {
                 code: "stale_source",
                 reason: "revoked",
-                path: "sources/A.md",
+                path: ".harness/sources/A.md",
                 version: "old-version",
               },
             ],
@@ -1263,7 +1263,7 @@ describe("Result final rejection", () => {
     const rejected = screen.getByTestId("result-final-rejected");
     expect(rejected.textContent).toContain("结果最终未接受（FAIL / DONE）");
     expect(rejected.textContent).toContain("来源已失效（stale_source）");
-    expect(rejected.textContent).toContain("sources/A.md · 已撤销（revoked）");
+    expect(rejected.textContent).toContain(".harness/sources/A.md · 已撤销（revoked）");
     expect(rejected.textContent).toContain("old-version");
     expect(screen.getByTestId("layer-attempt-1-rule_check").getAttribute("data-status")).toBe(
       "PASS",
@@ -1289,7 +1289,7 @@ describe("Result final rejection", () => {
           attempt_id: "attempt-1",
           verdict,
           verification_state: verificationState,
-          final_rejection: { reason: "stale_source", source_issues: [{ path: "sources/A.md" }] },
+          final_rejection: { reason: "stale_source", source_issues: [{ path: ".harness/sources/A.md" }] },
           verification_layers: [],
         },
       ],
