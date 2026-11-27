@@ -50,7 +50,7 @@
       "id": "D-05",
       "source": "阶段 D 欠账",
       "file": "src/agent_orchestrator/testing/product_world.py",
-      "original": "        observers=workspace_observers(loop.store, mission.id),\n",
+      "original": "        observers=workspace_observers(\n            loop.store, mission.id, bases=loop.assembled.workspaces.bases\n        ),\n",
       "replacement": "        observers=(),\n",
       "tests": [
         "tests/orchestrator/product_world/test_desktop_preconditions.py::test_precondition_needs_evidence_then_commits"
@@ -1513,8 +1513,8 @@
       "id": "JDG-01",
       "source": "真实模型验收 2026-10-06（编程题：判定树没有资料，模型写的测试全红）",
       "file": "src/agent_orchestrator/orchestrator/orchestrator_domains/attempt_judgment.py",
-      "original": "            for path, data in self._current_source_files(mission).items():\n                files.setdefault(path, data)",
-      "replacement": "            pass",
+      "original": "            sources = self._current_source_files(mission)\n",
+      "replacement": "            sources = {}\n",
       "tests": [
         "tests/orchestrator/product_world/test_judgment_tree_sources.py::test_the_judgment_tree_carries_the_current_sources"
       ],
