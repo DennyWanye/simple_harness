@@ -311,7 +311,7 @@ async def test_a_general_mission_with_attached_sources_gives_them_to_the_worker(
                 "mission": notes_mission("layered-sources-1"),
                 "sources": [
                     {
-                        "path": "sources/policy.md",
+                        "path": ".harness/sources/policy.md",
                         "content": "# 值班规则\n\n每天九点交接。\n",
                         "kind": "text/markdown",
                     }
@@ -323,7 +323,7 @@ async def test_a_general_mission_with_attached_sources_gives_them_to_the_worker(
         assert mission.status.value == "COMPLETED", (mission.status.value, types[-15:])
         assert types.count("SourceRegistered") == 1
         first = packages[0]
-        assert "sources/policy.md" in first["tools_and_permissions"]["workspace_files"]
+        assert ".harness/sources/policy.md" in first["tools_and_permissions"]["workspace_files"]
         assert "sources" in json.dumps(first.get("source_roots"), ensure_ascii=False)
     finally:
         await asyncio.wait_for(service.close(), 30)

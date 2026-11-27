@@ -18,7 +18,7 @@ def batch(key="g-batch"):
     return {
         "mission": notes_request(key),
         "sources": [
-            {"path": "sources/A.md", "content": "# 标题\r\n\r\n原文。\r\n", "kind": "text/markdown"}
+            {"path": ".harness/sources/A.md", "content": "# 标题\r\n\r\n原文。\r\n", "kind": "text/markdown"}
         ],
     }
 
@@ -48,7 +48,7 @@ async def test_atomic_batch_through_real_handler_reopens_with_same_sources(
         assert reply["payload"]["request_id"] == "ipc-1"
         mid = reply["payload"]["data"]["mission_id"]
         first = service.mission_detail(mid)["sources"]
-        assert first[0]["path"] == "sources/A.md"
+        assert first[0]["path"] == ".harness/sources/A.md"
         again = await handle(service, "mission_create_with_sources", batch())
         assert again["payload"]["data"]["mission_id"] == mid
     finally:
@@ -87,7 +87,7 @@ async def test_register_and_reject_revoke_preserve_original_source(orchestration
             "mission_source_register",
             {
                 "mission_id": mid,
-                "path": "sources/B.md",
+                "path": ".harness/sources/B.md",
                 "content": "新资料。",
                 "kind": "text/plain",
                 "idempotency_key": "register-B",
@@ -95,7 +95,7 @@ async def test_register_and_reject_revoke_preserve_original_source(orchestration
         )
         assert registered["payload"]["ok"], registered
         source = next(
-            s for s in service.mission_detail(mid)["sources"] if s["path"] == "sources/B.md"
+            s for s in service.mission_detail(mid)["sources"] if s["path"] == ".harness/sources/B.md"
         )
         request = {
             "mission_id": mid,
