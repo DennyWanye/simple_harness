@@ -1872,7 +1872,14 @@ class OrchestrationHost:
                 pending[path] = row
         if pending:
             for path, result in self._bases().checked_diffs(
-                change["base_commit"], change["commit"], list(pending)
+                change["base_commit"],
+                change["commit"],
+                list(pending),
+                unreadable_blobs={
+                    path: row["blob"]
+                    for path, row in pending.items()
+                    if row.get("readable") is False and isinstance(row.get("blob"), str)
+                },
             ):
                 row = pending[path]
                 if isinstance(result, BaseError):

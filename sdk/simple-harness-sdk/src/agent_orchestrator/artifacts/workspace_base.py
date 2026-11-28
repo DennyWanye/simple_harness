@@ -47,6 +47,8 @@ from .store import ArtifactStoreError, open_nofollow, read_nofollow
 GIT_MIN_VERSION = (2, 38)
 #: 工作区读写单文件的上限（与 :data:`workspace.MAX_FILE_BYTES` 同值）；更大的底文件只读不可改。
 READABLE_MAX_BYTES = 512 * 1024
+#: 查看交付时，一批待检查的正文最多占用的原始字节数。
+_DIFF_BATCH_BYTES = 1024 * 1024
 #: 遍历时跳过的目录名（与工作区相同）。
 IGNORED_DIRS = frozenset({"__pycache__", ".pytest_cache", ".git"})
 #: 按名字直接扣留的文件：凭据、私钥、证书一类，即使被 git 跟踪了也不交给模型。
@@ -1027,14 +1029,53 @@ class BaseRepo:
         self._git("update-ref", f"refs/harness/delivery/{commit}", commit)
         return commit
 
-    def _diff_omissions(self, old: str, new: str, paths: set[str]) -> dict[str, str]:
-        # 从提交取精确路径、模式和大小。目录也必须列出：Git 对目录做 diff 会包含子文件。
+    def _diff_blob_contents(
+        self, sizes: Mapping[str, int], *, individually: bool
+    ) -> Iterator[tuple[str, bytes]]:
+        if individually:
+            # 回退不再依赖批量协议；每个对象已从精确路径核对过大小。
+            for oid in sizes:
+                yield oid, self._git("cat-file", "blob", oid)
+            return
+
+        batch: list[str] = []
+        total = 0
+        for oid, size in sizes.items():
+            if batch and total + size > _DIFF_BATCH_BYTES:
+                yield from self.blobs(batch).items()
+                batch = []
+                total = 0
+            batch.append(oid)
+            total += size
+        if batch:
+            yield from self.blobs(batch).items()
+
+    def _diff_omissions(
+        self,
+        old: str,
+        new: str,
+        paths: set[str],
+        unreadable_blobs: Sequence[Mapping[str, str]],
+        checked: dict[str, str | None],
+        *,
+        individually: bool = False,
+    ) -> dict[str, str]:
+        # 全树读取失败后，单路径查询只经过该路径的祖先，仍核对两侧的实际树项。
+        scope = ("--", *paths) if len(paths) == 1 else ()
         omissions: list[dict[str, str]] = [{}, {}]
         by_blob: dict[str, list[tuple[int, str]]] = {}
+        sizes: dict[str, int] = {}
         for side, commit in enumerate((old, new)):
             omitted = omissions[side]
             seen = set()
-            tree = self._git("ls-tree", "-rtlz", "--full-tree", commit)
+            tree = self._git(
+                "--literal-pathspecs",
+                "ls-tree",
+                "-lz" if scope else "-rtlz",
+                "--full-tree",
+                commit,
+                *scope,
+            )
             for record in tree.split(b"\0"):
                 meta, _, raw_path = record.partition(b"\t")
                 path = raw_path.decode("utf-8", errors="surrogateescape")
@@ -1042,35 +1083,68 @@ class BaseRepo:
                     continue
                 seen.add(path)
                 mode, kind, blob, size = meta.split()
+                oid = blob.decode("ascii")
                 if kind != b"blob" or mode not in {b"100644", b"100755"} or not size.isdigit():
                     omitted[path] = "unreadable"
-                elif int(size) > READABLE_MAX_BYTES:
+                elif int(size) > READABLE_MAX_BYTES or unreadable_blobs[side].get(path) == oid:
                     omitted[path] = "binary_or_large"
                 else:
-                    by_blob.setdefault(blob.decode("ascii"), []).append((side, path))
+                    by_blob.setdefault(oid, []).append((side, path))
+                    if oid not in checked:
+                        sizes[oid] = int(size)
             if side == 1:
                 omitted.update(dict.fromkeys(paths - seen, "unreadable"))
 
-        # 两侧共用一次批量读取；每份可检查的正文只扫描一次。
-        for blob, data in self.blobs(list(by_blob)).items():
+        for blob, data in self._diff_blob_contents(sizes, individually=individually):
             content = _text_content(data)
-            if content is None or self.is_secret(content):
-                reason = "binary_or_large" if content is None else "secret_content"
-                for side, path in by_blob[blob]:
+            if content is None:
+                checked[blob] = "binary_or_large"
+            else:
+                checked[blob] = "secret_content" if self.is_secret(content) else None
+        for blob, entries in by_blob.items():
+            if reason := checked[blob]:
+                for side, path in entries:
                     omissions[side][path] = reason
-        # 维持逐路径读取时的顺序：两侧均不能展示时，报告底一侧的原因。
+        # 两侧均不能展示时，保留底一侧的原因。
         return omissions[1] | omissions[0]
 
     def checked_diffs(
-        self, old: str, new: str, paths: Sequence[str]
+        self,
+        old: str,
+        new: str,
+        paths: Sequence[str],
+        *,
+        unreadable_blobs: Mapping[str, str] | None = None,
     ) -> Iterator[tuple[str, str | BaseError]]:
         """批量检查两个提交中的实际对象，再逐路径返回 diff 或省略原因。"""
         if not paths:
             return
+        # 缓存只用于省略已知二进制。缓存缺失时按字节分批检查，避免重建整棵底的清单。
+        base_unreadable = {}
+        if re.fullmatch(r"[0-9a-f]{40}", old):
+            try:
+                cached = self._cached_manifest(old)
+                if cached:
+                    base_unreadable = {
+                        p: cached[p].blob
+                        for p in paths
+                        if p in cached and cached[p].readable is False
+                    }
+            except (OSError, ValueError, KeyError, TypeError, AttributeError):
+                pass
+        hints = (base_unreadable, unreadable_blobs or {})
+        checked: dict[str, str | None] = {}
         try:
-            omitted = self._diff_omissions(old, new, set(paths))
+            omitted = self._diff_omissions(old, new, set(paths), hints, checked)
         except (OSError, subprocess.SubprocessError, ValueError):
-            omitted = dict.fromkeys(paths, "unreadable")
+            omitted = {}
+            for path in paths:
+                try:
+                    omitted.update(
+                        self._diff_omissions(old, new, {path}, hints, checked, individually=True)
+                    )
+                except (OSError, subprocess.SubprocessError, ValueError):
+                    omitted[path] = "unreadable"
         for path in paths:
             if path in omitted:
                 yield path, BaseError(omitted[path], "不能展示该路径的 diff")
@@ -1169,24 +1243,30 @@ class BaseRepo:
 
         return self._blobs(list(ids))
 
+    def _cached_manifest(self, commit: str) -> dict[str, BaseEntry] | None:
+        try:
+            raw = json.loads(self._manifest_cache(commit).read_text(encoding="utf-8"))
+        except FileNotFoundError:
+            return None
+        return {
+            path: BaseEntry(
+                path,
+                item["blob"],
+                item["sha256"],
+                item["size"],
+                item["executable"],
+                item["readable"],
+            )
+            for path, item in raw.items()
+        }
+
     def manifest(self, commit: str) -> dict[str, BaseEntry]:
         """底提交的文件清单（路径 → blob 号、sha256、大小、可执行、可读）。缓存是派生数据，
         丢了就从 git 对象重算。"""
 
-        cache = self._manifest_cache(commit)
-        if cache.is_file():
-            raw = json.loads(cache.read_text(encoding="utf-8"))
-            return {
-                path: BaseEntry(
-                    path,
-                    item["blob"],
-                    item["sha256"],
-                    item["size"],
-                    item["executable"],
-                    item["readable"],
-                )
-                for path, item in raw.items()
-            }
+        cached = self._cached_manifest(commit)
+        if cached is not None:
+            return cached
         tree = self._tree(commit)
         data = self._blobs(sorted({blob for blob, _mode in tree.values()}))
         manifest = {

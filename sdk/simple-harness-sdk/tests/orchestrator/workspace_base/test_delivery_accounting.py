@@ -2,6 +2,8 @@
 """交付按判定树计账，读取历史记录保留写回决策和审核字段。"""
 
 import asyncio
+import hashlib
+import os
 from collections import Counter
 from hashlib import sha256
 from time import perf_counter
@@ -10,13 +12,16 @@ import pytest
 from test_host_base import _host, _mission
 from test_host_judgment_merge import _planner, _worker
 
-from agent_orchestrator.artifacts.delivery import Produced, build_change_set
+from agent_orchestrator.artifacts.delivery import Produced, apply_change_set, build_change_set
 from agent_orchestrator.artifacts.workspace import Workspace, WorkspaceManager
 from agent_orchestrator.artifacts.workspace_base import (
+    BaseError,
+    BaseRepo,
     CaptureLimits,
     DirectoryBase,
     InMemoryBase,
     capture_base,
+    git_blob_id,
 )
 from agent_orchestrator.testing.fixtures import package_of
 from agent_orchestrator.testing.scripted_replies import LayeredScriptedProvider, worker_reply
@@ -208,3 +213,130 @@ def test_delivery_batches_100_changes(tmp_path, monkeypatch):
             assert calls["ls-tree"] == 2 and calls["cat-file"] == 1
 
     asyncio.run(case())
+
+
+@pytest.mark.parametrize("failure", ["subtree", "batch"])
+def test_diff_read_failure_is_local(tmp_path, monkeypatch, failure):
+    source = BaseRepo(tmp_path / "source.git")
+    old = source.commit_files(
+        {
+            "archive/guide": b"pending",
+            "ledger/money.py": b"before\n",
+            "ledger/note": b"private draft",
+        }
+    )
+    new = source.commit_on(old, {"ledger/money.py": b"after\n", "ledger/note": b"published\n"})
+    repo = BaseRepo(tmp_path / "restored.git")
+    repo.ensure()
+    missing = source._git("rev-parse", old + ":archive").strip()
+    objects = [line.split()[0] for line in source._git("rev-list", "--objects", new).splitlines()]
+    if failure == "subtree":
+        objects.remove(missing)
+    pack = source._git("pack-objects", "--stdout", input=b"\n".join(objects) + b"\n")
+    repo._git("unpack-objects", input=pack)
+    repo.extra_secrets = ("private draft",)
+    if failure == "batch":
+        git = repo._git
+
+        def fail_bulk(*args, **kwargs):
+            if "--batch" in args:
+                raise BaseError("base_repo_failed", "模拟批量命令不可用")
+            return git(*args, **kwargs)
+
+        monkeypatch.setattr(repo, "_git", fail_bulk)
+    results = dict(
+        repo.checked_diffs(old, new, ["archive/guide", "ledger/money.py", "ledger/note"])
+    )
+    assert isinstance(results["ledger/money.py"], str) and "+after" in results["ledger/money.py"]
+    assert results["ledger/note"].reason == "secret_content"
+    if failure == "subtree":
+        assert results["archive/guide"].reason == "unreadable"
+
+
+def test_delivery_bounds_blob_reads_and_skips_known_binary(tmp_path, monkeypatch):
+    async def case():
+        async with _host(tmp_path) as host:
+            repo = host._bases()
+
+            # 多个路径共享同一正文，另有两侧不同的二进制和超限文件。
+            def files(suffix):
+                texts = {f"p{i}": bytes([65 + i]) * 224000 + suffix for i in range(12)}
+                return {
+                    **texts,
+                    "copy": texts["p0"],
+                    "asset": b"\0" + suffix,
+                    "large": suffix * 524289,
+                }
+
+            old, new = files(b"x"), files(b"y")
+            base = repo.commit_files(old)
+            change = build_change_set(
+                repo,
+                {"commit": base},
+                [Produced(p, data, None, None) for p, data in new.items()],
+                reserved=(),
+            )
+            host._change_set = lambda mid: ({"status": "COMPLETED"}, change)
+
+            sizes = {git_blob_id(data): len(data) for data in (*old.values(), *new.values())}
+            forbidden = {git_blob_id(side[p]) for side in (old, new) for p in ("asset", "large")}
+            git = repo._run_git
+            batches = []
+
+            def observe(*args, **kwargs):
+                if "--batch" in args:
+                    batches.append(kwargs["input"].decode().splitlines())
+                return git(*args, **kwargs)
+
+            monkeypatch.setattr(repo, "_run_git", observe)
+            rows = {r["path"]: r for r in host.delivery("public")["files"]}
+            assert all(rows[p]["diff_omitted"] == "binary_or_large" for p in ("asset", "large"))
+            ids = [blob for batch in batches for blob in batch]
+            assert max(sum(sizes[blob] for blob in batch) for batch in batches) <= 1024 * 1024
+            assert not forbidden.intersection(ids)
+            assert sorted(ids) == sorted(sizes.keys() - forbidden)
+
+    asyncio.run(case())
+
+
+@pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="需要 POSIX 命名管道")
+def test_unreadable_seed_is_counted_without_waiting_for_writer(tmp_path, monkeypatch):
+    manager = WorkspaceManager(tmp_path)
+    name = "demo.P12"
+    work = manager.create("attempt", seed={name: "original"})
+    seed = work.root / name
+    seed.unlink()
+    os.mkfifo(seed)
+    original_open = os.open
+
+    def check_open(path, flags, *args, **kwargs):
+        if path == seed:
+            # 修前直接报错，避免测试自身也卡在等待写端。
+            assert flags & os.O_NONBLOCK
+            assert flags & os.O_NOFOLLOW
+        return original_open(path, flags, *args, **kwargs)
+
+    monkeypatch.setattr(os, "open", check_open)
+    monkeypatch.setattr(hashlib, "file_digest", lambda *args: pytest.fail("不能读取管道正文"))
+    refused = {}
+    assert not work.snapshot(
+        mission_id="m",
+        task_id="t",
+        produced_by="w",
+        refused=refused,
+        initial_hashes={name: sha256(b"original").hexdigest()},
+    )
+    target = InMemoryBase({})
+    base = capture_base(
+        target, manager.bases, scope=(), limits=CaptureLimits(), is_secret=manager.bases.is_secret
+    )
+    change = build_change_set(
+        manager.bases, base.to_json(), [], reserved=(), snapshot_refused=refused
+    )
+    assert change["counts"] == {"files": 1, "added": 1, "modified": 0, "tests": 0, "refused": 1}
+    [receipt] = apply_change_set(target, manager.bases, change)
+    assert (receipt["path"], receipt["status"], receipt["reason"]) == (
+        name,
+        "refused",
+        "secret_name",
+    )
