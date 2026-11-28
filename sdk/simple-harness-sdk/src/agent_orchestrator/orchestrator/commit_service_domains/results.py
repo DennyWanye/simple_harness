@@ -129,6 +129,7 @@ class ResultCommitsMixin(CommitServiceCore):
         artifacts: Sequence[Artifact],
         usage_refs: Sequence[str],
         port_claims: Sequence[Any] = (),
+        snapshot_refused: Mapping[str, str] | None = None,
     ) -> StoredResult:
         """ResultSubmitted (§16.2): Attempt RUNNING → SUBMITTED, Task ACTIVE → VERIFYING.
 
@@ -160,6 +161,7 @@ class ResultCommitsMixin(CommitServiceCore):
                 verdict=None,
                 received_at=self._store.now,
                 artifacts=tuple(artifact.id for artifact in artifacts),
+                snapshot_refused=dict(snapshot_refused or {}),
                 usage_refs=tuple(usage_refs),
             )
             # D4-15 (L3-2): the version is assigned here, inside the transaction, along the

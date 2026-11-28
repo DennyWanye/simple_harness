@@ -39,6 +39,7 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path, PurePosixPath
 from typing import BinaryIO, Protocol, runtime_checkable
 
+from ..observability.secrets import find_secrets
 from . import _writeback_metadata, _xattrs
 from .paths import ambiguous_paths, spelling_key, under_prefix
 from .store import ArtifactStoreError, open_nofollow, read_nofollow
@@ -46,15 +47,18 @@ from .store import ArtifactStoreError, open_nofollow, read_nofollow
 GIT_MIN_VERSION = (2, 38)
 #: 工作区读写单文件的上限（与 :data:`workspace.MAX_FILE_BYTES` 同值）；更大的底文件只读不可改。
 READABLE_MAX_BYTES = 512 * 1024
+#: 查看交付时，一批待检查的正文最多占用的原始字节数。
+_DIFF_BATCH_BYTES = 1024 * 1024
 #: 遍历时跳过的目录名（与工作区相同）。
 IGNORED_DIRS = frozenset({"__pycache__", ".pytest_cache", ".git"})
 #: 按名字直接扣留的文件：凭据、私钥、证书一类，即使被 git 跟踪了也不交给模型。
 SECRET_NAME_PATTERNS = (
-    re.compile(r"^\.env(\..*)?$"),
-    re.compile(r".*\.(pem|key|p12|pfx|keystore|jks|mobileprovision)$", re.IGNORECASE),
+    re.compile(r"^\.env(rc|\..*)?$"),
+    re.compile(r".*\.(pem|key|p12|pfx|keystore|jks|mobileprovision)$"),
     re.compile(r"^id_(rsa|dsa|ecdsa|ed25519)(\.pub)?$"),
     re.compile(r"^\.(netrc|npmrc|pypirc)$"),
 )
+_ENV_TEMPLATES = frozenset({".env.example", ".env.sample", ".env.template"})
 #: SDK 自己在工作区里用的根：资料（``.harness/sources/``）、执行者草稿（``.harness/scratch/``）、
 #: 判定树里落选的产出（``.harness/accepted-outputs/``），以及保证通道材料（``.assurance/``）。
 #: 底里撞上的扣留；改动集里这些路径不交付。
@@ -845,14 +849,17 @@ def _isolated_env(**extra: str) -> dict[str, str]:
     return env
 
 
-def _readable(data: bytes) -> bool:
-    if len(data) > READABLE_MAX_BYTES or b"\0" in data[:8192]:
-        return False
+def _text_content(data: bytes) -> str | None:
+    if b"\0" in data[:8192]:
+        return None
     try:
-        data.decode("utf-8")
+        return data.decode("utf-8")
     except UnicodeDecodeError:
-        return False
-    return True
+        return None
+
+
+def _readable(data: bytes) -> bool:
+    return len(data) <= READABLE_MAX_BYTES and _text_content(data) is not None
 
 
 class BaseRepo:
@@ -861,6 +868,10 @@ class BaseRepo:
     def __init__(self, path: str | Path, *, git: str = "git") -> None:
         self.path = Path(path)
         self._git_program = git
+        self.extra_secrets: tuple[str, ...] = ()
+
+    def is_secret(self, text: str) -> bool:
+        return bool(find_secrets(text, extra=self.extra_secrets))
 
     # ------------------------------------------------------------ 底层
     def _git(
@@ -1018,22 +1029,150 @@ class BaseRepo:
         self._git("update-ref", f"refs/harness/delivery/{commit}", commit)
         return commit
 
-    def diff(self, old: str, new: str, path: str) -> str:
-        """两个提交之间一个文件的 unified diff（不走用户配置的外部 diff、文本转换）。"""
+    def _diff_blob_contents(
+        self, sizes: Mapping[str, int], *, individually: bool
+    ) -> Iterator[tuple[str, bytes]]:
+        if individually:
+            # 回退不再依赖批量协议；每个对象已从精确路径核对过大小。
+            for oid in sizes:
+                yield oid, self._git("cat-file", "blob", oid)
+            return
 
-        out = self._git(
-            "--literal-pathspecs",
-            "diff",
-            "--no-color",
-            "--no-ext-diff",
-            "--no-textconv",
-            "--no-renames",
-            old,
-            new,
-            "--",
-            path,
-        )
-        return out.decode("utf-8", errors="replace")
+        batch: list[str] = []
+        total = 0
+        for oid, size in sizes.items():
+            if batch and total + size > _DIFF_BATCH_BYTES:
+                yield from self.blobs(batch).items()
+                batch = []
+                total = 0
+            batch.append(oid)
+            total += size
+        if batch:
+            yield from self.blobs(batch).items()
+
+    def _diff_omissions(
+        self,
+        old: str,
+        new: str,
+        paths: set[str],
+        unreadable_blobs: Sequence[Mapping[str, str]],
+        checked: dict[str, str | None],
+        *,
+        individually: bool = False,
+    ) -> dict[str, str]:
+        # 全树读取失败后，单路径查询只经过该路径的祖先，仍核对两侧的实际树项。
+        scope = ("--", *paths) if len(paths) == 1 else ()
+        omissions: list[dict[str, str]] = [{}, {}]
+        by_blob: dict[str, list[tuple[int, str]]] = {}
+        sizes: dict[str, int] = {}
+        for side, commit in enumerate((old, new)):
+            omitted = omissions[side]
+            seen = set()
+            tree = self._git(
+                "--literal-pathspecs",
+                "ls-tree",
+                "-lz" if scope else "-rtlz",
+                "--full-tree",
+                commit,
+                *scope,
+            )
+            for record in tree.split(b"\0"):
+                meta, _, raw_path = record.partition(b"\t")
+                path = raw_path.decode("utf-8", errors="surrogateescape")
+                if not record or path not in paths:
+                    continue
+                seen.add(path)
+                mode, kind, blob, size = meta.split()
+                oid = blob.decode("ascii")
+                if kind != b"blob" or mode not in {b"100644", b"100755"} or not size.isdigit():
+                    omitted[path] = "unreadable"
+                elif int(size) > READABLE_MAX_BYTES or unreadable_blobs[side].get(path) == oid:
+                    omitted[path] = "binary_or_large"
+                else:
+                    by_blob.setdefault(oid, []).append((side, path))
+                    if oid not in checked:
+                        sizes[oid] = int(size)
+            if side == 1:
+                omitted.update(dict.fromkeys(paths - seen, "unreadable"))
+
+        for blob, data in self._diff_blob_contents(sizes, individually=individually):
+            content = _text_content(data)
+            if content is None:
+                checked[blob] = "binary_or_large"
+            else:
+                checked[blob] = "secret_content" if self.is_secret(content) else None
+        for blob, entries in by_blob.items():
+            if reason := checked[blob]:
+                for side, path in entries:
+                    omissions[side][path] = reason
+        # 两侧均不能展示时，保留底一侧的原因。
+        return omissions[1] | omissions[0]
+
+    def checked_diffs(
+        self,
+        old: str,
+        new: str,
+        paths: Sequence[str],
+        *,
+        unreadable_blobs: Mapping[str, str] | None = None,
+    ) -> Iterator[tuple[str, str | BaseError]]:
+        """批量检查两个提交中的实际对象，再逐路径返回 diff 或省略原因。"""
+        if not paths:
+            return
+        # 缓存只用于省略已知二进制。缓存缺失时按字节分批检查，避免重建整棵底的清单。
+        base_unreadable = {}
+        if re.fullmatch(r"[0-9a-f]{40}", old):
+            try:
+                cached = self._cached_manifest(old)
+                if cached:
+                    base_unreadable = {
+                        p: cached[p].blob
+                        for p in paths
+                        if p in cached and cached[p].readable is False
+                    }
+            except (OSError, ValueError, KeyError, TypeError, AttributeError):
+                pass
+        hints = (base_unreadable, unreadable_blobs or {})
+        checked: dict[str, str | None] = {}
+        try:
+            omitted = self._diff_omissions(old, new, set(paths), hints, checked)
+        except (OSError, subprocess.SubprocessError, ValueError):
+            omitted = {}
+            for path in paths:
+                try:
+                    omitted.update(
+                        self._diff_omissions(old, new, {path}, hints, checked, individually=True)
+                    )
+                except (OSError, subprocess.SubprocessError, ValueError):
+                    omitted[path] = "unreadable"
+        for path in paths:
+            if path in omitted:
+                yield path, BaseError(omitted[path], "不能展示该路径的 diff")
+                continue
+            try:
+                out = self._git(
+                    "--literal-pathspecs",
+                    "diff",
+                    "--no-color",
+                    "--no-ext-diff",
+                    "--no-textconv",
+                    "--no-renames",
+                    old,
+                    new,
+                    "--",
+                    path,
+                )
+            except (OSError, subprocess.SubprocessError, ValueError):
+                yield path, BaseError("unreadable", "无法读取该路径的 diff")
+                continue
+            yield path, out.decode("utf-8", errors="replace")
+
+    def diff(self, old: str, new: str, path: str) -> str:
+        """两个提交之间一个文件的 unified diff。"""
+        _, result = next(self.checked_diffs(old, new, [path]))
+        if isinstance(result, BaseError):
+            raise result
+        return result
 
     def _with_blobs(self, commit: str, manifest: Mapping[str, BaseEntry]) -> dict[str, BaseEntry]:
         blobs = self._tree(commit)
@@ -1104,24 +1243,30 @@ class BaseRepo:
 
         return self._blobs(list(ids))
 
+    def _cached_manifest(self, commit: str) -> dict[str, BaseEntry] | None:
+        try:
+            raw = json.loads(self._manifest_cache(commit).read_text(encoding="utf-8"))
+        except FileNotFoundError:
+            return None
+        return {
+            path: BaseEntry(
+                path,
+                item["blob"],
+                item["sha256"],
+                item["size"],
+                item["executable"],
+                item["readable"],
+            )
+            for path, item in raw.items()
+        }
+
     def manifest(self, commit: str) -> dict[str, BaseEntry]:
         """底提交的文件清单（路径 → blob 号、sha256、大小、可执行、可读）。缓存是派生数据，
         丢了就从 git 对象重算。"""
 
-        cache = self._manifest_cache(commit)
-        if cache.is_file():
-            raw = json.loads(cache.read_text(encoding="utf-8"))
-            return {
-                path: BaseEntry(
-                    path,
-                    item["blob"],
-                    item["sha256"],
-                    item["size"],
-                    item["executable"],
-                    item["readable"],
-                )
-                for path, item in raw.items()
-            }
+        cached = self._cached_manifest(commit)
+        if cached is not None:
+            return cached
         tree = self._tree(commit)
         data = self._blobs(sorted({blob for blob, _mode in tree.values()}))
         manifest = {
@@ -1251,9 +1396,29 @@ def _git_alias(part: str) -> bool:
     return part.casefold() != ".git" and folded in {".git", "git~1"}
 
 
-def _secret_name(path: str) -> bool:
-    name = PurePosixPath(path).name
-    return any(pattern.fullmatch(name) for pattern in SECRET_NAME_PATTERNS)
+def is_secret_name(path: str) -> bool:
+    name = PurePosixPath(path).name.casefold()
+    return name not in _ENV_TEMPLATES and any(
+        pattern.fullmatch(name) for pattern in SECRET_NAME_PATTERNS
+    )
+
+
+def credential_reason(
+    path: str,
+    content: bytes | str | None = None,
+    *,
+    is_secret: Callable[[str], object] = find_secrets,
+    templates_only: bool = False,
+) -> str | None:
+    """按末级名字扣凭据。模板始终查正文，拍底与交付还查其他文本。"""
+    if is_secret_name(path):
+        return "secret_name"
+    if content is None or (
+        templates_only and PurePosixPath(path).name.casefold() not in _ENV_TEMPLATES
+    ):
+        return None
+    text = _text_content(content) if isinstance(content, bytes) else content
+    return "secret_content" if text is not None and is_secret(text) else None
 
 
 def capture_base(
@@ -1284,8 +1449,8 @@ def capture_base(
             withheld[item.path] = problem
         elif under_prefix(item.path.casefold(), tuple(r.casefold() for r in reserved)):
             withheld[item.path] = "reserved_path"
-        elif _secret_name(item.path):
-            withheld[item.path] = "secret_name"
+        elif reason := credential_reason(item.path):
+            withheld[item.path] = reason
         else:
             candidates[item.path] = item
     # 底也会铺到折叠大小写或规范化 Unicode 的磁盘，须先扣留整组歧义路径。
@@ -1305,8 +1470,8 @@ def capture_base(
             # 读不了（没有权限、拍的时候被删掉或换成软链）：扣留这一个，不让整次拍底失败
             withheld[path] = "unreadable"
             continue
-        if _readable(data) and is_secret(data.decode("utf-8")):
-            withheld[path] = "secret_content"
+        if reason := credential_reason(path, data, is_secret=is_secret):
+            withheld[path] = reason
             continue
         files[path] = data
         if item.executable:

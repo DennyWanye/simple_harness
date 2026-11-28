@@ -10,7 +10,7 @@ import json
 import shutil
 import sqlite3
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -77,6 +77,7 @@ class StoredResult:
     received_at: float
     artifacts: tuple[str, ...]
     usage_refs: tuple[str, ...]
+    snapshot_refused: Mapping[str, str] = field(default_factory=dict)
 
     def to_json(self) -> dict[str, Any]:
         return {
@@ -87,6 +88,7 @@ class StoredResult:
             "received_at": self.received_at,
             "artifacts": list(self.artifacts),
             "usage_refs": list(self.usage_refs),
+            **({"snapshot_refused": dict(self.snapshot_refused)} if self.snapshot_refused else {}),
         }
 
 
@@ -214,6 +216,7 @@ def _stored_result(data: Mapping[str, Any]) -> StoredResult:
             received_at=data["received_at"],
             artifacts=tuple(data.get("artifacts", ())),
             usage_refs=tuple(data.get("usage_refs", ())),
+            snapshot_refused=dict(data.get("snapshot_refused", {})),
         )
     except (KeyError, ContractError) as error:
         raise StoredResultCorrupt(f"corrupt stored result: {error}") from error

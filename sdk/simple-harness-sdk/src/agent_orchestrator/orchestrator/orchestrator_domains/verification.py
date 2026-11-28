@@ -187,11 +187,15 @@ class VerificationMixin(OrchestratorCore):
             )
             return
         workspace = self.assembled.workspaces.get(attempt.id)
+        initial = self._read_only_initial(attempt)
+        snapshot_refused: dict[str, str] = {}
         artifacts = workspace.snapshot(
             mission_id=attempt.mission_id,
             task_id=attempt.task_id,
             produced_by=intent.agent_id or attempt.id,
             versions=next_versions(self.store.list_mission_artifacts(attempt.mission_id)),
+            refused=snapshot_refused,
+            initial_hashes=initial,
         )
         known = {artifact.path for artifact in artifacts}
         source_roots = tuple(self._frozen_source_binding(attempt).get("source_roots", ()))
@@ -223,7 +227,6 @@ class VerificationMixin(OrchestratorCore):
         # its initial inputs (seed + upstream); protected paths are never registered as
         # produced work (a rewrite there is tampering, reported by rule_check instead).
         # P2.3u: same function ``_read_only_initial`` the gateway snapshot uses.
-        initial = self._read_only_initial(attempt)
         guarded = {
             path: sha256_hex_text(content)
             for path, content in self._protected_files(mission, task, attempt).items()
@@ -344,6 +347,7 @@ class VerificationMixin(OrchestratorCore):
                 envelope=envelope,
                 turn_id=result.turn_id,
                 artifacts=referenced,
+                snapshot_refused=snapshot_refused,
                 usage_refs=tuple(result.usage_refs),
                 port_claims=self._attempts.port_claims.get(envelope.id, ()),
             )

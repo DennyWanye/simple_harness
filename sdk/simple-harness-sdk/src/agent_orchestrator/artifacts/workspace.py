@@ -32,16 +32,17 @@ import os
 import shutil
 import time
 import uuid
-from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
 from ..contracts import Artifact, ids
+from ..observability.secrets import find_secrets
 from ..runtime.sandbox import pending_workspace_executions, recover_workspace_executions
 from .input_bindings import MaterialisationEntry
 from .paths import under_prefix
-from .store import ArtifactStore, ArtifactStoreError, read_nofollow, read_verified
-from .workspace_base import BaseError, BaseRepo
+from .store import ArtifactStore, ArtifactStoreError, open_nofollow, read_nofollow, read_verified
+from .workspace_base import BaseError, BaseRepo, credential_reason
 
 
 class WorkspaceError(ValueError):
@@ -131,6 +132,7 @@ class Workspace:
     attempt_id: str
     writable: bool
     store: ArtifactStore | None = None  # P3.2 D3: where snapshot() puts the bytes
+    is_secret: Callable[[str], object] = find_secrets
 
     def resolve(self, relative: str) -> Path:
         """A path inside the workspace or ``WorkspaceError``; never follows escapes."""
@@ -255,18 +257,40 @@ class Workspace:
         task_id: str,
         produced_by: str,
         versions: Mapping[str, int] | None = None,
+        refused: dict[str, str] | None = None,
+        initial_hashes: Mapping[str, str] | None = None,
     ) -> list[Artifact]:
-        """Every file as an Artifact record (content hash + per-path version); with a
-        store, the bytes are written to it and ``storage_uri`` names the stored file.  A
-        tree holding a symlink is refused, never recorded without it (P3.2 D3)."""
+        """先检查软链，再按文件名扣留凭据。其余文件按路径版本和内容哈希登记；
+        配置了产物存储时，``storage_uri`` 指向存入的字节。"""
 
         links = self.symlinks()
         if links:
             raise _symlink_refusal(links)
+        initial = initial_hashes or {}
         artifacts = []
         for relative in self.list_files():
+            path = Path(relative).as_posix()
+            if reason := credential_reason(path):
+                if refused is not None:
+                    # 只有起始输入中的同名文件需要读句柄比对，字节不进入产物存储。
+                    if path in initial:
+                        try:
+                            with open_nofollow(self.root / relative) as stream:
+                                digest = hashlib.file_digest(stream, "sha256").hexdigest()
+                        except (ArtifactStoreError, OSError):
+                            digest = None  # 无法证明与输入相同，保留拒写项。
+                        if digest == initial[path]:
+                            continue
+                    refused[path] = reason
+                continue
             data = _source_bytes(self.root / relative, relative)
             content_hash = hashlib.sha256(data).hexdigest()
+            if reason := credential_reason(
+                path, data, is_secret=self.is_secret, templates_only=True
+            ):
+                if refused is not None and content_hash != initial.get(path):
+                    refused[path] = reason
+                continue
             storage_uri = str(self.root / relative)
             if self.store is not None:
                 self.store.put_bytes(data)
@@ -320,7 +344,7 @@ class WorkspaceManager:
         return self._store
 
     def _workspace(self, root: Path, attempt_id: str, writable: bool) -> Workspace:
-        return Workspace(root, attempt_id, writable, self._store)
+        return Workspace(root, attempt_id, writable, self._store, self.bases.is_secret)
 
     def _lay_base(self, base: str | None, target: Path) -> None:
         if base is None:

@@ -6,7 +6,7 @@
 设计见 ``plans/2026-11-26-workspace-base/00-设计-任务工作区以底为基础.md`` §4.7。
 
 * :func:`build_change_set`：任务判定时，用判定树同一份产物（验收通过的）对照底提交，得到改动集；
-  在工作仓库里把它们叠成交付提交（父提交 = 底提交）。验的就是交的：判定树 = 底 + 这些产物。
+  将可交付的字节叠到底提交上。凭据条目只记录路径和拒写原因。
 * :func:`delivery_diff`：两个提交之间一个文件的 unified diff。
 * :func:`apply_change_set`：把改动集（全部或宿主点名的一部分）写回可写的底。逐文件三方比对由
   适配器做（现状 == 底 → 写，现状 == 新 → 已是目标，其他 → 冲突不写），写完按现状复核。
@@ -41,7 +41,7 @@ from .workspace_base import (
     WritableBase,
     _path_problem,
     _readable,
-    _secret_name,
+    credential_reason,
     git_blob_id,
 )
 
@@ -92,25 +92,17 @@ def is_test_path(path: str) -> bool:
     )
 
 
-def _refusal(
-    path: str,
-    data: bytes,
-    *,
-    withheld: Mapping[str, str],
-    is_secret: Callable[[str], bool] | None,
-) -> str | None:
-    """这个改动为什么不能写回（None = 可以写）。``invalid_path`` / ``ignored`` 的不进交付提交。"""
+def delivery_secret_reason(path: str, refused: str | None) -> str | None:
+    """交付时只保留路径的原因，读已保存的改动集也用同一规则。"""
 
-    problem = _path_problem(path)
-    if problem is not None:
-        return problem
-    if path in withheld:
-        return f"withheld:{withheld[path]}"
-    if _secret_name(path):
-        return "secret_name"
-    if is_secret is not None and _readable(data) and is_secret(data.decode("utf-8")):
-        return "secret_content"
-    return None
+    if refused in {
+        "secret_name",
+        "secret_content",
+        "withheld:secret_name",
+        "withheld:secret_content",
+    }:
+        return refused
+    return credential_reason(path)
 
 
 def build_change_set(
@@ -121,24 +113,34 @@ def build_change_set(
     reserved: Sequence[str],
     superseded: Mapping[str, Sequence[str]] | None = None,
     is_secret: Callable[[str], bool] | None = None,
+    snapshot_refused: Mapping[str, str] | None = None,
 ) -> dict[str, Any]:
     """改动集：``produced`` 里和底提交不同的文件（SDK 自己的保留路径不算交付）。
 
     ``base`` 是任务行里的底记录（``final_report["workspace_base"]``）；``superseded`` 是判定树
     里被覆盖掉的版本（路径 → 那些步骤），照实写进改动集；``is_secret`` 判内容像不像密钥。改动
-    （排除非法路径及拼写歧义）叠成交付提交：判定树 = 底 + 种子 + 资料 + 这些改动，种子与
-    资料不交付。"""
+    排除凭据、非法路径及拼写歧义后叠成交付提交。种子与资料用于判定。"""
 
     source = dict(base.get("source") or {})
     base_commit = str(base["commit"])
     manifest = bases.manifest(base_commit)
     withheld = {str(k): str(v) for k, v in dict(base.get("withheld") or {}).items()}
-    spellings = ambiguous_paths((*manifest, *withheld, *(item.path for item in produced)))
+    # 判定树已有最终字节时，按这些字节重新检查；步骤的扣留记录仍保存在原结果中。
+    selected = {item.path for item in produced}
+    skipped = {p: reason for p, reason in (snapshot_refused or {}).items() if p not in selected}
+    spellings = ambiguous_paths((*manifest, *withheld, *skipped, *selected))
     folded_reserved = tuple(prefix.casefold() for prefix in reserved)
     overridden = {path: list(steps) for path, steps in dict(superseded or {}).items()}
     files: list[dict[str, Any]] = []
     unchanged_facts: list[dict[str, Any]] = []
     changed: dict[str, bytes] = {}
+    added = tests = 0
+    detect_secret = is_secret if is_secret is not None else bases.is_secret
+    for path, reason in skipped.items():
+        if not under_prefix(path.casefold(), folded_reserved):
+            files.append({"path": path, "refused": reason})
+            added += path not in manifest
+            tests += (path in manifest and is_test_path(path)) or is_test_config(path)
     for item in sorted(produced, key=lambda produced_item: produced_item.path):
         if under_prefix(item.path.casefold(), folded_reserved):
             continue
@@ -149,10 +151,28 @@ def build_change_set(
                 ((item.task_id, item.artifact_id),) if item.task_id and item.artifact_id else ()
             )
             merge = MergeFacts(merge_skipped="path_spelling", refused_proposals=proposals)
+        blob = git_blob_id(item.data)
+        if merge.merge_skipped != "path_spelling" and entry is not None and entry.blob == blob:
+            # 覆盖规则可能恰好选回底字节。事实写进报告，避免制造一个可写回的假改动。
+            if facts := item.merge.to_json():
+                unchanged_facts.append(
+                    {"path": item.path, "overridden_steps": overridden.get(item.path, []), **facts}
+                )
+            continue
+        is_test = (entry is not None and is_test_path(item.path)) or is_test_config(item.path)
+        added += entry is None
+        tests += is_test
+        withheld_reason = f"withheld:{withheld[item.path]}" if item.path in withheld else None
+        secret = delivery_secret_reason(item.path, withheld_reason)
+        if secret is None:
+            secret = credential_reason(item.path, item.data, is_secret=detect_secret)
+        if secret is not None:
+            files.append({"path": item.path, "refused": secret})
+            continue
         row = {
             "path": item.path,
             "op": "add" if entry is None else "modify",
-            "test": (entry is not None and is_test_path(item.path)) or is_test_config(item.path),
+            "test": is_test,
             "base_blob": entry.blob if entry else None,
             "executable": entry is not None and entry.executable,
             "overridden_steps": overridden.get(item.path, []),
@@ -172,20 +192,7 @@ def build_change_set(
                 }
             )
             continue
-        blob = git_blob_id(item.data)
-        if entry is not None and entry.blob == blob:
-            # 覆盖规则可能恰好选回底字节。事实写进报告，避免制造一个可写回的假改动。
-            if facts := item.merge.to_json():
-                unchanged_facts.append(
-                    {"path": item.path, "overridden_steps": overridden.get(item.path, []), **facts}
-                )
-            continue
-        refused = _refusal(
-            item.path,
-            item.data,
-            withheld=withheld,
-            is_secret=is_secret,
-        )
+        refused = _path_problem(item.path) or withheld_reason
         if refused not in {"invalid_path", "ignored"}:
             # 路径不合法的（带换行、引号开头……）进不了提交，也不会写回，只列出来
             changed[item.path] = item.data
@@ -204,7 +211,7 @@ def build_change_set(
     commit = bases.commit_on(
         base_commit,
         changed,
-        executable=[item["path"] for item in files if item["executable"]],
+        executable=[item["path"] for item in files if item.get("executable")],
     )
     return {
         "base_commit": base_commit,
@@ -213,12 +220,12 @@ def build_change_set(
         # 这个底的身份：写回时核对，不写进别的项目
         "location": source.get("location"),
         **({"root_id": source["root_id"]} if "root_id" in source else {}),
-        "files": files,
+        "files": sorted(files, key=lambda row: row["path"]),
         "counts": {
             "files": len(files),
-            "added": sum(item["op"] == "add" for item in files),
-            "modified": sum(item["op"] == "modify" for item in files),
-            "tests": sum(bool(item["test"]) for item in files),
+            "added": added,
+            "modified": len(files) - added,
+            "tests": tests,
             "refused": sum(item["refused"] is not None for item in files),
         },
     }
@@ -228,7 +235,11 @@ def delivery_diff(bases: BaseRepo, change_set: Mapping[str, Any], path: str) -> 
     """改动集里一个文件相对底的 unified diff；不在改动集里的路径抛 ``KeyError``。"""
 
     entry = next((item for item in change_set.get("files", ()) if item["path"] == path), None)
-    if entry is None or entry["refused"] in {"invalid_path", "ignored", "path_spelling"}:
+    if (
+        entry is None
+        or delivery_secret_reason(path, entry.get("refused")) is not None
+        or entry["refused"] in {"invalid_path", "ignored", "path_spelling"}
+    ):
         raise KeyError(path)
     return bases.diff(str(change_set["base_commit"]), str(change_set["commit"]), path)
 
@@ -311,8 +322,8 @@ def _write_files(
         entry = entries[path]
         row: dict[str, Any] = {
             "path": path,
-            "base_blob": entry["base_blob"],
-            "blob": entry["blob"],
+            "base_blob": entry.get("base_blob"),
+            "blob": entry.get("blob"),
         }
         if entry["refused"] is not None:
             receipt.append(

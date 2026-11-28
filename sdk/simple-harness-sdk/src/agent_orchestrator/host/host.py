@@ -41,7 +41,7 @@ from ..artifacts.delivery import (
     DeliveryLedger,
     DeliveryRefused,
     apply_change_set,
-    delivery_diff,
+    delivery_secret_reason,
     same_location,
 )
 from ..artifacts.paths import under_prefix
@@ -749,6 +749,7 @@ class OrchestrationHost:
 
     def _new_orchestrator(self) -> Any:
         def assemble_startup(orchestrator: Any) -> None:
+            orchestrator.assembled.workspaces.bases.extra_secrets = self.secret_values()
             self.deployment.assemble(orchestrator)
             self.native.bind_orchestrator(orchestrator)
 
@@ -1332,7 +1333,7 @@ class OrchestrationHost:
                 self._bases(),
                 scope=tuple(scope),
                 limits=CaptureLimits(self.settings.base_max_files, self.settings.base_max_bytes),
-                is_secret=lambda text: bool(find_secrets(text, extra=self.secret_values())),
+                is_secret=self._bases().is_secret,
                 reserved=(
                     *RESERVED_BASE_PREFIXES,
                     *self.orchestrator._config.deployment_policy.denied_path_prefixes,
@@ -1855,22 +1856,38 @@ class OrchestrationHost:
 
         mission, change = self._change_set(mission_id)
         files = []
+        pending = {}
         for item in change["files"]:
-            row = dict(item)
-            row["diff"] = None
-            if item.get("refused") in {"invalid_path", "ignored"}:
-                row["diff_omitted"] = "invalid_path"  # 路径不合法，不在交付提交里
+            row = {**item, "diff": None}
+            files.append(row)
+            path = item["path"]
+            reason = delivery_secret_reason(path, item.get("refused"))
+            if reason:
+                row["diff_omitted"] = reason
+            elif item.get("refused") in {"invalid_path", "ignored"}:
+                row["diff_omitted"] = "invalid_path"
             elif item.get("refused") == "path_spelling":
                 row["diff_omitted"] = "path_spelling"
-            elif not item.get("readable"):
-                row["diff_omitted"] = "binary_or_large"
             else:
-                text = delivery_diff(self._bases(), change, str(item["path"]))
-                if len(text) > self.DELIVERY_DIFF_MAX_CHARS:
+                pending[path] = row
+        if pending:
+            for path, result in self._bases().checked_diffs(
+                change["base_commit"],
+                change["commit"],
+                list(pending),
+                unreadable_blobs={
+                    path: row["blob"]
+                    for path, row in pending.items()
+                    if row.get("readable") is False and isinstance(row.get("blob"), str)
+                },
+            ):
+                row = pending[path]
+                if isinstance(result, BaseError):
+                    row["diff_omitted"] = result.reason
+                elif len(result) > self.DELIVERY_DIFF_MAX_CHARS:
                     row["diff_omitted"] = "too_large"
                 else:
-                    row["diff"] = text
-            files.append(row)
+                    row["diff"] = result
         return {
             "mission_id": mission_id,
             "status": str(mission.get("status")),

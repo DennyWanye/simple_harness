@@ -43,7 +43,8 @@ class ArtifactStoreError(ValueError):
 def open_nofollow(path: Path) -> BinaryIO:
     """Open a regular file for reading without following a symlink at the last component."""
 
-    flags = os.O_RDONLY | os.O_NOFOLLOW | getattr(os, "O_CLOEXEC", 0)
+    # 管道没有写端时也能先打开句柄，再由 fstat 拒绝非普通文件。
+    flags = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | getattr(os, "O_CLOEXEC", 0)
     try:
         fd = os.open(path, flags)
     except OSError as error:
